@@ -1,0 +1,80 @@
+name: Bug report
+description: Report unexpected behaviour.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report. Please fill out as
+        much of the form as you can — reproducible reports get fixed fastest.
+
+        **Security-sensitive bug?** Stop here and follow [SECURITY.md](https://github.com/peacefulstudio/canton-localnet/blob/dev/SECURITY.md)
+        instead of opening a public issue.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One-paragraph description of the problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: |
+        Minimal example and the commands you ran. Redact secrets.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: Include the full error output and any relevant debug logs (with secrets redacted).
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: |
+        Released version (tag) you reproduced this on, or `unreleased` /
+        commit SHA if you're tracking the development branch directly.
+      placeholder: "v0.1.0 or commit SHA"
+    validations:
+      required: false
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "macOS 15.1 / Ubuntu 24.04 / Windows 11"
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Anything else that might help — workarounds tried, related issues, suspected root cause.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      options:
+        - label: I agree to follow this project's [Code of Conduct](https://github.com/peacefulstudio/canton-localnet/blob/dev/CODE_OF_CONDUCT.md).
+          required: true

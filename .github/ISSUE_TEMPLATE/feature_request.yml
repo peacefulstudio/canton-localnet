@@ -1,0 +1,59 @@
+name: Feature request
+description: Propose a new feature, enhancement, or behaviour.
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for proposing an enhancement. Please describe the problem the
+        feature solves before describing the solution — that helps us evaluate
+        alternatives and avoid over-fitting to a specific design.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do? What does the project make hard or impossible today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Sketch the API / behaviour you have in mind. Examples are very welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other designs you thought about, and why they're worse.
+    validations:
+      required: false
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Current workaround
+      description: How are you working around the missing feature today (if at all)?
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Are you willing to contribute?
+      options:
+        - label: I'd be willing to open a PR for this.
+          required: false
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      options:
+        - label: I agree to follow this project's [Code of Conduct](https://github.com/peacefulstudio/canton-localnet/blob/dev/CODE_OF_CONDUCT.md).
+          required: true
