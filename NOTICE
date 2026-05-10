@@ -9,3 +9,22 @@ you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
     http://www.apache.org/licenses/LICENSE-2.0
+
+------------------------------------------------------------------------
+Third-party content
+
+This repository vendors compose stack content under `compose/modules/`
+from the following upstream projects, each licensed under Apache-2.0:
+
+  * hyperledger-labs/splice
+    https://github.com/hyperledger-labs/splice
+    Copyright Digital Asset (Switzerland) GmbH and/or its affiliates.
+    Source path: cluster/compose/localnet (and adjacent modules).
+    Pinned commit: see compose/splice.sha and compose/links.csv.
+
+The original Digital Asset copyright headers and SPDX identifiers on
+each vendored file are preserved verbatim. The LocalNet stack itself
+originated in Digital Asset's Canton Network Quickstart effort
+(https://github.com/digital-asset/cn-quickstart) before being
+consolidated upstream into hyperledger-labs/splice; both upstreams
+ship under Apache-2.0.

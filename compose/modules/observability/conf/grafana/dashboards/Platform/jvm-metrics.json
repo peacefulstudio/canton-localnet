@@ -1,0 +1,562 @@
+{
+   "graphTooltip": 1,
+   "panels": [
+      {
+         "datasource": {
+            "type": "datasource",
+            "uid": "-- Mixed --"
+         },
+         "fieldConfig": {
+            "defaults": {
+               "custom": {
+                  "axisSoftMin": 0,
+                  "showPoints": "never"
+               },
+               "unit": "short"
+            }
+         },
+         "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 0
+         },
+         "id": 1,
+         "interval": "10s",
+         "options": {
+            "tooltip": {
+               "mode": "multi"
+            }
+         },
+         "pluginVersion": "v11.0.0",
+         "targets": [
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "${datasource}"
+               },
+               "expr": "jvm_cpu_count{namespace=\"$namespace\", pod=~\"$pod\", container=~\"$container\", job=\"$jvm\"}",
+               "legendFormat": "available"
+            },
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "${datasource}"
+               },
+               "expr": "jvm_cpu_recent_utilization_ratio{namespace=\"$namespace\", pod=~\"$pod\", container=~\"$container\", job=\"$jvm\"} * jvm_cpu_count{namespace=\"$namespace\", pod=~\"$pod\", container=~\"$container\", job=\"$jvm\"}",
+               "legendFormat": "in-use"
+            }
+         ],
+         "title": "CPUs Utilisation",
+         "type": "timeseries"
+      },
+      {
+         "datasource": {
+            "type": "datasource",
+            "uid": "-- Mixed --"
+         },
+         "fieldConfig": {
+            "defaults": {
+               "custom": {
+                  "axisSoftMin": 0,
+                  "showPoints": "never"
+               },
+               "unit": "short"
+            },
+            "overrides": [
+               {
+                  "matcher": {
+                     "id": "byRegexp",
+                     "options": "/.*\\(time\\)/"
+                  },
+                  "properties": [
+                     {
+                        "id": "unit",
+                        "value": "s"
+                     },
+                     {
+                        "id": "decimals",
+                        "value": null
+                     },
+                     {
+                        "id": "custom.fillOpacity",
+                        "value": 10
+                     }
+                  ]
+               }
+            ]
+         },
+         "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 8
+         },
+         "id": 2,
+         "interval": "10s",
+         "options": {
+            "tooltip": {
+               "mode": "multi"
+            }
+         },
+         "pluginVersion": "v11.0.0",
+         "targets": [
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "${datasource}"
+               },
+               "expr": "sum(idelta(jvm_gc_duration_seconds_count{namespace=\"$namespace\", pod=~\"$pod\", container=~\"$container\", job=\"$jvm\"}[$__rate_interval])) by(jvm_gc_name, job)",
+               "legendFormat": "[{{job}}] {{jvm_gc_name}} (count)"
+            },
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "${datasource}"
+               },
+               "expr": "sum(idelta(jvm_gc_duration_seconds_sum{namespace=\"$namespace\", pod=~\"$pod\", container=~\"$container\", job=\"$jvm\"}[$__rate_interval])) by(jvm_gc_name, job)",
+               "legendFormat": "[{{job}}] {{jvm_gc_name}} (time)"
+            },
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "${datasource}"
+               },
+               "expr": "histogram_count(sum(rate(jvm_gc_duration_seconds{namespace=\"$namespace\", pod=~\"$pod\", container=~\"$container\", job=\"$jvm\"}[$__rate_interval])) by(jvm_gc_name, job))",
+               "legendFormat": "[{{job}}] {{jvm_gc_name}} (count)"
+            },
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "${datasource}"
+               },
+               "expr": "histogram_sum(sum(rate(jvm_gc_duration_seconds{namespace=\"$namespace\", pod=~\"$pod\", container=~\"$container\", job=\"$jvm\"}[$__rate_interval])) by(jvm_gc_name, job))",
+               "legendFormat": "[{{job}}] {{jvm_gc_name}} (time)"
+            }
+         ],
+         "title": "Garbage Collection",
+         "type": "timeseries"
+      },
+      {
+         "datasource": {
+            "type": "datasource",
+            "uid": "-- Mixed --"
+         },
+         "fieldConfig": {
+            "defaults": {
+               "custom": {
+                  "axisSoftMin": 0,
+                  "fillOpacity": 10,
+                  "showPoints": "never",
+                  "stacking": {
+                     "mode": "normal"
+                  }
+               },
+               "unit": "short"
+            }
+         },
+         "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 8
+         },
+         "id": 3,
+         "interval": "10s",
+         "options": {
+            "tooltip": {
+               "mode": "multi"
+            }
+         },
+         "pluginVersion": "v11.0.0",
+         "targets": [
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "${datasource}"
+               },
+               "expr": "jvm_thread_count{namespace=\"$namespace\", pod=~\"$pod\", container=~\"$container\", job=\"$jvm\"}",
+               "legendFormat": "{{jvm_thread_state}}"
+            }
+         ],
+         "title": "Threads",
+         "type": "timeseries"
+      },
+      {
+         "datasource": {
+            "type": "datasource",
+            "uid": "-- Mixed --"
+         },
+         "fieldConfig": {
+            "defaults": {
+               "custom": {
+                  "axisSoftMin": 0,
+                  "fillOpacity": 10,
+                  "showPoints": "never"
+               },
+               "unit": "decbytes"
+            },
+            "overrides": [
+               {
+                  "__systemRef": "hideSeriesFrom",
+                  "matcher": {
+                     "id": "byNames",
+                     "options": {
+                        "mode": "exclude",
+                        "names": [
+                           "used",
+                           "committed"
+                        ],
+                        "prefix": "All except:",
+                        "readOnly": true
+                     }
+                  },
+                  "properties": [
+                     {
+                        "id": "custom.hideFrom",
+                        "value": {
+                           "legend": false,
+                           "tooltip": false,
+                           "viz": true
+                        }
+                     }
+                  ]
+               }
+            ]
+         },
+         "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 16
+         },
+         "id": 4,
+         "interval": "10s",
+         "options": {
+            "tooltip": {
+               "mode": "multi"
+            }
+         },
+         "pluginVersion": "v11.0.0",
+         "targets": [
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "${datasource}"
+               },
+               "expr": "sum(jvm_memory_used_bytes{namespace=\"$namespace\", pod=~\"$pod\", container=~\"$container\", job=\"$jvm\", jvm_memory_type=\"heap\"}) by(jvm_memory_type)",
+               "legendFormat": "used"
+            },
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "${datasource}"
+               },
+               "expr": "sum(jvm_memory_committed_bytes{namespace=\"$namespace\", pod=~\"$pod\", container=~\"$container\", job=\"$jvm\", jvm_memory_type=\"heap\"}) by(jvm_memory_type)",
+               "legendFormat": "committed"
+            },
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "${datasource}"
+               },
+               "expr": "sum(jvm_memory_limit_bytes{namespace=\"$namespace\", pod=~\"$pod\", container=~\"$container\", job=\"$jvm\", jvm_memory_type=\"heap\"}) by(jvm_memory_type)",
+               "legendFormat": "max"
+            }
+         ],
+         "title": "Heap Memory",
+         "type": "timeseries"
+      },
+      {
+         "datasource": {
+            "type": "datasource",
+            "uid": "-- Mixed --"
+         },
+         "fieldConfig": {
+            "defaults": {
+               "custom": {
+                  "axisSoftMin": 0,
+                  "fillOpacity": 10,
+                  "showPoints": "never"
+               },
+               "unit": "decbytes"
+            },
+            "overrides": [
+               {
+                  "__systemRef": "hideSeriesFrom",
+                  "matcher": {
+                     "id": "byNames",
+                     "options": {
+                        "mode": "exclude",
+                        "names": [
+                           "used",
+                           "committed"
+                        ],
+                        "prefix": "All except:",
+                        "readOnly": true
+                     }
+                  },
+                  "properties": [
+                     {
+                        "id": "custom.hideFrom",
+                        "value": {
+                           "legend": false,
+                           "tooltip": false,
+                           "viz": true
+                        }
+                     }
+                  ]
+               }
+            ]
+         },
+         "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 16
+         },
+         "id": 5,
+         "interval": "10s",
+         "options": {
+            "tooltip": {
+               "mode": "multi"
+            }
+         },
+         "pluginVersion": "v11.0.0",
+         "targets": [
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "${datasource}"
+               },
+               "expr": "sum(jvm_memory_used_bytes{namespace=\"$namespace\", pod=~\"$pod\", container=~\"$container\", job=\"$jvm\", jvm_memory_type=\"non_heap\"}) by(jvm_memory_type)",
+               "legendFormat": "used"
+            },
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "${datasource}"
+               },
+               "expr": "sum(jvm_memory_committed_bytes{namespace=\"$namespace\", pod=~\"$pod\", container=~\"$container\", job=\"$jvm\", jvm_memory_type=\"non_heap\"}) by(jvm_memory_type)",
+               "legendFormat": "committed"
+            },
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "${datasource}"
+               },
+               "expr": "sum(jvm_memory_limit_bytes{namespace=\"$namespace\", pod=~\"$pod\", container=~\"$container\", job=\"$jvm\", jvm_memory_type=\"non_heap\"}) by(jvm_memory_type)",
+               "legendFormat": "max"
+            }
+         ],
+         "title": "Non-heap Memory",
+         "type": "timeseries"
+      },
+      {
+         "datasource": {
+            "type": "datasource",
+            "uid": "-- Mixed --"
+         },
+         "fieldConfig": {
+            "defaults": {
+               "custom": {
+                  "axisSoftMin": 0,
+                  "fillOpacity": 10,
+                  "showPoints": "never"
+               },
+               "unit": "decbytes"
+            },
+            "overrides": [
+               {
+                  "__systemRef": "hideSeriesFrom",
+                  "matcher": {
+                     "id": "byNames",
+                     "options": {
+                        "mode": "exclude",
+                        "names": [
+                           "used",
+                           "committed",
+                           "allocated"
+                        ],
+                        "prefix": "All except:",
+                        "readOnly": true
+                     }
+                  },
+                  "properties": [
+                     {
+                        "id": "custom.hideFrom",
+                        "value": {
+                           "legend": false,
+                           "tooltip": false,
+                           "viz": true
+                        }
+                     }
+                  ]
+               },
+               {
+                  "matcher": {
+                     "id": "byName",
+                     "options": "allocated"
+                  },
+                  "properties": [
+                     {
+                        "id": "unit",
+                        "value": "Bps"
+                     },
+                     {
+                        "id": "custom.fillOpacity",
+                        "value": 0
+                     }
+                  ]
+               }
+            ]
+         },
+         "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 24
+         },
+         "id": 6,
+         "interval": "10s",
+         "maxPerRow": 3,
+         "options": {
+            "tooltip": {
+               "mode": "multi"
+            }
+         },
+         "pluginVersion": "v11.0.0",
+         "repeat": "jvm_mempool",
+         "repeatDirection": "h",
+         "targets": [
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "${datasource}"
+               },
+               "expr": "jvm_memory_used_bytes{namespace=\"$namespace\", pod=~\"$pod\", container=~\"$container\", job=\"$jvm\", jvm_memory_pool_name=\"$jvm_mempool\"}",
+               "legendFormat": "used"
+            },
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "${datasource}"
+               },
+               "expr": "jvm_memory_committed_bytes{namespace=\"$namespace\", pod=~\"$pod\", container=~\"$container\", job=\"$jvm\", jvm_memory_pool_name=\"$jvm_mempool\"}",
+               "legendFormat": "committed"
+            },
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "${datasource}"
+               },
+               "expr": "jvm_memory_limit_bytes{namespace=\"$namespace\", pod=~\"$pod\", container=~\"$container\", job=\"$jvm\", jvm_memory_pool_name=\"$jvm_mempool\"}",
+               "legendFormat": "max"
+            },
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "${datasource}"
+               },
+               "expr": "irate(jvm_memory_used_bytes{namespace=\"$namespace\", pod=~\"$pod\", container=~\"$container\", job=\"$jvm\", jvm_memory_pool_name=\"$jvm_mempool\"}[$__rate_interval])",
+               "legendFormat": "allocated"
+            }
+         ],
+         "title": "Memory pool - $jvm_mempool",
+         "type": "timeseries"
+      }
+   ],
+   "refresh": "10s",
+   "schemaVersion": 39,
+   "tags": [
+      "jvm",
+      "gc"
+   ],
+   "templating": {
+      "list": [
+         {
+            "hide": 2,
+            "name": "datasource",
+            "query": "prometheus",
+            "type": "datasource"
+         },
+         {
+            "datasource": {
+               "type": "prometheus",
+               "uid": "${datasource}"
+            },
+            "name": "namespace",
+            "query": "label_values(jvm_cpu_time_seconds_total, namespace)",
+            "refresh": 2,
+            "type": "query"
+         },
+         {
+            "datasource": {
+               "type": "prometheus",
+               "uid": "${datasource}"
+            },
+            "includeAll": true,
+            "multi": true,
+            "name": "pod",
+            "query": "label_values(jvm_cpu_time_seconds_total{namespace=\"$namespace\"}, pod)",
+            "refresh": 2,
+            "type": "query"
+         },
+         {
+            "datasource": {
+               "type": "prometheus",
+               "uid": "${datasource}"
+            },
+            "includeAll": true,
+            "multi": true,
+            "name": "container",
+            "query": "label_values(jvm_cpu_time_seconds_total{namespace=\"$namespace\", pod=~\"$pod\"}, container)",
+            "refresh": 2,
+            "type": "query"
+         },
+         {
+            "datasource": {
+               "type": "prometheus",
+               "uid": "${datasource}"
+            },
+            "name": "jvm",
+            "query": "label_values(jvm_cpu_time_seconds_total{namespace=\"$namespace\", pod=~\"$pod\", container=~\"$container\"}, job)",
+            "refresh": 2,
+            "type": "query"
+         },
+         {
+            "datasource": {
+               "type": "prometheus",
+               "uid": "${datasource}"
+            },
+            "hide": 2,
+            "includeAll": true,
+            "name": "jvm_mempool",
+            "query": "label_values(jvm_memory_used_bytes{namespace=\"$namespace\", pod=~\"$pod\", container=~\"$container\", job=\"$jvm\", jvm_memory_pool_name!~\".*nmethods.*\"}, jvm_memory_pool_name)",
+            "refresh": 2,
+            "type": "query"
+         }
+      ]
+   },
+   "time": {
+      "from": "now-15m",
+      "to": "now"
+   },
+   "timepicker": {
+      "refresh_intervals": [
+         "5s",
+         "10s",
+         "30s",
+         "1m",
+         "5m",
+         "15m",
+         "30m",
+         "1h",
+         "2h",
+         "1d"
+      ]
+   },
+   "timezone": "browser",
+   "title": "JVM Metrics",
+   "uid": "digital-asset-jvm-metrics"
+}

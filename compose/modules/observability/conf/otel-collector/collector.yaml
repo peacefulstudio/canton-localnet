@@ -1,0 +1,124 @@
+# Copyright (c) 2024, Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+receivers:
+  # Metrics, logs, traces via OTLP
+  otlp:
+    protocols:
+      grpc:
+        endpoint: "0.0.0.0:${env:OTLP_LISTEN_PORT}"
+
+  # Logs (non-OTLP)
+  fluent_forward:
+    endpoint: "0.0.0.0:${env:FLUENTD_LISTEN_PORT}"
+
+  # Metrics (non-OTLP)
+  prometheus:
+    config:
+      global:
+        scrape_protocols: [ "PrometheusProto", "OpenMetricsText1.0.0", "OpenMetricsText0.0.1", "PrometheusText0.0.4" ]
+        scrape_native_histograms: true
+        scrape_interval: 10s
+      scrape_configs:
+        - job_name: otel-collector
+          static_configs:
+            - targets: [ "localhost:8888" ]
+        - job_name: cadvisor
+          static_configs:
+            - targets: [ "cadvisor:${env:CADVISOR_METRICS_PORT}" ]
+        - job_name: splice
+          static_configs:
+            - targets: [ "splice:${env:CANTON_METRICS_PORT}" ]
+        - job_name: canton
+          static_configs:
+            - targets: [ "canton:${env:CANTON_METRICS_PORT}" ]
+        - job_name: nginx-sv
+          static_configs:
+            - targets: [ "nginx-metrics:${env:NGINX_EXPORTER_METRICS_PORT}" ]
+        - job_name: postgres
+          static_configs:
+            - targets: [ "postgres-metrics:${env:POSTGRES_EXPORTER_METRICS_PORT}" ]
+
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+
+  transform/enrich_fluentd_logs:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        statements:
+          # Promote container name to service name
+          - set(resource.attributes["service.name"], Substring(attributes["container_name"], 1, Len(attributes["container_name"]) - 1))
+
+  transform/enrich_canton_json_logs:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        conditions:
+          - IsMatch(body, "^\\{.*?\\}$$")
+        statements:
+          # Parse JSON logs
+          - merge_maps(cache, ParseJSON(body), "upsert")
+          # Extract trace ID
+          - set(attributes["trace_id"], cache["trace-id"])
+          # Carry correct timestamp forward:
+          - set(time_unix_nano, UnixNano(Time(cache["@timestamp"], "%FT%T.%LZ")))
+          # Unpack logger name and fish for actual service name:
+          # c.d.c.t.TopologyStateProcessorX:participant=participant2/domainId=quickstart::12202939e76c/store=quickstart::12202939e76c
+          - set(cache["__service_name__"], cache["logger_name"]) where IsMatch(cache["logger_name"], "^(?:.*?):(?:.*?)=(.*?)(?:\\/.*)?$$")
+          - replace_pattern(cache["__service_name__"], "^(?:.*?):(?:.*?)=(.*?)(?:\\/.*)?$$", "$$1")
+          - set(resource.attributes["service.name"], cache["__service_name__"]) where cache["__service_name__"] != nil
+
+exporters:
+  # For troubleshooting Collector and pipelines themselves
+  debug:
+#    verbosity: normal
+    verbosity: detailed
+
+  # Metrics
+  otlphttp/prometheus:
+    endpoint: "http://prometheus:${env:PROMETHEUS_PORT}/api/v1/otlp"
+    tls:
+      insecure: true
+
+  # Logs
+  otlphttp/loki:
+    endpoint: "http://loki:${env:LOKI_PORT}/otlp"
+    tls:
+      insecure: true
+
+  # Traces
+  otlp/tempo:
+    endpoint: "http://tempo:${env:TEMPO_PORT}"
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    metrics:
+      receivers: [ otlp, prometheus ]
+      processors: [ batch ]
+      exporters: [ otlphttp/prometheus ]
+    traces:
+      receivers: [ otlp ]
+      processors: [ batch ]
+      exporters: [ otlp/tempo ]
+    logs/1:
+      receivers: [ otlp ]
+      processors: [ batch ]
+      exporters: [ otlphttp/loki ]
+    logs/2:
+      receivers: [ fluent_forward ]
+      processors: [ transform/enrich_fluentd_logs, transform/enrich_canton_json_logs, batch ]
+      exporters: [ otlphttp/loki ]
+
+  # For troubleshooting Collector and pipelines themselves
+  telemetry:
+    metrics:
+      level: normal
+#      level: detailed
+    logs:
+      level: info
+#      level: debug

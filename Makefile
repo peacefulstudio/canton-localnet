@@ -1,0 +1,130 @@
+# Copyright (c) 2026 Peaceful Studio OÜ
+# SPDX-License-Identifier: Apache-2.0
+
+.DEFAULT_GOAL := help
+
+COMPOSE_DIR := compose
+LOCALNET_DIR := $(CURDIR)/$(COMPOSE_DIR)/modules/localnet
+KEYCLOAK_DIR := $(CURDIR)/$(COMPOSE_DIR)/modules/keycloak
+PQS_DIR      := $(CURDIR)/$(COMPOSE_DIR)/modules/pqs
+OBS_DIR      := $(CURDIR)/$(COMPOSE_DIR)/modules/observability
+ONBOARD_DIR  := $(CURDIR)/$(COMPOSE_DIR)/modules/splice-onboarding
+
+# Module compose files reference ${MODULES_DIR} / ${LOCALNET_DIR} for volume
+# mounts and extension env_files; export absolute defaults so docker compose
+# resolves bind-mount paths regardless of the caller's working directory.
+export MODULES_DIR  ?= $(CURDIR)/$(COMPOSE_DIR)/modules
+export LOCALNET_DIR
+
+# AUTH_MODE selects the auth profile applied to the stack:
+#   oauth2  — Keycloak realms issue tokens (matches shared VM and production)
+#   secret  — Canton's shared-secret JWT (undocumented escape hatch; not CI-tested)
+AUTH_MODE ?= oauth2
+
+# RES=on (default) applies per-module mem_limit / JVM heap caps so the stack
+# fits comfortably on a 16 GB dev machine. Set RES=off to remove caps.
+RES ?= on
+
+# Base stack: always present.
+COMPOSE_FILES := -f $(LOCALNET_DIR)/compose.yaml \
+                 -f $(ONBOARD_DIR)/compose.yaml
+ENV_FILES     := --env-file $(COMPOSE_DIR)/.env.defaults \
+                 --env-file $(LOCALNET_DIR)/compose.env \
+                 --env-file $(LOCALNET_DIR)/env/common.env
+PROFILES      := --profile app-provider --profile app-user --profile sv
+
+ifeq ($(RES),on)
+  COMPOSE_FILES += -f $(LOCALNET_DIR)/resource-constraints.yaml \
+                   -f $(ONBOARD_DIR)/resource-constraints.yaml
+endif
+
+ifeq ($(AUTH_MODE),oauth2)
+  COMPOSE_FILES += -f $(KEYCLOAK_DIR)/compose.yaml
+  ENV_FILES    += --env-file $(KEYCLOAK_DIR)/compose.env
+  PROFILES     += --profile keycloak
+  ifeq ($(RES),on)
+    COMPOSE_FILES += -f $(KEYCLOAK_DIR)/resource-constraints.yaml
+  endif
+endif
+
+# Optional PQS layer — opt in via `make up PQS=on`.
+ifeq ($(PQS),on)
+  COMPOSE_FILES += -f $(PQS_DIR)/compose.yaml
+  ENV_FILES    += --env-file $(PQS_DIR)/compose.env
+  PROFILES     += --profile pqs-app-provider
+  ifeq ($(RES),on)
+    COMPOSE_FILES += -f $(PQS_DIR)/resource-constraints.yaml
+  endif
+endif
+
+# `DOCKER_COMPOSE_APP` is the application stack alone — used by stop-app /
+# clean-app to leave the observability stack running across iterations.
+DOCKER_COMPOSE_APP := docker compose $(COMPOSE_FILES) $(ENV_FILES) $(PROFILES)
+
+# Optional observability layer (Grafana / Prometheus / Loki / Tempo / cAdvisor)
+# — opt in via `make up OBS=on`. Grafana lands on http://localhost:3030.
+OBS_COMPOSE_FILES :=
+OBS_ENV_FILES     :=
+OBS_PROFILES      :=
+ifeq ($(OBS),on)
+  OBS_COMPOSE_FILES += -f $(OBS_DIR)/compose.yaml \
+                       -f $(OBS_DIR)/observability.yaml
+  ifeq ($(shell uname -s),Darwin)
+    OBS_COMPOSE_FILES += -f $(OBS_DIR)/cadvisor-darwin.yaml
+  else
+    OBS_COMPOSE_FILES += -f $(OBS_DIR)/cadvisor-linux.yaml
+  endif
+  OBS_ENV_FILES += --env-file $(OBS_DIR)/compose.env
+  OBS_PROFILES  += --profile observability
+  ifeq ($(PQS),on)
+    OBS_COMPOSE_FILES += -f $(PQS_DIR)/observability.yaml
+  endif
+endif
+
+DOCKER_COMPOSE := docker compose $(COMPOSE_FILES) $(OBS_COMPOSE_FILES) \
+                  $(ENV_FILES) $(OBS_ENV_FILES) $(PROFILES) $(OBS_PROFILES)
+
+.PHONY: help
+help: ## Show this help
+	@awk 'BEGIN{FS=":.*##"; printf "Usage:\n  make \033[36m<target>\033[0m\n\nTargets:\n"} \
+	      /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+
+.PHONY: up
+up: ## Start LocalNet (auth mode: $(AUTH_MODE))
+	$(DOCKER_COMPOSE) up -d
+
+.PHONY: down
+down: ## Stop LocalNet and remove containers
+	$(DOCKER_COMPOSE) down --remove-orphans
+
+.PHONY: stop-app
+stop-app: ## Stop the app stack but leave observability containers running (only meaningful with OBS=on)
+	$(DOCKER_COMPOSE_APP) down
+
+.PHONY: clean
+clean: ## Stop LocalNet and remove containers + volumes
+	$(DOCKER_COMPOSE) down -v --remove-orphans
+
+.PHONY: clean-app
+clean-app: ## Like `clean`, but leave observability running
+	$(DOCKER_COMPOSE_APP) down -v
+
+.PHONY: status
+status: ## Show container status
+	$(DOCKER_COMPOSE) ps
+
+.PHONY: logs
+logs: ## Tail logs
+	$(DOCKER_COMPOSE) logs -f
+
+.PHONY: wait-ready
+wait-ready: ## Poll JSON Ledger API until participant accepts requests
+	$(COMPOSE_DIR)/scripts/wait-ready.sh
+
+.PHONY: vendor
+vendor: ## Re-fetch splice modules pinned in compose/links.csv
+	cd $(COMPOSE_DIR) && ./scripts/vendor.sh
+
+.PHONY: config
+config: ## Print the resolved compose configuration (debugging)
+	$(DOCKER_COMPOSE) config

@@ -1,0 +1,10 @@
+.tmp/
+compose/.tmp/
+compose/.env.local
+.env.local
+
+.DS_Store
+
+# IDE
+.idea/
+.vscode/

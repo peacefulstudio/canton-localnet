@@ -4,6 +4,41 @@
 
 Shared, reusable Canton LocalNet artifact (compose + xUnit/Go fixtures + CLI + AWS terraform) for Peaceful Studio repos.
 
+## Quickstart
+
+Boot a complete Canton LocalNet (Splice 0.6.2) on your machine:
+
+```bash
+make up           # docker compose up -d, OAuth2 mode by default
+make wait-ready   # poll the JSON Ledger API until participant accepts requests
+make down         # stop the stack and remove containers
+```
+
+JSON Ledger API endpoints once ready (see `compose/modules/localnet/env/common.env`):
+
+| Profile        | Port |
+|----------------|------|
+| app-provider   | 3975 |
+| app-user       | 2975 |
+| sv             | 4975 |
+
+Optional layers:
+
+```bash
+make up PQS=on              # opt in to PQS app-provider profile
+make up OBS=on              # add Grafana (http://localhost:3030) + Prometheus / Loki / Tempo / cAdvisor
+make up RES=off             # remove the default mem_limit / JVM heap caps
+make up AUTH_MODE=secret    # shared-secret JWT (escape hatch; not CI-tested)
+```
+
+When iterating with observability on, `make stop-app` (and `make clean-app`)
+restart the application stack while leaving Grafana / Prometheus / Loki / Tempo
+running so dashboards stay populated.
+
+Prerequisites: Docker ≥ 27, Docker Compose ≥ 2.27. The compose stack is
+vendored into `compose/modules/` from `hyperledger-labs/splice` at the SHA
+pinned in `compose/splice.sha`. Re-vendor with `make vendor`.
+
 ## Project stewardship
 
 `canton-localnet` is currently developed and maintained by **Peaceful Studio

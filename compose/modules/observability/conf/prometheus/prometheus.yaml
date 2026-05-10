@@ -1,0 +1,18 @@
+# Copyright (c) 2024, Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+global:
+  scrape_interval: 10s
+
+storage:
+  tsdb:
+    # OTel Collector's deltatocumulative processor emits cumulative samples
+    # slightly out of order across batches; Prometheus 3 rejects them by
+    # default. 10m matches the upstream OTLP-receiver recommendation and
+    # still surfaces real clock-skew (samples older than 10m are rejected).
+    out_of_order_time_window: 10m
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: [ localhost:9090 ]

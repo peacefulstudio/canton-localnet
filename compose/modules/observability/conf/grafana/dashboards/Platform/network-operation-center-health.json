@@ -1,0 +1,659 @@
+{
+   "graphTooltip": 1,
+   "panels": [
+      {
+         "collapsed": true,
+         "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0
+         },
+         "id": 1,
+         "panels": [
+            {
+               "datasource": {
+                  "type": "datasource",
+                  "uid": "-- Mixed --"
+               },
+               "fieldConfig": {
+                  "defaults": {
+                     "custom": {
+                        "axisSoftMin": 0,
+                        "showPoints": "never"
+                     },
+                     "unit": "cps"
+                  }
+               },
+               "gridPos": {
+                  "h": 8,
+                  "w": 8,
+                  "x": 0,
+                  "y": 0
+               },
+               "id": 2,
+               "interval": "10s",
+               "options": {
+                  "tooltip": {
+                     "mode": "multi"
+                  }
+               },
+               "pluginVersion": "v11.0.0",
+               "targets": [
+                  {
+                     "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                     },
+                     "expr": "sum by(status) (rate(daml_participant_api_indexer_events_total{namespace=\"$namespace\", event_type=\"transaction\"}[$__rate_interval]))",
+                     "legendFormat": "__auto"
+                  }
+               ],
+               "title": "Transactions",
+               "type": "timeseries"
+            },
+            {
+               "datasource": {
+                  "type": "datasource",
+                  "uid": "-- Mixed --"
+               },
+               "fieldConfig": {
+                  "defaults": {
+                     "custom": {
+                        "axisSoftMin": 0
+                     },
+                     "unit": "cps"
+                  }
+               },
+               "gridPos": {
+                  "h": 8,
+                  "w": 8,
+                  "x": 8,
+                  "y": 0
+               },
+               "id": 3,
+               "interval": "10s",
+               "options": {
+                  "legend": {
+                     "showLegend": false
+                  },
+                  "orientation": "vertical",
+                  "stacking": "normal",
+                  "xTickLabelSpacing": 100
+               },
+               "pluginVersion": "v11.0.0",
+               "targets": [
+                  {
+                     "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                     },
+                     "expr": "rate(daml_participant_api_indexer_events_total{namespace=\"$namespace\"}[$__rate_interval])",
+                     "legendFormat": "{{application_id}}:{{event_type}}"
+                  }
+               ],
+               "title": "Processed Events",
+               "type": "barchart"
+            },
+            {
+               "datasource": {
+                  "type": "datasource",
+                  "uid": "-- Mixed --"
+               },
+               "fieldConfig": {
+                  "defaults": {
+                     "custom": {
+                        "axisSoftMin": 0
+                     },
+                     "unit": "cps"
+                  }
+               },
+               "gridPos": {
+                  "h": 8,
+                  "w": 8,
+                  "x": 16,
+                  "y": 0
+               },
+               "id": 4,
+               "interval": "10s",
+               "options": {
+                  "legend": {
+                     "showLegend": false
+                  },
+                  "orientation": "vertical",
+                  "stacking": "normal",
+                  "xTickLabelSpacing": 100
+               },
+               "pluginVersion": "v11.0.0",
+               "targets": [
+                  {
+                     "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                     },
+                     "expr": "rate(daml_participant_api_indexer_metered_events_total{namespace=\"$namespace\"}[$__rate_interval])",
+                     "legendFormat": "{{application_id}}"
+                  }
+               ],
+               "title": "Metered Events",
+               "type": "barchart"
+            }
+         ],
+         "title": "Participant Received Events",
+         "type": "row"
+      },
+      {
+         "collapsed": true,
+         "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0
+         },
+         "id": 5,
+         "panels": [
+            {
+               "datasource": {
+                  "type": "datasource",
+                  "uid": "-- Mixed --"
+               },
+               "fieldConfig": {
+                  "defaults": {
+                     "custom": {
+                        "axisSoftMin": 0,
+                        "showPoints": "never"
+                     },
+                     "unit": "reqps"
+                  }
+               },
+               "gridPos": {
+                  "h": 8,
+                  "w": 8,
+                  "x": 0,
+                  "y": 0
+               },
+               "id": 6,
+               "interval": "10s",
+               "options": {
+                  "legend": {
+                     "calcs": [ ],
+                     "displayMode": "list",
+                     "placement": "bottom",
+                     "showLegend": false
+                  },
+                  "tooltip": {
+                     "mode": "multi"
+                  }
+               },
+               "pluginVersion": "v11.0.0",
+               "targets": [
+                  {
+                     "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                     },
+                     "expr": "sum(rate(daml_grpc_server_handled_total{namespace=\"$namespace\"}[$__rate_interval]))",
+                     "legendFormat": "all gRPC requests"
+                  }
+               ],
+               "title": "Rate | All gRPC Requests",
+               "type": "timeseries"
+            },
+            {
+               "datasource": {
+                  "type": "datasource",
+                  "uid": "-- Mixed --"
+               },
+               "fieldConfig": {
+                  "defaults": {
+                     "custom": {
+                        "axisSoftMin": 0
+                     },
+                     "decimals": 0,
+                     "max": 1,
+                     "min": 0
+                  }
+               },
+               "gridPos": {
+                  "h": 8,
+                  "w": 8,
+                  "x": 8,
+                  "y": 0
+               },
+               "id": 7,
+               "interval": "10s",
+               "options": {
+                  "orientation": "vertical",
+                  "stacking": "percent",
+                  "xField": "Time",
+                  "xTickLabelSpacing": -100
+               },
+               "pluginVersion": "v11.0.0",
+               "targets": [
+                  {
+                     "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                     },
+                     "expr": "sum by(grpc_code) (rate(daml_grpc_server_handled_total{namespace=\"$namespace\"}[$__rate_interval]))",
+                     "legendFormat": "__auto"
+                  }
+               ],
+               "title": "Return Code | All gRPC Requests",
+               "type": "barchart"
+            },
+            {
+               "datasource": {
+                  "type": "datasource",
+                  "uid": "-- Mixed --"
+               },
+               "fieldConfig": {
+                  "defaults": {
+                     "custom": {
+                        "axisSoftMin": 0,
+                        "showPoints": "never"
+                     },
+                     "unit": "s"
+                  }
+               },
+               "gridPos": {
+                  "h": 8,
+                  "w": 8,
+                  "x": 16,
+                  "y": 0
+               },
+               "id": 8,
+               "interval": "10s",
+               "options": {
+                  "tooltip": {
+                     "mode": "multi"
+                  }
+               },
+               "pluginVersion": "v11.0.0",
+               "targets": [
+                  {
+                     "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                     },
+                     "expr": "histogram_quantile(0.50, sum by(namespace) (rate(daml_grpc_server_duration_seconds{namespace=\"$namespace\"}[$__rate_interval])))",
+                     "legendFormat": "p50"
+                  },
+                  {
+                     "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                     },
+                     "expr": "histogram_quantile(0.90, sum by(namespace) (rate(daml_grpc_server_duration_seconds{namespace=\"$namespace\"}[$__rate_interval])))",
+                     "legendFormat": "p90"
+                  },
+                  {
+                     "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                     },
+                     "expr": "histogram_quantile(0.95, sum by(namespace) (rate(daml_grpc_server_duration_seconds{namespace=\"$namespace\"}[$__rate_interval])))",
+                     "legendFormat": "p95"
+                  },
+                  {
+                     "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                     },
+                     "expr": "histogram_quantile(0.99, sum by(namespace) (rate(daml_grpc_server_duration_seconds{namespace=\"$namespace\"}[$__rate_interval])))",
+                     "legendFormat": "p99"
+                  }
+               ],
+               "title": "Latency | All gRPC Requests",
+               "type": "timeseries"
+            }
+         ],
+         "title": "gRPC Endpoints",
+         "type": "row"
+      },
+      {
+         "collapsed": true,
+         "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0
+         },
+         "id": 9,
+         "panels": [
+            {
+               "datasource": {
+                  "type": "datasource",
+                  "uid": "-- Mixed --"
+               },
+               "fieldConfig": {
+                  "defaults": {
+                     "custom": {
+                        "axisSoftMin": 0,
+                        "showPoints": "never"
+                     },
+                     "unit": "cps"
+                  }
+               },
+               "gridPos": {
+                  "h": 8,
+                  "w": 8,
+                  "x": 0,
+                  "y": 0
+               },
+               "id": 10,
+               "interval": "10s",
+               "options": {
+                  "legend": {
+                     "calcs": [ ],
+                     "displayMode": "list",
+                     "placement": "bottom",
+                     "showLegend": false
+                  },
+                  "tooltip": {
+                     "mode": "multi"
+                  }
+               },
+               "pluginVersion": "v11.0.0",
+               "targets": [
+                  {
+                     "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                     },
+                     "expr": "topk(5, sum by(application_id) (rate(daml_participant_api_indexer_events_total{namespace=\"$namespace\", status=\"rejected\"}[$__rate_interval])))",
+                     "legendFormat": "{{application_id}}"
+                  }
+               ],
+               "title": "Rejected Transactions | Top 5 Application IDs",
+               "type": "timeseries"
+            },
+            {
+               "datasource": {
+                  "type": "datasource",
+                  "uid": "-- Mixed --"
+               },
+               "fieldConfig": {
+                  "defaults": {
+                     "custom": {
+                        "axisSoftMin": 0,
+                        "showPoints": "never"
+                     },
+                     "unit": "cps"
+                  }
+               },
+               "gridPos": {
+                  "h": 8,
+                  "w": 8,
+                  "x": 8,
+                  "y": 0
+               },
+               "id": 11,
+               "interval": "10s",
+               "options": {
+                  "legend": {
+                     "calcs": [ ],
+                     "displayMode": "list",
+                     "placement": "bottom",
+                     "showLegend": false
+                  },
+                  "tooltip": {
+                     "mode": "multi"
+                  }
+               },
+               "pluginVersion": "v11.0.0",
+               "targets": [
+                  {
+                     "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                     },
+                     "expr": "topk(5, sum by(grpc_service_name, grpc_method_name) (rate(daml_grpc_server_handled_total{namespace=\"$namespace\", grpc_code!=\"OK\"}[$__rate_interval])))",
+                     "legendFormat": "{{grpc_service_name}}:{{grpc_method_name}}"
+                  }
+               ],
+               "title": "gRPC Errors | Top 5 Endpoints",
+               "type": "timeseries"
+            }
+         ],
+         "title": "Top 5 Failures",
+         "type": "row"
+      },
+      {
+         "collapsed": true,
+         "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0
+         },
+         "id": 12,
+         "panels": [
+            {
+               "datasource": {
+                  "type": "datasource",
+                  "uid": "-- Mixed --"
+               },
+               "gridPos": {
+                  "h": 8,
+                  "w": 8,
+                  "x": 0,
+                  "y": 0
+               },
+               "id": 13,
+               "options": {
+                  "content": "# Detailed Dashboards\n\n* Events: [Received](/d/digital-asset-received-events) / [Metered](/d/digital-asset-metered-events)\n* [Components' Status](/d/digital-asset-health)\n* [gRPC Endpoints](/d/digital-asset-grpc-endpoints)\n* [TODO HTTP Endpoints](/d/TODO)\n* [JVM Metrics](/d/digital-asset-jvm-metrics)\n* [JVM Executor Services](/d/digital-asset-jvm-executor-services)",
+                  "mode": "markdown"
+               },
+               "pluginVersion": "v11.0.0",
+               "title": null,
+               "type": "text"
+            },
+            {
+               "datasource": {
+                  "type": "datasource",
+                  "uid": "-- Mixed --"
+               },
+               "fieldConfig": {
+                  "defaults": {
+                     "custom": {
+                        "fillOpacity": 71,
+                        "lineWidth": 0
+                     },
+                     "mappings": [
+                        {
+                           "options": {
+                              "0": {
+                                 "index": 1,
+                                 "text": "inactive"
+                              },
+                              "1": {
+                                 "index": 0,
+                                 "text": "active"
+                              }
+                           },
+                           "type": "value"
+                        }
+                     ],
+                     "max": 1,
+                     "min": 0,
+                     "noValue": "0",
+                     "thresholds": {
+                        "steps": [
+                           {
+                              "color": "dark-red",
+                              "value": null
+                           },
+                           {
+                              "color": "green",
+                              "value": 1
+                           }
+                        ]
+                     }
+                  }
+               },
+               "gridPos": {
+                  "h": 8,
+                  "w": 8,
+                  "x": 8,
+                  "y": 0
+               },
+               "id": 14,
+               "interval": "10s",
+               "options": {
+                  "colWidth": 1,
+                  "legend": {
+                     "showLegend": false
+                  },
+                  "rowHeight": 0.80000000000000004,
+                  "showValue": "never"
+               },
+               "pluginVersion": "v11.0.0",
+               "targets": [
+                  {
+                     "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                     },
+                     "expr": "daml_health_status{namespace=\"$namespace\"}",
+                     "legendFormat": "{{component}}"
+                  }
+               ],
+               "title": "Components' Status",
+               "type": "status-history"
+            },
+            {
+               "datasource": {
+                  "type": "datasource",
+                  "uid": "-- Mixed --"
+               },
+               "fieldConfig": {
+                  "defaults": {
+                     "custom": {
+                        "axisSoftMin": 0,
+                        "showPoints": "never"
+                     },
+                     "unit": "short"
+                  },
+                  "overrides": [
+                     {
+                        "matcher": {
+                           "id": "byRegexp",
+                           "options": "/.*\\(time\\)/"
+                        },
+                        "properties": [
+                           {
+                              "id": "unit",
+                              "value": "s"
+                           },
+                           {
+                              "id": "decimals",
+                              "value": null
+                           },
+                           {
+                              "id": "custom.fillOpacity",
+                              "value": 10
+                           }
+                        ]
+                     }
+                  ]
+               },
+               "gridPos": {
+                  "h": 8,
+                  "w": 8,
+                  "x": 16,
+                  "y": 0
+               },
+               "id": 15,
+               "interval": "10s",
+               "options": {
+                  "tooltip": {
+                     "mode": "multi"
+                  }
+               },
+               "pluginVersion": "v11.0.0",
+               "targets": [
+                  {
+                     "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                     },
+                     "expr": "sum(idelta(jvm_gc_duration_seconds_count{namespace=\"$namespace\"}[$__rate_interval])) by(jvm_gc_name, job)",
+                     "legendFormat": "[{{job}}] {{jvm_gc_name}} (count)"
+                  },
+                  {
+                     "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                     },
+                     "expr": "sum(idelta(jvm_gc_duration_seconds_sum{namespace=\"$namespace\"}[$__rate_interval])) by(jvm_gc_name, job)",
+                     "legendFormat": "[{{job}}] {{jvm_gc_name}} (time)"
+                  },
+                  {
+                     "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                     },
+                     "expr": "histogram_count(sum(rate(jvm_gc_duration_seconds{namespace=\"$namespace\"}[$__rate_interval])) by(jvm_gc_name, job))",
+                     "legendFormat": "[{{job}}] {{jvm_gc_name}} (count)"
+                  },
+                  {
+                     "datasource": {
+                        "type": "prometheus",
+                        "uid": "${datasource}"
+                     },
+                     "expr": "histogram_sum(sum(rate(jvm_gc_duration_seconds{namespace=\"$namespace\"}[$__rate_interval])) by(jvm_gc_name, job))",
+                     "legendFormat": "[{{job}}] {{jvm_gc_name}} (time)"
+                  }
+               ],
+               "title": "JVM Garbage Collection",
+               "type": "timeseries"
+            }
+         ],
+         "title": "Misc.",
+         "type": "row"
+      }
+   ],
+   "refresh": "10s",
+   "schemaVersion": 39,
+   "tags": [
+      "availability"
+   ],
+   "templating": {
+      "list": [
+         {
+            "hide": 2,
+            "name": "datasource",
+            "query": "prometheus",
+            "type": "datasource"
+         },
+         {
+            "datasource": {
+               "type": "prometheus",
+               "uid": "${datasource}"
+            },
+            "name": "namespace",
+            "query": "label_values(daml_health_status, namespace)",
+            "refresh": 2,
+            "type": "query"
+         }
+      ]
+   },
+   "time": {
+      "from": "now-15m",
+      "to": "now"
+   },
+   "timepicker": {
+      "refresh_intervals": [
+         "5s",
+         "10s",
+         "30s",
+         "1m",
+         "5m",
+         "15m",
+         "30m",
+         "1h",
+         "2h",
+         "1d"
+      ]
+   },
+   "timezone": "browser",
+   "title": "Network Operation Center Health",
+   "uid": "digital-asset-noc-health"
+}
