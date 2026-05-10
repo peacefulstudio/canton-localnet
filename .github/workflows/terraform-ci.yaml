@@ -1,0 +1,110 @@
+name: terraform-ci
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'terraform/**'
+      - '.github/workflows/terraform-ci.yaml'
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'terraform/**'
+      - '.github/workflows/terraform-ci.yaml'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  validate-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.9"
+
+      - name: Terraform fmt check
+        working-directory: terraform
+        run: terraform fmt -check -recursive
+
+      - name: Discover modules
+        id: modules
+        working-directory: terraform
+        run: |
+          set -euo pipefail
+          dirs=""
+          if [ -d modules ]; then
+            dirs=$(find modules -maxdepth 1 -mindepth 1 -type d 2>/dev/null || true)
+          fi
+          if [ -z "$dirs" ]; then
+            dirs=$(find . -maxdepth 2 -name '*.tf' -not -path './tests/*' -printf '%h\n' 2>/dev/null | sort -u || true)
+          fi
+          if [ -z "$dirs" ]; then
+            echo "No Terraform modules discovered."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Modules to validate:"
+          printf '  %s\n' $dirs
+          {
+            echo "found=true"
+            echo "dirs<<EOF"
+            printf '%s\n' $dirs
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Validate modules
+        if: steps.modules.outputs.found == 'true'
+        working-directory: terraform
+        env:
+          MODULE_DIRS: ${{ steps.modules.outputs.dirs }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r dir; do
+            [ -z "$dir" ] && continue
+            echo "::group::validate $dir"
+            terraform -chdir="$dir" init -backend=false
+            terraform -chdir="$dir" validate
+            echo "::endgroup::"
+          done <<< "$MODULE_DIRS"
+
+      - name: Run terraform tests
+        id: tests
+        working-directory: terraform
+        run: |
+          set -euo pipefail
+          if find . -name '*.tftest.hcl' -not -path '*/.terraform/*' | grep -q .; then
+            terraform init -backend=false
+            terraform test -verbose | tee test-output.txt
+            echo "ran=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No .tftest.hcl files found — skipping terraform test."
+            echo "ran=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build test summary
+        if: steps.tests.outputs.ran == 'true'
+        working-directory: terraform
+        run: |
+          set -euo pipefail
+          {
+            echo "## Terraform test results"
+            echo
+            echo '```'
+            tail -60 test-output.txt
+            echo '```'
+          } > test-summary.md
+          cat test-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Add test summary PR comment
+        if: steps.tests.outputs.ran == 'true' && github.event_name == 'pull_request' && github.actor != 'dependabot[bot]'
+        uses: marocchino/sticky-pull-request-comment@v3
+        with:
+          recreate: true
+          header: terraform-tests
+          path: terraform/test-summary.md

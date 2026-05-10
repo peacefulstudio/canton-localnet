@@ -1,0 +1,132 @@
+name: go-ci
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'go/**'
+      - 'cli/**'
+      - '.github/workflows/go-ci.yaml'
+      - '.github/actions/discover-go-modules/**'
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'go/**'
+      - 'cli/**'
+      - '.github/workflows/go-ci.yaml'
+      - '.github/actions/discover-go-modules/**'
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
+
+      - name: Discover Go modules
+        id: discover
+        uses: ./.github/actions/discover-go-modules
+
+      - name: Build
+        if: steps.discover.outputs.found == 'true'
+        env:
+          MODULES: ${{ steps.discover.outputs.modules }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r mod; do
+            [ -z "$mod" ] && continue
+            echo "::group::build $mod"
+            (cd "$mod" && go build ./...)
+            echo "::endgroup::"
+          done <<< "$MODULES"
+
+      - name: Test with coverage
+        if: steps.discover.outputs.found == 'true'
+        env:
+          MODULES: ${{ steps.discover.outputs.modules }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/coverage"
+          while IFS= read -r mod; do
+            [ -z "$mod" ] && continue
+            safe=$(echo "$mod" | tr '/' '_')
+            echo "::group::test $mod"
+            (cd "$mod" && go test -v -race -covermode=atomic -coverprofile="$GITHUB_WORKSPACE/coverage/$safe.out" ./...)
+            echo "::endgroup::"
+          done <<< "$MODULES"
+
+      - name: Merge coverage to Cobertura
+        if: steps.discover.outputs.found == 'true'
+        run: |
+          set -euo pipefail
+          go install github.com/boumenot/gocover-cobertura@latest
+          mkdir -p coverage/merged
+          {
+            echo "mode: atomic"
+            awk 'FNR>1 && !/^mode:/' coverage/*.out
+          } > coverage/all.out
+          gocover-cobertura < coverage/all.out > coverage/merged/Cobertura.xml
+
+      - name: Code Coverage Summary Report
+        if: steps.discover.outputs.found == 'true'
+        uses: irongut/CodeCoverageSummary@v1.3.0
+        with:
+          filename: 'coverage/merged/Cobertura.xml'
+          badge: true
+          format: 'markdown'
+          output: 'both'
+
+      - name: Add Coverage PR Comment
+        if: steps.discover.outputs.found == 'true' && github.event_name == 'pull_request' && github.actor != 'dependabot[bot]'
+        uses: marocchino/sticky-pull-request-comment@v3
+        with:
+          recreate: true
+          header: go-coverage
+          path: code-coverage-results.md
+
+      - name: Write to Job Summary
+        if: steps.discover.outputs.found == 'true'
+        run: cat code-coverage-results.md >> $GITHUB_STEP_SUMMARY
+
+  lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
+
+      - name: Discover Go modules
+        id: discover
+        uses: ./.github/actions/discover-go-modules
+
+      - name: Install golangci-lint
+        if: steps.discover.outputs.found == 'true'
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+      - name: Lint
+        if: steps.discover.outputs.found == 'true'
+        env:
+          MODULES: ${{ steps.discover.outputs.modules }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r mod; do
+            [ -z "$mod" ] && continue
+            echo "::group::lint $mod"
+            (cd "$mod" && golangci-lint run ./...)
+            echo "::endgroup::"
+          done <<< "$MODULES"
