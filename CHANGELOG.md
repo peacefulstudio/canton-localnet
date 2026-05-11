@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `cli/` — `canton-localnet` Go binary (module
+  `github.com/peacefulstudio/canton-localnet/cli`) with three
+  subcommands: `up`, `down`, `wait-ready`. `up`/`down` wrap the same
+  `docker compose -f ...` invocation as the top-level Makefile (same
+  modules, env-files, profiles, and `OBS` / `PQS` / `--auth` /
+  `--no-resource-limits` toggles); `wait-ready` polls the JSON Ledger
+  API readiness endpoint (default `http://localhost:3975/readyz`) with
+  a configurable `--timeout` (default 5 minutes), `--interval`, and
+  `--request-timeout`. Built with `spf13/cobra`. Internals:
+  `cli/internal/compose` (compose plan assembly, table-tested across
+  OBS / PQS / RES / auth toggles), `cli/internal/health` (httptest-tested
+  readiness polling with success + timeout + context-cancel coverage),
+  `cli/internal/repo` (walks up from `cwd` to find the
+  `compose/modules` root, overridable via `--repo-root`).
+- `.github/workflows/cli.yml` — matrix `go build ./cli/...` +
+  `go test -race ./cli/...` on `ubuntu-latest` and `macos-latest`, plus
+  a separate ubuntu-only smoke job that runs `canton-localnet up`,
+  `canton-localnet wait-ready --timeout 10m`, then
+  `canton-localnet down`. Third-party actions are SHA-pinned and every
+  `run:` block sets `-euo pipefail`.
 - `LICENSE` (Apache-2.0) and `NOTICE` files.
 - Community files: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`,
   `.github/ISSUE_TEMPLATE/` (bug report, feature request, config), and

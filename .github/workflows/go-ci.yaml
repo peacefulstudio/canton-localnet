@@ -64,30 +64,128 @@ jobs:
             echo "::endgroup::"
           done <<< "$MODULES"
 
-      - name: Merge coverage to Cobertura
+      - name: Convert coverage to Cobertura
         if: steps.discover.outputs.found == 'true'
+        env:
+          MODULES: ${{ steps.discover.outputs.modules }}
         run: |
           set -euo pipefail
-          go install github.com/boumenot/gocover-cobertura@latest
+          go install github.com/boumenot/gocover-cobertura@v1.4.0
           mkdir -p coverage/merged
-          {
-            echo "mode: atomic"
-            awk 'FNR>1 && !/^mode:/' coverage/*.out
-          } > coverage/all.out
-          gocover-cobertura < coverage/all.out > coverage/merged/Cobertura.xml
+          while IFS= read -r mod; do
+            [ -z "$mod" ] && continue
+            safe=$(echo "$mod" | tr '/' '_')
+            echo "::group::cobertura $mod"
+            (cd "$mod" && gocover-cobertura < "$GITHUB_WORKSPACE/coverage/$safe.out" > "$GITHUB_WORKSPACE/coverage/merged/$safe.xml")
+            echo "::endgroup::"
+          done <<< "$MODULES"
 
       - name: Code Coverage Summary Report
         if: steps.discover.outputs.found == 'true'
-        uses: irongut/CodeCoverageSummary@v1.3.0
+        uses: irongut/CodeCoverageSummary@51cc3a756ddcd398d447c044c02cb6aa83fdae95 # v1.3.0
         with:
-          filename: 'coverage/merged/Cobertura.xml'
+          filename: 'coverage/merged/*.xml'
           badge: true
           format: 'markdown'
           output: 'both'
 
+      - name: Augment coverage report with cyclomatic complexity
+        if: steps.discover.outputs.found == 'true'
+        env:
+          MODULES: ${{ steps.discover.outputs.modules }}
+        # Workaround: gocover-cobertura@v1.4.0 emits <class complexity="0"/>
+        # unconditionally, so every Complexity cell in CodeCoverageSummary's
+        # output renders 0. Compute gocyclo -avg per package (matched to the
+        # markdown row by Go import path) and once globally for the Summary
+        # row, then patch the markdown.
+        # Workaround: CodeCoverageSummary runs inside a Docker container that
+        # writes code-coverage-results.md as root, so chown it back before
+        # editing.
+        run: |
+          set -euo pipefail
+          sudo chown "$(id -un)" code-coverage-results.md
+          go install github.com/fzipp/gocyclo/cmd/gocyclo@v0.6.0
+          GOCYCLO="$(go env GOPATH)/bin/gocyclo"
+
+          DIRS=()
+          while IFS= read -r mod; do
+            [ -z "$mod" ] && continue
+            DIRS+=("$mod")
+          done <<< "$MODULES"
+
+          AVG=$("$GOCYCLO" -avg -ignore '_test\.go' "${DIRS[@]}" | awk '/^Average:/{print $2}')
+          if [ -z "${AVG}" ]; then
+            echo "::error::Failed to extract average complexity from gocyclo output"
+            exit 1
+          fi
+
+          while IFS= read -r mod; do
+            [ -z "$mod" ] && continue
+            modpath=$(awk '/^module /{print $2; exit}' "$mod/go.mod")
+            if [ -z "$modpath" ]; then
+              echo "::warning::No module path in $mod/go.mod"
+              continue
+            fi
+            while IFS= read -r pkgdir; do
+              pkgavg=$("$GOCYCLO" -avg -ignore '_test\.go' "$pkgdir" | awk '/^Average:/{print $2; exit}')
+              [ -z "$pkgavg" ] && continue
+              rel="${pkgdir#"$mod"}"
+              rel="${rel#/}"
+              if [ -z "$rel" ]; then
+                importpath="$modpath"
+              else
+                importpath="$modpath/$rel"
+              fi
+              awk -v pkg="$importpath" -v avg="$pkgavg" '
+                index($0, pkg " ") && /\| 0 \|/ { sub(/\| 0 \|/, "| " avg " |") }
+                { print }
+              ' code-coverage-results.md > code-coverage-results.md.tmp
+              mv code-coverage-results.md.tmp code-coverage-results.md
+            done < <(find "$mod" -type f -name '*.go' ! -name '*_test.go' -exec dirname {} \; | sort -u)
+          done <<< "$MODULES"
+
+          sed -i "s/| \*\*0\*\* |/| **${AVG}** |/g" code-coverage-results.md
+          if ! grep -qF "| **${AVG}** |" code-coverage-results.md; then
+            echo "::warning::Coverage report format changed — Summary Complexity not patched. Check CodeCoverageSummary version."
+          fi
+
+          : > /tmp/cov-func.txt
+          while IFS= read -r mod; do
+            [ -z "$mod" ] && continue
+            safe=$(echo "$mod" | tr '/' '_')
+            (cd "$mod" && go tool cover -func="$GITHUB_WORKSPACE/coverage/$safe.out") >> /tmp/cov-func.txt
+          done <<< "$MODULES"
+
+          {
+            echo
+            echo "<details>"
+            echo "<summary>Cyclomatic complexity — top 10 production functions (average ${AVG})</summary>"
+            echo
+            echo "| Complexity | Function | Location | Attended |"
+            echo "| ---------: | -------- | -------- | :------- |"
+            "$GOCYCLO" -top 10 -ignore '_test\.go' "${DIRS[@]}" | while read -r complexity package func location; do
+              file_line="${location%:*}"
+              if [[ ! "${file_line}" =~ \.go:[0-9]+$ ]]; then
+                echo "| ${complexity} | \`${func}\` | \`${location}\` | ? parse |"
+                continue
+              fi
+              if pct=$(grep -F "${file_line}:" /tmp/cov-func.txt | head -1 | awk 'NF{print $NF}') && [ -n "${pct}" ]; then
+                case "${pct}" in
+                  0.0%) attended="✗ 0.0%" ;;
+                  *)    attended="✓ ${pct}" ;;
+                esac
+              else
+                attended="? no-row"
+              fi
+              echo "| ${complexity} | \`${func}\` | \`${file_line}\` | ${attended} |"
+            done
+            echo
+            echo "</details>"
+          } >> code-coverage-results.md
+
       - name: Add Coverage PR Comment
         if: steps.discover.outputs.found == 'true' && github.event_name == 'pull_request' && github.actor != 'dependabot[bot]'
-        uses: marocchino/sticky-pull-request-comment@v3
+        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
         with:
           recreate: true
           header: go-coverage

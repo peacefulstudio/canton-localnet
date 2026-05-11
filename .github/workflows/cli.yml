@@ -1,0 +1,111 @@
+# Copyright (c) 2026 Peaceful Studio OÜ
+# SPDX-License-Identifier: Apache-2.0
+
+name: cli
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'cli/**'
+      - 'compose/**'
+      - '.github/workflows/cli.yml'
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'cli/**'
+      - 'compose/**'
+      - '.github/workflows/cli.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.26'
+          cache-dependency-path: cli/go.sum
+
+      - name: Build
+        working-directory: cli
+        run: |
+          set -euo pipefail
+          go build ./...
+
+      - name: Test
+        working-directory: cli
+        run: |
+          set -euo pipefail
+          go test -race ./...
+
+  smoke:
+    name: smoke (up + wait-ready + down)
+    runs-on: ubuntu-latest
+    env:
+      AUTH_MODE: oauth2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.26'
+          cache-dependency-path: cli/go.sum
+
+      - name: Show docker / compose versions
+        run: |
+          set -euo pipefail
+          docker version
+          docker compose version
+
+      - name: Build canton-localnet binary
+        working-directory: cli
+        run: |
+          set -euo pipefail
+          go build -o "${GITHUB_WORKSPACE}/canton-localnet" ./cmd/canton-localnet
+
+      - name: Bring up LocalNet via CLI
+        run: |
+          set -euo pipefail
+          ./canton-localnet up
+
+      - name: Wait for readiness via CLI
+        run: |
+          set -euo pipefail
+          ./canton-localnet wait-ready --timeout 10m --interval 5s
+
+      - name: Capture compose state on failure
+        if: failure()
+        run: |
+          set -euo pipefail
+          make status > status.txt 2>&1 || true
+          timeout 30 make logs > logs.txt 2>&1 || true
+
+      - name: Upload smoke diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: smoke-diagnostics
+          path: |
+            status.txt
+            logs.txt
+          if-no-files-found: warn
+
+      - name: Tear down via CLI
+        if: always()
+        run: |
+          set -euo pipefail
+          ./canton-localnet down
