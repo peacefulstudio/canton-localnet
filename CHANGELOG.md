@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `csharp/Peaceful.Canton.Localnet.Testing` — xUnit fixture v0 (issue #7).
+  Four sub-modules:
+  - `EndpointDiscovery` — resolves the JSON Ledger API base URL, Keycloak
+    token endpoint, audience, and client credentials from
+    `CANTON_LOCALNET_*` env vars (defaults match the compose stack in
+    `compose/modules/localnet/env/common.env`).
+  - `OAuth2TokenProvider` — `client_credentials` grant with thread-safe
+    in-memory cache, configurable expiry leeway (default 30 s), and
+    refresh on expiry. Surfaces token-endpoint errors as
+    `OAuth2TokenException`.
+  - `JsonLedgerAdminClient` — `HttpClient` + `System.Text.Json` wrapper.
+    v0 implements `GET /v2/parties/participant-id` only; DAR upload,
+    party allocation, and user binding land in #9.
+  - `LocalnetFixture` — `IAsyncDisposable` surface that composes the
+    above via `Microsoft.Extensions.DependencyInjection` and exposes
+    `GetParticipantIdAsync`.
+  Built and packed as `Peaceful.Canton.Localnet.Testing.<version>.nupkg`
+  (not yet published).
+- `.github/workflows/csharp.yml` — thin caller for the reusable
+  `peacefulstudio/github-actions/.github/workflows/csharp-ci.yaml`
+  workflow. Passes `working-directory: csharp`, the
+  ubuntu/macos/windows OS matrix, the `Category!=Integration` test
+  filter, and `pack: true` so the fixture nupkg is built and uploaded
+  as a workflow artifact. Replaces the legacy in-tree
+  `csharp-ci.yaml` (single-OS, no integration filter, included a
+  test-discovery bug that ran `dotnet test` against the production
+  assembly).
 - `terraform/` — EC2 spot instance + security group + Elastic IP
   configuration migrated from `peacefulstudio/murmures`
   `infra/terraform/`. Backend points at the shared

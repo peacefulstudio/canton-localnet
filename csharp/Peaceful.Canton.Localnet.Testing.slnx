@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Peaceful.Canton.Localnet.Testing/Peaceful.Canton.Localnet.Testing.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Peaceful.Canton.Localnet.Testing.Tests/Peaceful.Canton.Localnet.Testing.Tests.csproj" />
+  </Folder>
+</Solution>

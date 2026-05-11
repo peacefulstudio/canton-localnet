@@ -1,0 +1,38 @@
+# Copyright (c) 2026 Peaceful Studio OÜ
+# SPDX-License-Identifier: Apache-2.0
+#
+# Thin caller for the reusable .NET CI workflow in peacefulstudio/github-actions.
+# Build/test logic lives there so ~10 Peaceful Studio repos can consume the same
+# shape; matrix + integration filter + nupkg pack are passed in via inputs.
+
+name: csharp
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'csharp/**'
+      - '.github/workflows/csharp.yml'
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'csharp/**'
+      - '.github/workflows/csharp.yml'
+
+permissions:
+  contents: read
+  packages: read
+  pull-requests: write
+
+jobs:
+  ci:
+    uses: peacefulstudio/github-actions/.github/workflows/csharp-ci.yaml@f2043152b275a55d1fa1bd19912504218ed5d7b3
+    with:
+      working-directory: csharp
+      os-list: '["ubuntu-latest","macos-latest","windows-latest"]'
+      test-project: tests/Peaceful.Canton.Localnet.Testing.Tests/Peaceful.Canton.Localnet.Testing.Tests.csproj
+      test-filter: 'Category!=Integration'
+      coverage-pr-comment-header: csharp-coverage
+      pack: true
+      pack-project: src/Peaceful.Canton.Localnet.Testing/Peaceful.Canton.Localnet.Testing.csproj
+    secrets: inherit
