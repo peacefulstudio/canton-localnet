@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `terraform/` — EC2 spot instance + security group + Elastic IP
+  configuration migrated from `peacefulstudio/murmures`
+  `infra/terraform/`. Backend points at the shared
+  `cicd-playground-tfstate` bucket at a new state key
+  `canton-localnet/vm/terraform.tfstate`; the murmures state at
+  `murmures/localnet/terraform.tfstate` is left intact. Resource names
+  / SG name / key-pair name preserve the `murmures-localnet` prefix so
+  `terraform import` produces a clean plan; the `Project` tag is the
+  only intentional value change (`murmures` → `canton-localnet`), used
+  to scope the CI IAM policy. Variable names and output names
+  (`instance_id`, `elastic_ip`, `ssh_command`, `ssh_key_path`,
+  `region`, `ami_id`) match murmures so consumer tunnel scripts work
+  unchanged after switching their output source.
+- `terraform/iam-policy.json` — least-privilege IAM policy for the
+  canton-localnet GitHub Actions OIDC role: read/write the new S3 state
+  key, EC2 / SG / EIP write actions scoped by
+  `aws:ResourceTag/Project = canton-localnet`, `ec2:Describe*` read-only
+  (no resource-level conditions available for those).
+- `terraform/README.md` — step-by-step state-migration runbook for the
+  maintainer-only one-time import (`terraform import` commands per
+  resource, expected `terraform plan` outcome, rollback plan).
+- `terraform-ci.yaml` workflow hardened: SHA-pinned
+  `actions/checkout@v6.0.2`, `hashicorp/setup-terraform@v3.1.2`, and
+  `marocchino/sticky-pull-request-comment@v3.0.4`. Runs
+  `terraform fmt -check -recursive` + `terraform validate` (via
+  `init -backend=false`) on PRs touching `terraform/**`. No
+  `terraform plan` in CI until the IAM grant in the migration runbook
+  lands.
+- This change is **human-in-the-loop**: the terraform code is in;
+  the AWS state migration and CI IAM grant are a maintainer checklist
+  in the merging PR body, not executed by the agent.
 - `cli/` — `canton-localnet` Go binary (module
   `github.com/peacefulstudio/canton-localnet/cli`) with three
   subcommands: `up`, `down`, `wait-ready`. `up`/`down` wrap the same

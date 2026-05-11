@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Peaceful Studio OÜ
+# SPDX-License-Identifier: Apache-2.0
+
 name: terraform-ci
 
 on:
@@ -21,16 +24,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           terraform_version: "~> 1.9"
 
       - name: Terraform fmt check
         working-directory: terraform
-        run: terraform fmt -check -recursive
+        run: |
+          set -euo pipefail
+          terraform fmt -check -recursive
 
       - name: Discover modules
         id: modules
@@ -103,7 +108,7 @@ jobs:
 
       - name: Add test summary PR comment
         if: steps.tests.outputs.ran == 'true' && github.event_name == 'pull_request' && github.actor != 'dependabot[bot]'
-        uses: marocchino/sticky-pull-request-comment@v3
+        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
         with:
           recreate: true
           header: terraform-tests

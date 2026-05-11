@@ -1,0 +1,72 @@
+#!/bin/bash
+# Copyright (c) 2026 Peaceful Studio OÜ
+# SPDX-License-Identifier: Apache-2.0
+set -euo pipefail
+
+LOG=/var/log/canton-localnet-bootstrap.log
+DONE_FLAG=/var/lib/canton-localnet-bootstrap.done
+exec > >(tee -a "$LOG") 2>&1
+echo "==> canton-localnet bootstrap starting at $(date -u +%FT%TZ)"
+
+if [ -f "$DONE_FLAG" ]; then
+  echo "==> $DONE_FLAG already present — bootstrap previously succeeded, exiting"
+  exit 0
+fi
+
+CONSUMER_REPO="${consumer_repo}"
+REPO_NAME="$${CONSUMER_REPO##*/}"
+HOME_DIR=/home/ubuntu
+REPO_DIR="$HOME_DIR/$REPO_NAME"
+
+# Write secrets without `set -x` so the GITHUB_TOKEN never lands in $LOG.
+set +x
+umask 077
+cat > "$HOME_DIR/.env" <<EOF
+GITHUB_TOKEN=${github_token}
+LOCALNET_BRANCH=${localnet_branch}
+EOF
+chown ubuntu:ubuntu "$HOME_DIR/.env"
+chmod 600 "$HOME_DIR/.env"
+umask 022
+
+apt-get update -o Acquire::Retries=3
+apt-get install -y -o Acquire::Retries=3 git ca-certificates curl
+
+# Drop a partial clone so a transient git failure on a previous boot is retried.
+if [ -d "$REPO_DIR" ] && [ ! -d "$REPO_DIR/.git" ]; then
+  rm -rf "$REPO_DIR"
+fi
+
+if [ ! -d "$REPO_DIR/.git" ]; then
+  AUTH_HEADER="Authorization: Basic $(printf 'x-access-token:%s' "${github_token}" | base64 -w0)"
+  sudo -u ubuntu git -c http.extraHeader="$AUTH_HEADER" clone \
+    -b "${localnet_branch}" \
+    "https://github.com/$${CONSUMER_REPO}.git" \
+    "$REPO_DIR"
+  unset AUTH_HEADER
+fi
+set -x
+
+sudo -u ubuntu bash "$REPO_DIR/infra/provision/install.sh"
+
+# install.sh adds the docker group; verify before invoking sg(1).
+if ! getent group docker >/dev/null; then
+  echo "Error: docker group missing after install.sh — aborting bootstrap" >&2
+  exit 1
+fi
+
+cat > /usr/local/bin/canton-localnet-bootstrap-deploy <<WRAPPER
+#!/usr/bin/env bash
+set -euo pipefail
+[ -f /etc/profile.d/nix.sh ] && . /etc/profile.d/nix.sh
+[ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ] && . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+export PATH="\$HOME/.dpm/bin:\$HOME/.daml/bin:\$PATH"
+exec "\$HOME/$REPO_NAME/infra/provision/deploy.sh"
+WRAPPER
+chmod +x /usr/local/bin/canton-localnet-bootstrap-deploy
+
+sudo -u ubuntu sg docker -c /usr/local/bin/canton-localnet-bootstrap-deploy
+
+mkdir -p "$(dirname "$DONE_FLAG")"
+date -u +%FT%TZ > "$DONE_FLAG"
+echo "==> canton-localnet bootstrap complete at $(date -u +%FT%TZ)"

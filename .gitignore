@@ -8,3 +8,14 @@ compose/.env.local
 # IDE
 .idea/
 .vscode/
+
+# Terraform — keep .terraform.lock.hcl checked in (provider pinning)
+terraform/**/.terraform/
+terraform/**/.terraform.tfstate.lock.info
+terraform/**/terraform.tfstate
+terraform/**/terraform.tfstate.backup
+terraform/**/*.tfvars
+terraform/**/*.tfvars.json
+terraform/**/.localnet-key.pem
+terraform/**/crash.log
+terraform/**/crash.*.log

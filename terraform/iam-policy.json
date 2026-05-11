@@ -1,0 +1,110 @@
+{
+  "_license": "Copyright (c) 2026 Peaceful Studio OÜ. SPDX-License-Identifier: Apache-2.0",
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "TerraformStateObjectAccess",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::cicd-playground-tfstate/canton-localnet/vm/*"
+    },
+    {
+      "Sid": "TerraformStateBucketList",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::cicd-playground-tfstate",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": [
+            "canton-localnet/vm/",
+            "canton-localnet/vm/*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "Ec2EipSgDescribeReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:Describe*",
+        "ec2:GetPasswordData"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "Ec2EipSgWriteOnTaggedResources",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:RunInstances",
+        "ec2:StartInstances",
+        "ec2:StopInstances",
+        "ec2:TerminateInstances",
+        "ec2:ModifyInstanceAttribute",
+        "ec2:ModifyInstanceMetadataOptions",
+        "ec2:CreateTags",
+        "ec2:DeleteTags",
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:AuthorizeSecurityGroupEgress",
+        "ec2:RevokeSecurityGroupIngress",
+        "ec2:RevokeSecurityGroupEgress",
+        "ec2:UpdateSecurityGroupRuleDescriptionsIngress",
+        "ec2:UpdateSecurityGroupRuleDescriptionsEgress",
+        "ec2:CreateSecurityGroup",
+        "ec2:DeleteSecurityGroup",
+        "ec2:AllocateAddress",
+        "ec2:ReleaseAddress",
+        "ec2:AssociateAddress",
+        "ec2:DisassociateAddress",
+        "ec2:ImportKeyPair",
+        "ec2:CreateKeyPair",
+        "ec2:DeleteKeyPair",
+        "ec2:RequestSpotInstances",
+        "ec2:CancelSpotInstanceRequests"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "canton-localnet"
+        }
+      }
+    },
+    {
+      "Sid": "Ec2RunInstancesNewResources",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:RunInstances",
+        "ec2:CreateSecurityGroup",
+        "ec2:AllocateAddress",
+        "ec2:CreateKeyPair",
+        "ec2:ImportKeyPair"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "canton-localnet"
+        }
+      }
+    },
+    {
+      "Sid": "Ec2CreateTagsOnCreate",
+      "Effect": "Allow",
+      "Action": "ec2:CreateTags",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "ec2:CreateAction": [
+            "RunInstances",
+            "CreateSecurityGroup",
+            "AllocateAddress",
+            "ImportKeyPair",
+            "CreateKeyPair"
+          ]
+        }
+      }
+    }
+  ]
+}
