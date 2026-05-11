@@ -47,6 +47,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `compose-ci.yaml` workflow: smoke-tests `make up && make wait-ready`
   on `ubuntu-latest` against the OAuth2 stack on every PR touching
   `compose/**` or the Makefile.
+- `go/fixture/` — Go module
+  (`github.com/peacefulstudio/canton-localnet/go/fixture`) providing
+  the Go-side integration-test harness paired with the C# fixture.
+  Exports `EndpointDiscovery` (env-driven URL resolution),
+  `OAuth2TokenProvider` (client_credentials grant with cached
+  refresh, 30 s pre-expiry skew, coalesced concurrent fetches),
+  `JsonLedgerAdminClient` (v0 implements `GET /v2/parties/participant-id`),
+  and `Fixture` (composes the above behind `Setup` / `Teardown`).
+  Stdlib-only.
+- `go-fixture.yaml` workflow: runs `go vet` and `go test -race` for
+  `go/fixture/` on ubuntu-latest and macos-latest, plus an
+  integration smoke job on ubuntu-latest that boots the compose
+  stack and runs `go test -tags integration` against it.
 - README quickstart documenting the `make up` / `make wait-ready` /
   `make down` loop and the JSON Ledger API ports per profile.
 - Third-party attribution paragraph in `NOTICE` crediting
