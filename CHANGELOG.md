@@ -114,6 +114,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `JsonLedgerAdminClient` (v0 implements `GET /v2/parties/participant-id`),
   and `Fixture` (composes the above behind `Setup` / `Teardown`).
   Stdlib-only.
+- `go/fixture/dar_uploader.go`, `party_allocator.go`,
+  `user_builder.go` — three deep modules added on top of the v0 Go
+  fixture (issue #10, Go-side parity with #9). `DarUploader` posts
+  raw DAR bytes to `POST /v2/packages` and treats an HTTP 400 whose
+  body contains `KNOWN_PACKAGE_VERSION` as success, so repeated
+  uploads of the same DAR (possibly with a different hash from a
+  non-deterministic build) are idempotent. `UploadAll` runs DAR paths
+  sequentially and stops at the first genuine failure.
+  `PartyAllocator` posts to `POST /v2/parties` with hints of the form
+  `<consumer-prefix>-<instance-suffix>` where the suffix is a random
+  16-character hex string generated once per allocator instance.
+  `UserBuilder` posts `{user, rights}` to `POST /v2/users` and then,
+  if any `ActAs`/`ReadAs` parties are supplied, grants them via
+  `POST /v2/users/{id}/rights` using the `CanActAs` / `CanReadAs`
+  right kinds. All three are wired onto `*Fixture` as the convenience
+  methods `UploadDar`, `UploadDars`, `AllocateParty`, and
+  `CreateUser`. Stdlib-only.
+- `go/fixture/smoke_integration_test.go` — extended with
+  `TestSmoke_AllocatePartyUploadDarBuildUser`, which exercises party
+  allocation, DAR upload (twice, to assert the
+  `KNOWN_PACKAGE_VERSION` idempotency path against the live ledger),
+  and user creation end-to-end. The DAR portion is gated on
+  `CANTON_LOCALNET_TEST_DAR_PATH`; when unset the rest of the test
+  still runs.
+- `.github/workflows/go-fixture.yaml` — integration job now extracts
+  one DAR from the running `splice-onboarding` container (`docker cp`
+  from `/canton/dars/*.dar`) before the smoke test and exposes the
+  path via `CANTON_LOCALNET_TEST_DAR_PATH`, so the DAR-upload portion
+  of the new integration test runs against a real DAR without
+  committing one to the repo.
 - `go-fixture.yaml` workflow: runs `go vet` and `go test -race` for
   `go/fixture/` on ubuntu-latest and macos-latest, plus an
   integration smoke job on ubuntu-latest that boots the compose

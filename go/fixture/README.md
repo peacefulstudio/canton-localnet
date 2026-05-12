@@ -9,7 +9,10 @@ Module path: `github.com/peacefulstudio/canton-localnet/go/fixture`. Go 1.23+.
 - `EndpointDiscovery` — resolves JSON Ledger API and Keycloak URLs from env vars.
 - `OAuth2TokenProvider` — `client_credentials` grant with in-memory cache, concurrent-safe coalesced refresh, and a 30-second pre-expiry refresh skew.
 - `JsonLedgerAdminClient` — pure `net/http` + `encoding/json` wrapper around the JSON Ledger Admin API. Currently exposes `GET /v2/parties/participant-id`.
-- `Fixture` — composes the above behind `Setup(ctx)` / `Teardown(ctx)`.
+- `DarUploader` — `POST /v2/packages` per DAR. Idempotent: HTTP 400 with `KNOWN_PACKAGE_VERSION` in the body is treated as success, so re-uploading an already-known DAR (possibly with a different hash from a non-deterministic build) is safe. `UploadAll` runs paths sequentially and stops at the first failure.
+- `PartyAllocator` — `POST /v2/parties` with hints of the form `<prefix>-<suffix>`. The suffix is a random 16-character hex string generated once per allocator instance, so test runs sharing a ledger never collide.
+- `UserBuilder` — `POST /v2/users` and `POST /v2/users/{id}/rights` for `actAs` / `readAs` rights, in that order. The rights step is skipped when both lists are empty.
+- `Fixture` — composes the above behind `Setup(ctx)` / `Teardown(ctx)` and exposes convenience methods `GetParticipantId`, `UploadDar`, `UploadDars`, `AllocateParty`, `CreateUser`.
 
 ## Usage
 
@@ -23,9 +26,18 @@ func TestMyLedgerThing(t *testing.T) {
     if err := f.Setup(ctx); err != nil { t.Fatal(err) }
     t.Cleanup(func() { _ = f.Teardown(context.Background()) })
 
-    id, err := f.GetParticipantId(ctx)
+    if err := f.UploadDar(ctx, "testdata/my-package.dar"); err != nil {
+        t.Fatal(err)
+    }
+    party, err := f.AllocateParty(ctx, "cdg", "Alice")
     if err != nil { t.Fatal(err) }
-    t.Logf("participant: %s", id)
+
+    _, err = f.CreateUser(ctx, fixture.UserOptions{
+        UserID:       "alice",
+        PrimaryParty: party,
+        ActAs:        []string{party},
+    })
+    if err != nil { t.Fatal(err) }
 }
 ```
 

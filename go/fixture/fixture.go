@@ -45,6 +45,9 @@ type Fixture struct {
 	endpoints Endpoints
 	tokens    *OAuth2TokenProvider
 	admin     *JsonLedgerAdminClient
+	dars      *DarUploader
+	parties   *PartyAllocator
+	users     *UserBuilder
 	ready     bool
 }
 
@@ -92,9 +95,24 @@ func (f *Fixture) Setup(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("fixture: build admin client: %w", err)
 	}
+	dars, err := NewDarUploader(endpoints.JSONLedgerAPIURL, tokens, WithDarHTTPClient(f.cfg.HTTPClient))
+	if err != nil {
+		return fmt.Errorf("fixture: build dar uploader: %w", err)
+	}
+	parties, err := NewPartyAllocator(endpoints.JSONLedgerAPIURL, tokens, WithPartyAllocatorHTTPClient(f.cfg.HTTPClient))
+	if err != nil {
+		return fmt.Errorf("fixture: build party allocator: %w", err)
+	}
+	users, err := NewUserBuilder(endpoints.JSONLedgerAPIURL, tokens, WithUserBuilderHTTPClient(f.cfg.HTTPClient))
+	if err != nil {
+		return fmt.Errorf("fixture: build user builder: %w", err)
+	}
 	f.endpoints = endpoints
 	f.tokens = tokens
 	f.admin = admin
+	f.dars = dars
+	f.parties = parties
+	f.users = users
 	f.ready = true
 	return nil
 }
@@ -111,6 +129,9 @@ func (f *Fixture) Teardown(ctx context.Context) error {
 		return nil
 	}
 	f.tokens.Invalidate()
+	f.dars = nil
+	f.parties = nil
+	f.users = nil
 	f.ready = false
 	return nil
 }
@@ -143,4 +164,47 @@ func (f *Fixture) mustBeReady(method string) {
 // Panics if called before Setup, consistent with the other accessors.
 func (f *Fixture) GetParticipantId(ctx context.Context) (string, error) {
 	return f.Admin().GetParticipantId(ctx)
+}
+
+// DarUploader returns the DAR uploader. Panics if called before Setup.
+func (f *Fixture) DarUploader() *DarUploader {
+	f.mustBeReady("DarUploader")
+	return f.dars
+}
+
+// PartyAllocator returns the party allocator. Panics if called before Setup.
+func (f *Fixture) PartyAllocator() *PartyAllocator {
+	f.mustBeReady("PartyAllocator")
+	return f.parties
+}
+
+// UserBuilder returns the user builder. Panics if called before Setup.
+func (f *Fixture) UserBuilder() *UserBuilder {
+	f.mustBeReady("UserBuilder")
+	return f.users
+}
+
+// UploadDar uploads a single DAR file via the JSON Ledger packages endpoint.
+// Convenience wrapper around DarUploader().Upload.
+func (f *Fixture) UploadDar(ctx context.Context, path string) error {
+	return f.DarUploader().Upload(ctx, path)
+}
+
+// UploadDars uploads multiple DAR files sequentially. Stops at the first
+// failure. Convenience wrapper around DarUploader().UploadAll.
+func (f *Fixture) UploadDars(ctx context.Context, paths ...string) error {
+	return f.DarUploader().UploadAll(ctx, paths...)
+}
+
+// AllocateParty allocates a party with a hint of "<prefix>-<random suffix>"
+// and returns the allocated party id. Convenience wrapper around
+// PartyAllocator().Allocate.
+func (f *Fixture) AllocateParty(ctx context.Context, prefix, displayName string) (string, error) {
+	return f.PartyAllocator().Allocate(ctx, prefix, displayName)
+}
+
+// CreateUser creates a ledger user and grants any ActAs / ReadAs rights
+// listed in opts. Convenience wrapper around UserBuilder().Create.
+func (f *Fixture) CreateUser(ctx context.Context, opts UserOptions) (string, error) {
+	return f.UserBuilder().Create(ctx, opts)
 }

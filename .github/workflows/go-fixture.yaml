@@ -93,8 +93,33 @@ jobs:
           set -euo pipefail
           make wait-ready
 
+      - name: Extract a tiny DAR from the splice onboarding container
+        id: extract-dar
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/testdata
+          container=$(docker ps --filter "name=splice-onboarding" --format '{{.Names}}' | head -n1 || true)
+          if [ -z "$container" ]; then
+            container=$(docker ps --filter "ancestor=digitalasset/decentralized-canton-sync-onboarding" --format '{{.Names}}' | head -n1 || true)
+          fi
+          if [ -z "$container" ]; then
+            echo "no splice onboarding container found — DAR upload portion of the smoke test will skip" >&2
+            exit 0
+          fi
+          dar=$(docker exec "$container" sh -c 'find /canton/dars -type f -name "*.dar" 2>/dev/null | head -n1' || true)
+          if [ -z "$dar" ]; then
+            echo "no DAR files inside container $container — DAR upload portion of the smoke test will skip" >&2
+            exit 0
+          fi
+          docker cp "$container:$dar" /tmp/testdata/test.dar
+          echo "extracted $dar"
+          ls -lh /tmp/testdata/test.dar
+          echo "dar_path=/tmp/testdata/test.dar" >> "$GITHUB_OUTPUT"
+
       - name: Run integration smoke test
         working-directory: go/fixture
+        env:
+          CANTON_LOCALNET_TEST_DAR_PATH: ${{ steps.extract-dar.outputs.dar_path }}
         run: |
           set -euo pipefail
           go test -tags integration -count=1 -v ./...
