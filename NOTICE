@@ -22,6 +22,16 @@ from the following upstream projects, each licensed under Apache-2.0:
     Source path: cluster/compose/localnet (and adjacent modules).
     Pinned commit: see compose/splice.sha and compose/links.csv.
 
+It also vendors a single DAR archive from the same upstream project:
+
+  * csharp/tests/Peaceful.Canton.Localnet.Testing.Tests/TestData/
+    splice-util-0.1.0.dar
+    Extracted from the splice 0.6.2 container image
+    (/app/splice-node/dars/splice-util-0.1.0.dar) so the xUnit smoke
+    test has a real, signable DAR to upload without a local daml SDK.
+    Copyright Digital Asset (Switzerland) GmbH and/or its affiliates.
+    Licensed under Apache-2.0.
+
 The original Digital Asset copyright headers and SPDX identifiers on
 each vendored file are preserved verbatim. The LocalNet stack itself
 originated in Digital Asset's Canton Network Quickstart effort

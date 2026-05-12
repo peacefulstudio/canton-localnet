@@ -24,12 +24,18 @@ public sealed class LocalnetFixture : IAsyncDisposable
         Profile = profile;
         AdminClient = services.GetRequiredService<JsonLedgerAdminClient>();
         TokenProvider = services.GetRequiredService<OAuth2TokenProvider>();
+        DarUploader = services.GetRequiredService<DarUploader>();
+        PartyAllocator = services.GetRequiredService<PartyAllocator>();
+        UserBuilder = services.GetRequiredService<UserBuilder>();
     }
 
     public LocalnetEndpoints Endpoints { get; }
     public LocalnetProfile Profile { get; }
     public JsonLedgerAdminClient AdminClient { get; }
     public OAuth2TokenProvider TokenProvider { get; }
+    public DarUploader DarUploader { get; }
+    public PartyAllocator PartyAllocator { get; }
+    public UserBuilder UserBuilder { get; }
 
     /// <summary>
     /// Builds a fixture from the ambient environment. The profile is selected
@@ -94,6 +100,30 @@ public sealed class LocalnetFixture : IAsyncDisposable
             return new JsonLedgerAdminClient(httpClientFactory.CreateClient("json-ledger"), tokenProvider, logger);
         });
 
+        services.AddSingleton(sp =>
+        {
+            var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+            var tokenProvider = sp.GetRequiredService<OAuth2TokenProvider>();
+            var logger = sp.GetService<ILogger<DarUploader>>();
+            return new DarUploader(httpClientFactory.CreateClient("json-ledger"), tokenProvider, logger);
+        });
+
+        services.AddSingleton(sp =>
+        {
+            var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+            var tokenProvider = sp.GetRequiredService<OAuth2TokenProvider>();
+            var logger = sp.GetService<ILogger<PartyAllocator>>();
+            return new PartyAllocator(httpClientFactory.CreateClient("json-ledger"), tokenProvider, logger);
+        });
+
+        services.AddSingleton(sp =>
+        {
+            var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+            var tokenProvider = sp.GetRequiredService<OAuth2TokenProvider>();
+            var logger = sp.GetService<ILogger<UserBuilder>>();
+            return new UserBuilder(httpClientFactory.CreateClient("json-ledger"), tokenProvider, logger);
+        });
+
         var provider = services.BuildServiceProvider();
         return new LocalnetFixture(provider, endpoints, profile);
     }
@@ -103,6 +133,40 @@ public sealed class LocalnetFixture : IAsyncDisposable
     /// </summary>
     public Task<string> GetParticipantIdAsync(CancellationToken cancellationToken = default)
         => AdminClient.GetParticipantIdAsync(cancellationToken);
+
+    /// <summary>
+    /// Convenience pass-through to <see cref="DarUploader.UploadAsync(string, CancellationToken)"/>.
+    /// </summary>
+    public Task<DarUploadOutcome> UploadDarAsync(string darPath, CancellationToken cancellationToken = default)
+        => DarUploader.UploadAsync(darPath, cancellationToken);
+
+    /// <summary>
+    /// Convenience pass-through to <see cref="DarUploader.UploadManyAsync"/>.
+    /// </summary>
+    public Task<IReadOnlyList<DarUploadResult>> UploadDarsAsync(
+        IEnumerable<string> darPaths,
+        CancellationToken cancellationToken = default)
+        => DarUploader.UploadManyAsync(darPaths, cancellationToken);
+
+    /// <summary>
+    /// Convenience pass-through to <see cref="PartyAllocator.AllocateAsync"/>.
+    /// </summary>
+    public Task<AllocatedParty> AllocatePartyAsync(
+        string consumerPrefix,
+        string? displayName = null,
+        CancellationToken cancellationToken = default)
+        => PartyAllocator.AllocateAsync(consumerPrefix, displayName, cancellationToken);
+
+    /// <summary>
+    /// Convenience pass-through to <see cref="UserBuilder.CreateAsync"/>.
+    /// </summary>
+    public Task<string> CreateUserAsync(
+        string userId,
+        string? primaryParty = null,
+        IEnumerable<string>? actAs = null,
+        IEnumerable<string>? readAs = null,
+        CancellationToken cancellationToken = default)
+        => UserBuilder.CreateAsync(userId, primaryParty, actAs, readAs, cancellationToken);
 
     public async ValueTask DisposeAsync()
     {

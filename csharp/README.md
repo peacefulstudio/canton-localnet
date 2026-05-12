@@ -5,16 +5,37 @@ SPDX-License-Identifier: Apache-2.0
 
 # Peaceful.Canton.Localnet.Testing
 
-xUnit fixtures for Canton LocalNet integration tests.
-
-This v0 slice (issue #7) covers four sub-modules:
+xUnit fixtures for Canton LocalNet integration tests. Sub-modules:
 
 - `EndpointDiscovery` — env vars to URLs (JSON Ledger API, Keycloak token endpoint).
 - `OAuth2TokenProvider` — `client_credentials` grant with in-memory cache + refresh.
-- `JsonLedgerAdminClient` — thin `HttpClient` wrapper. v0 implements only `GET /v2/parties/participant-id`.
-- `LocalnetFixture` — composes the above into a single user-facing surface.
+- `JsonLedgerAdminClient` — thin `HttpClient` wrapper. Currently surfaces `GET /v2/parties/participant-id`.
+- `DarUploader` — `POST /v2/packages` for one DAR or many; idempotent: a
+  `KNOWN_PACKAGE_VERSION` 400 response is treated as success.
+- `PartyAllocator` — `POST /v2/parties` with hint
+  `<consumer-prefix>-<instance-suffix>` where the suffix is a 12-hex
+  cryptographic random per fixture instance.
+- `UserBuilder` — `POST /v2/users` followed by `POST /v2/users/{id}/rights`
+  to grant `CanActAs` / `CanReadAs`.
+- `LocalnetFixture` — composes the above into a single user-facing surface
+  via `Microsoft.Extensions.DependencyInjection` and exposes convenience
+  pass-throughs (`UploadDarAsync`, `AllocatePartyAsync`, `CreateUserAsync`,
+  `GetParticipantIdAsync`).
 
-DAR upload, party allocation, and user binding are explicitly out of scope for v0; they land in issue #9.
+## 30-line example
+
+```csharp
+await using var fixture = LocalnetFixture.FromEnvironment();
+
+await fixture.UploadDarAsync("./dars/my-workflow-1.0.0.dar");
+
+var party = await fixture.AllocatePartyAsync("cdg");
+
+await fixture.CreateUserAsync(
+    userId: $"cdg-user-{fixture.PartyAllocator.InstanceSuffix}",
+    primaryParty: party.PartyId,
+    actAs: new[] { party.PartyId });
+```
 
 ## Environment variables
 

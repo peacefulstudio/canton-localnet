@@ -29,6 +29,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   splice port set as `DefaultPorts` and exposes a `Client.Open` that
   shells out to `ssh` and propagates `ctx.Done()` for clean Ctrl-C
   teardown.
+- `csharp/Peaceful.Canton.Localnet.Testing` — DAR upload, party allocation,
+  and user binding (issue #9). Three new sibling deep modules of
+  `JsonLedgerAdminClient`, wired into `LocalnetFixture` via the existing
+  DI / `IHttpClientFactory` graph and exposed as convenience pass-throughs:
+  - `DarUploader.UploadAsync` / `UploadManyAsync` — `POST /v2/packages`
+    with raw DAR bytes (`application/octet-stream`). Idempotent: a
+    `400 KNOWN_PACKAGE_VERSION` response is treated as success
+    (`DarUploadOutcome.AlreadyKnown`). `UploadManyAsync` sequences
+    uploads in input order and stops at the first genuine failure.
+  - `PartyAllocator.AllocateAsync` — `POST /v2/parties` with hint
+    `<consumer-prefix>-<instance-suffix>`. The instance suffix is a
+    12-hex cryptographic random generated once per allocator instance
+    so concurrent test runs and reruns against a long-lived stack
+    don't collide. Returns `AllocatedParty(PartyId, PartyIdHint, IsLocal)`.
+  - `UserBuilder.CreateAsync` — `POST /v2/users` followed by
+    `POST /v2/users/{id}/rights` to grant `CanActAs`/`CanReadAs`. The
+    rights call is skipped when both lists are empty.
+  - `LocalnetFixture.UploadDarAsync` / `UploadDarsAsync` /
+    `AllocatePartyAsync` / `CreateUserAsync` — convenience pass-throughs
+    matching the README's 30-line example.
+  - `csharp/tests/.../TestData/splice-util-0.1.0.dar` — vendored from
+    the upstream `hyperledger-labs/splice` 0.6.2 image (already credited
+    in `NOTICE`) so the smoke test has a real DAR to upload without a
+    local daml SDK. The DAR is committed and copied to the test output
+    directory; the smoke test self-skips when the localnet env vars are
+    absent, matching the existing pattern.
 - `csharp/Peaceful.Canton.Localnet.Testing` — xUnit fixture v0 (issue #7).
   Four sub-modules:
   - `EndpointDiscovery` — resolves the JSON Ledger API base URL, Keycloak
