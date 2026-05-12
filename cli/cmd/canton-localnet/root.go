@@ -11,6 +11,10 @@ import (
 var version = "dev"
 
 func newRootCommand(makeRunner runnerFactory) *cobra.Command {
+	return newRootCommandWithVM(makeRunner, defaultVMDeps())
+}
+
+func newRootCommandWithVM(makeRunner runnerFactory, vm vmDeps) *cobra.Command {
 	if makeRunner == nil {
 		makeRunner = func(dir string) composeRunner { return compose.NewRunner(dir) }
 	}
@@ -26,5 +30,6 @@ func newRootCommand(makeRunner runnerFactory) *cobra.Command {
 	cmd.AddCommand(newUpCommand(makeRunner))
 	cmd.AddCommand(newDownCommand(makeRunner))
 	cmd.AddCommand(newWaitReadyCommand())
+	cmd.AddCommand(newVMCommand(vm))
 	return cmd
 }

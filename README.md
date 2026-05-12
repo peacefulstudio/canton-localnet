@@ -35,6 +35,21 @@ When iterating with observability on, `make stop-app` (and `make clean-app`)
 restart the application stack while leaving Grafana / Prometheus / Loki / Tempo
 running so dashboards stay populated.
 
+### Remote VM (AWS)
+
+For consumers that prefer running LocalNet on a shared EC2 instance, the
+`vm` subcommand wraps the `terraform/` stack and an ssh tunnel:
+
+```bash
+canton-localnet vm provision        # terraform apply, prints public IP + ssh command
+canton-localnet vm tunnel           # ssh -L 3901/7575/8082 to the VM (Ctrl-C to close)
+canton-localnet vm destroy --yes    # terraform destroy (interactive prompt without --yes)
+```
+
+The tunnel forwards the same port set the legacy `tunnel.sh` scripts in
+`murmures` and `terraform-provider-canton` open. `vm provision` is
+idempotent — re-running on an already-applied state is a no-op refresh.
+
 Prerequisites: Docker ≥ 27, Docker Compose ≥ 2.27. The compose stack is
 vendored into `compose/modules/` from `hyperledger-labs/splice` at the SHA
 pinned in `compose/splice.sha`. Re-vendor with `make vendor`.

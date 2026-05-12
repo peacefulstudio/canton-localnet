@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `canton-localnet vm` parent command with three subcommands (issue
+  #15) — `provision` runs `terraform init` + `terraform apply
+  -auto-approve` against `terraform/` and prints the elastic IP plus a
+  ready-to-paste ssh command on success (re-running is a no-op
+  terraform refresh); `destroy` runs `terraform destroy
+  -auto-approve` behind an interactive `Type DESTROY` confirmation
+  prompt (skippable with `--yes`, required for non-TTY use); `tunnel`
+  opens `ssh -L 3901:localhost:3901 -L 7575:localhost:7575 -L
+  8082:localhost:8082` against the provisioned VM, defaulting the
+  host / user / identity to the terraform outputs `elastic_ip` /
+  `ssh_command` / `ssh_key_path` and accepting `--host` / `--user` /
+  `--identity` overrides. Replaces the bespoke `tunnel.sh` scripts
+  `murmures` and `terraform-provider-canton` CI carry today.
+  Internals: `cli/internal/terraform` wraps the terraform binary
+  through an injectable Runner (so tests don't shell out) and
+  decodes `terraform output -json` into a typed `Outputs` struct;
+  `cli/internal/tunnel` builds the ssh argument vector with the
+  splice port set as `DefaultPorts` and exposes a `Client.Open` that
+  shells out to `ssh` and propagates `ctx.Done()` for clean Ctrl-C
+  teardown.
 - `csharp/Peaceful.Canton.Localnet.Testing` — xUnit fixture v0 (issue #7).
   Four sub-modules:
   - `EndpointDiscovery` — resolves the JSON Ledger API base URL, Keycloak
