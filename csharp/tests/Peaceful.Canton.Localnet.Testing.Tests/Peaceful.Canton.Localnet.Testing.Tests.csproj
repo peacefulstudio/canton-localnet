@@ -22,9 +22,4 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Peaceful.Canton.Localnet.Testing\Peaceful.Canton.Localnet.Testing.csproj" />
   </ItemGroup>
-  <ItemGroup>
-    <None Include="TestData\**\*">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
 </Project>

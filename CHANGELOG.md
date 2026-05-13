@@ -213,6 +213,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a single `normalizeBaseURL`. The DAR `KNOWN_PACKAGE_VERSION`
   400-as-success shortcut is preserved as a per-call
   `treat400AsSuccess` hook. No public API change.
+- Aligned C# smoke-test DAR strategy with Go (issue #30, follow-up to
+  PRs #26 and #28): the C# `LocalnetFixture` upload smoke now reads the
+  DAR path from the `CANTON_LOCALNET_TEST_DAR_PATH` env var (matching
+  the Go side) and self-skips with `Assert.Skip` when the var is unset
+  or points at a missing file. `.github/workflows/csharp.yml` grew a
+  sibling `integration` job that boots the compose stack, extracts a
+  DAR from the running splice-onboarding container via `docker cp`
+  (same shell as the Go workflow's extraction step), and runs the
+  `Category=Integration` filter against it; compose diagnostics on
+  failure upload as `compose-diagnostics-csharp` so they don't collide
+  with the Go job's artifact. The previously vendored
+  `csharp/tests/.../TestData/splice-util-0.1.0.dar` (226 KB) is removed
+  from the repo along with its NOTICE entry and the `<None Include>`
+  copy block in the test csproj — the DAR now comes "for free" with
+  whatever splice version compose is running, so a splice bump no
+  longer requires a manual DAR re-vendor.
 - Licensing established as Apache-2.0. Every new source file must carry
   the two-line SPDX header (`Copyright (c) YYYY Peaceful Studio OÜ` +
   `SPDX-License-Identifier: Apache-2.0`) regardless of language; for
