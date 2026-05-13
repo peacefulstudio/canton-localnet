@@ -1,0 +1,296 @@
+# Copyright (c) 2026 Peaceful Studio OÜ
+# SPDX-License-Identifier: Apache-2.0
+#
+# Tag-driven release pipeline.
+#
+# Trigger: push of a tag matching v<splice-version>-<patch> (e.g. v0.6.2-1).
+# The dash-separated patch is a SemVer 2.0 prerelease so `go get` resolves
+# it. See RELEASE.md for the version-format rule and release SOP.
+#
+# Produces four artifacts in lockstep on every tag:
+#   1. NuGet  — Peaceful.Canton.Localnet.Testing.<version>.nupkg → GitHub
+#                Packages NuGet feed.
+#   2. Go     — the tag itself IS the module version; no separate publish
+#                step (Go's proxy fetches from the repo on demand).
+#   3. CLI    — multi-platform binaries for the canton-localnet CLI,
+#                attached as Release assets with a SHA-256 checksums file.
+#   4. OCI    — compose/ packaged with oras and pushed to
+#                ghcr.io/<owner>/canton-localnet:<version>.
+
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  parse-version:
+    name: parse version
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.parse.outputs.tag }}
+      version: ${{ steps.parse.outputs.version }}
+    steps:
+      - name: Parse tag
+        id: parse
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          tag="${REF_NAME}"
+          if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$ ]]; then
+            echo "::error::Tag '${tag}' does not match v<splice>-<patch> (e.g. v0.6.2-1). See RELEASE.md."
+            exit 1
+          fi
+          version="${tag#v}"
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "Parsed tag=${tag} version=${version}"
+
+  release-notes:
+    name: extract release notes
+    runs-on: ubuntu-latest
+    needs: parse-version
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Extract [Unreleased] section from CHANGELOG.md
+        env:
+          TAG: ${{ needs.parse-version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ ! -f CHANGELOG.md ]; then
+            echo "::error::CHANGELOG.md missing"
+            exit 1
+          fi
+          awk '
+            /^## \[Unreleased\]/ { capture=1; next }
+            /^## \[/ && capture { exit }
+            capture { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "::error::[Unreleased] section of CHANGELOG.md is empty"
+            exit 1
+          fi
+          {
+            echo ""
+            echo "---"
+            echo ""
+            echo "**Tag:** \`${TAG}\` — see [RELEASE.md](RELEASE.md) for the version-format rule."
+          } >> release-notes.md
+          echo "Release notes preview:"
+          cat release-notes.md
+
+      - name: Upload release notes
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-notes
+          path: release-notes.md
+          if-no-files-found: error
+
+  nuget:
+    name: pack + push NuGet
+    runs-on: ubuntu-latest
+    needs: parse-version
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5.2.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        working-directory: csharp
+        run: |
+          set -euo pipefail
+          dotnet restore src/Peaceful.Canton.Localnet.Testing/Peaceful.Canton.Localnet.Testing.csproj
+
+      - name: Pack
+        working-directory: csharp
+        env:
+          VERSION: ${{ needs.parse-version.outputs.version }}
+        run: |
+          set -euo pipefail
+          dotnet pack src/Peaceful.Canton.Localnet.Testing/Peaceful.Canton.Localnet.Testing.csproj \
+            --configuration Release \
+            --no-restore \
+            -p:PackageVersion="${VERSION}" \
+            -o "${GITHUB_WORKSPACE}/nupkgs"
+          ls -la "${GITHUB_WORKSPACE}/nupkgs"
+
+      - name: Push to GitHub Packages NuGet feed
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          dotnet nuget add source \
+            --username "${GITHUB_ACTOR}" \
+            --password "${GITHUB_TOKEN}" \
+            --store-password-in-clear-text \
+            --name github \
+            "https://nuget.pkg.github.com/${GITHUB_REPOSITORY_OWNER}/index.json"
+          dotnet nuget push "${GITHUB_WORKSPACE}/nupkgs/"*.nupkg \
+            --source github \
+            --api-key "${GITHUB_TOKEN}" \
+            --skip-duplicate
+
+      - name: Upload nupkg artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nupkgs
+          path: nupkgs/*.nupkg
+          if-no-files-found: error
+
+  cli:
+    name: build CLI (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    needs: parse-version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            ext: ''
+          - goos: linux
+            goarch: arm64
+            ext: ''
+          - goos: darwin
+            goarch: amd64
+            ext: ''
+          - goos: darwin
+            goarch: arm64
+            ext: ''
+          - goos: windows
+            goarch: amd64
+            ext: '.exe'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.26'
+          cache-dependency-path: cli/go.sum
+
+      - name: Build
+        working-directory: cli
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          EXT: ${{ matrix.ext }}
+          CGO_ENABLED: '0'
+          VERSION: ${{ needs.parse-version.outputs.version }}
+        run: |
+          set -euo pipefail
+          out="${GITHUB_WORKSPACE}/dist/canton-localnet-${VERSION}-${GOOS}-${GOARCH}${EXT}"
+          mkdir -p "$(dirname "${out}")"
+          go build \
+            -trimpath \
+            -ldflags "-s -w -X main.version=${VERSION}" \
+            -o "${out}" \
+            ./cmd/canton-localnet
+          ls -la "${out}"
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cli-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          if-no-files-found: error
+
+  oci:
+    name: push OCI compose artifact
+    runs-on: ubuntu-latest
+    needs: parse-version
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup oras
+        uses: oras-project/setup-oras@8d34698a59f5ffe24821f0b48ab62a3de8b64b20 # v1.2.3
+        with:
+          version: 1.2.0
+
+      - name: Login to GHCR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "${GITHUB_TOKEN}" | oras login ghcr.io \
+            --username "${GITHUB_ACTOR}" \
+            --password-stdin
+
+      - name: Push compose/ to GHCR via oras
+        env:
+          VERSION: ${{ needs.parse-version.outputs.version }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          REPO_FULL: ${{ github.repository }}
+          REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          owner_lc="$(echo "${REPO_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          ref="ghcr.io/${owner_lc}/canton-localnet:${VERSION}"
+          cd compose
+          oras push "${ref}" \
+            --artifact-type application/vnd.peacefulstudio.canton-localnet.compose.v1+tar \
+            --annotation "org.opencontainers.image.source=https://github.com/${REPO_FULL}" \
+            --annotation "org.opencontainers.image.version=${VERSION}" \
+            --annotation "org.opencontainers.image.revision=${REVISION}" \
+            --annotation "org.opencontainers.image.licenses=Apache-2.0" \
+            .
+          echo "Pushed ${ref}"
+
+  publish-release:
+    name: publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: [parse-version, release-notes, nuget, cli, oci]
+    steps:
+      - name: Download release notes
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-notes
+          path: notes
+
+      - name: Download CLI binaries
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: cli-*
+          path: dist
+          merge-multiple: true
+
+      - name: Download nupkg
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: nupkgs
+          path: dist
+
+      - name: Generate checksums
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          ls -la
+          sha256sum ./* > checksums.txt
+          cat checksums.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
+        with:
+          tag_name: ${{ needs.parse-version.outputs.tag }}
+          name: ${{ needs.parse-version.outputs.tag }}
+          body_path: notes/release-notes.md
+          prerelease: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/canton-localnet-*
+            dist/*.nupkg
+            dist/checksums.txt

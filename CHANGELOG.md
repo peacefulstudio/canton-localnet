@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Tag-driven release pipeline (#11) — `.github/workflows/release.yml`
+  triggered on `v<splice>-<patch>` tag pushes (e.g. `v0.6.2-1`).
+  Produces four artifacts in lockstep on every tag: the
+  `Peaceful.Canton.Localnet.Testing.<version>.nupkg` pushed to the
+  GitHub Packages NuGet feed; the Go module version reachable via
+  `go get github.com/peacefulstudio/canton-localnet/go/fixture@<version>`
+  (the tag itself is the module version); multi-platform CLI
+  binaries (`linux/amd64`, `linux/arm64`, `darwin/amd64`,
+  `darwin/arm64`, `windows/amd64`) attached to the GitHub Release
+  with a SHA-256 `checksums.txt`, embedding the version via
+  `-ldflags -X main.version=<version>` so `canton-localnet --version`
+  reports it; and the `compose/` directory packaged via `oras` and
+  pushed to `ghcr.io/peacefulstudio/canton-localnet:<version>`.
+  Release notes are extracted from `CHANGELOG.md`'s `[Unreleased]`
+  section verbatim. The version-format rule (never a plain
+  `v<splice>`, patch resets on splice bump) and the release SOP are
+  documented in the new [`RELEASE.md`](RELEASE.md), linked from
+  `CONTRIBUTING.md`.
 - `canton-localnet vm` parent command with three subcommands (issue
   #15) — `provision` runs `terraform init` + `terraform apply
   -auto-approve` against `terraform/` and prints the elastic IP plus a

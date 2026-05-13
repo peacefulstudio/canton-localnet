@@ -166,6 +166,16 @@ For user-visible changes, add an entry to the `[Unreleased]` section of
 [`CHANGELOG.md`](CHANGELOG.md). Skip this for purely internal refactors,
 test-only changes, CI tweaks, and dependency bumps that don't alter behaviour.
 
+## Releases
+
+Releases are tag-driven: pushing a `v<splice>-<patch>` tag (e.g.
+`v0.6.2-1`) to `dev` triggers `.github/workflows/release.yml`,
+which publishes the NuGet package, the Go module version, the
+multi-platform CLI binaries, and the OCI compose artifact in
+lockstep. The full release SOP and the version-format rule (never
+a plain `v<splice>`; patch resets on splice bump) live in
+[RELEASE.md](RELEASE.md).
+
 ## Reporting bugs
 
 Open an issue using the "Bug report" template. The more reproducible the
