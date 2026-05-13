@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -60,7 +59,7 @@ func NewDarUploader(baseURL string, tokens TokenProvider, opts ...DarUploaderOpt
 		return nil, errors.New("dar: TokenProvider is required")
 	}
 	d := &DarUploader{
-		baseURL:    strings.TrimRight(baseURL, "/"),
+		baseURL:    normalizeBaseURL(baseURL),
 		tokens:     tokens,
 		httpClient: http.DefaultClient,
 	}
@@ -100,34 +99,18 @@ func (d *DarUploader) UploadAll(ctx context.Context, paths ...string) error {
 }
 
 func (d *DarUploader) uploadBytes(ctx context.Context, path string, data []byte) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, d.baseURL+"/v2/packages", bytes.NewReader(data))
-	if err != nil {
-		return fmt.Errorf("dar: build POST /v2/packages: %w", err)
-	}
-	token, err := d.tokens.Token(ctx)
-	if err != nil {
-		return fmt.Errorf("dar: acquire token: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/octet-stream")
-	req.Header.Set("Accept", "application/json")
-	req.ContentLength = int64(len(data))
+	_, err := doRequest(ctx, d.httpClient, d.tokens, d.baseURL, httpRequest{
+		method:            http.MethodPost,
+		path:              "/v2/packages",
+		body:              data,
+		contentType:       "application/octet-stream",
+		errPrefix:         "dar",
+		pathLabel:         fmt.Sprintf("/v2/packages (%s)", path),
+		treat400AsSuccess: isKnownPackageVersion,
+	})
+	return err
+}
 
-	resp, err := d.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("dar: POST /v2/packages (%s): %w", path, err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("dar: read response for %s: %w", path, err)
-	}
-	if resp.StatusCode == http.StatusBadRequest && bytes.Contains(body, []byte(KnownPackageVersionMarker)) {
-		return nil
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("dar: POST /v2/packages (%s) returned HTTP %d: %s", path, resp.StatusCode, truncateBodyForError(body))
-	}
-	return nil
+func isKnownPackageVersion(body []byte) bool {
+	return bytes.Contains(body, []byte(KnownPackageVersionMarker))
 }

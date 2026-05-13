@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 )
@@ -52,7 +51,7 @@ func NewJsonLedgerAdminClient(baseURL string, tokens TokenProvider, opts ...Json
 		return nil, errors.New("admin: TokenProvider is required")
 	}
 	client := &JsonLedgerAdminClient{
-		baseURL:    strings.TrimRight(baseURL, "/"),
+		baseURL:    normalizeBaseURL(baseURL),
 		tokens:     tokens,
 		httpClient: http.DefaultClient,
 	}
@@ -79,38 +78,21 @@ func (c *JsonLedgerAdminClient) GetParticipantId(ctx context.Context) (string, e
 	return out.ParticipantID, nil
 }
 
-func (c *JsonLedgerAdminClient) doJSON(ctx context.Context, method, path string, body io.Reader, out any) error {
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
+func (c *JsonLedgerAdminClient) doJSON(ctx context.Context, method, path string, body []byte, out any) error {
+	respBody, err := doRequest(ctx, c.httpClient, c.tokens, c.baseURL, httpRequest{
+		method:      method,
+		path:        path,
+		body:        body,
+		contentType: "application/json",
+		errPrefix:   "admin",
+	})
 	if err != nil {
-		return fmt.Errorf("admin: build %s %s: %w", method, path, err)
-	}
-	token, err := c.tokens.Token(ctx)
-	if err != nil {
-		return fmt.Errorf("admin: acquire token: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/json")
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("admin: %s %s: %w", method, path, err)
-	}
-	defer resp.Body.Close()
-
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("admin: read %s %s response: %w", method, path, err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("admin: %s %s returned HTTP %d: %s", method, path, resp.StatusCode, truncateBodyForError(raw))
+		return err
 	}
 	if out == nil {
 		return nil
 	}
-	if err := json.Unmarshal(raw, out); err != nil {
+	if err := json.Unmarshal(respBody, out); err != nil {
 		return fmt.Errorf("admin: decode %s %s response: %w", method, path, err)
 	}
 	return nil

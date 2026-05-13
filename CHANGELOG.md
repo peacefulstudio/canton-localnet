@@ -204,6 +204,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Refactored Go fixture HTTP path into a shared helper (#29). The
+  POST + bearer-auth + body-capture + status-check pattern duplicated
+  across `DarUploader`, `PartyAllocator`, `UserBuilder` (and the
+  pre-existing `JsonLedgerAdminClient`) is now one unexported
+  `doRequest` in `go/fixture/httputil.go`, and the four
+  per-constructor `strings.TrimRight(baseURL, "/")` calls collapse to
+  a single `normalizeBaseURL`. The DAR `KNOWN_PACKAGE_VERSION`
+  400-as-success shortcut is preserved as a per-call
+  `treat400AsSuccess` hook. No public API change.
 - Licensing established as Apache-2.0. Every new source file must carry
   the two-line SPDX header (`Copyright (c) YYYY Peaceful Studio OÜ` +
   `SPDX-License-Identifier: Apache-2.0`) regardless of language; for

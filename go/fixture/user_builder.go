@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 )
@@ -57,7 +56,7 @@ func NewUserBuilder(baseURL string, tokens TokenProvider, opts ...UserBuilderOpt
 		return nil, errors.New("user: TokenProvider is required")
 	}
 	b := &UserBuilder{
-		baseURL:    strings.TrimRight(baseURL, "/"),
+		baseURL:    normalizeBaseURL(baseURL),
 		tokens:     tokens,
 		httpClient: http.DefaultClient,
 	}
@@ -187,31 +186,15 @@ func (b *UserBuilder) postJSON(ctx context.Context, path string, body any, out a
 	if err != nil {
 		return fmt.Errorf("user: marshal %s body: %w", path, err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.baseURL+path, strings.NewReader(string(raw)))
+	respBody, err := doRequest(ctx, b.httpClient, b.tokens, b.baseURL, httpRequest{
+		method:      http.MethodPost,
+		path:        path,
+		body:        raw,
+		contentType: "application/json",
+		errPrefix:   "user",
+	})
 	if err != nil {
-		return fmt.Errorf("user: build POST %s: %w", path, err)
-	}
-	token, err := b.tokens.Token(ctx)
-	if err != nil {
-		return fmt.Errorf("user: acquire token: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.ContentLength = int64(len(raw))
-
-	resp, err := b.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("user: POST %s: %w", path, err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("user: read POST %s response: %w", path, err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("user: POST %s returned HTTP %d: %s", path, resp.StatusCode, truncateBodyForError(respBody))
+		return err
 	}
 	if out == nil {
 		return nil

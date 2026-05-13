@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 )
@@ -65,7 +64,7 @@ func NewPartyAllocator(baseURL string, tokens TokenProvider, opts ...PartyAlloca
 		return nil, fmt.Errorf("party: generate suffix: %w", err)
 	}
 	p := &PartyAllocator{
-		baseURL:    strings.TrimRight(baseURL, "/"),
+		baseURL:    normalizeBaseURL(baseURL),
 		tokens:     tokens,
 		httpClient: http.DefaultClient,
 		suffix:     suffix,
@@ -124,31 +123,15 @@ func (p *PartyAllocator) Allocate(ctx context.Context, prefix, displayName strin
 	if err != nil {
 		return "", fmt.Errorf("party: marshal request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/v2/parties", strings.NewReader(string(raw)))
+	body, err := doRequest(ctx, p.httpClient, p.tokens, p.baseURL, httpRequest{
+		method:      http.MethodPost,
+		path:        "/v2/parties",
+		body:        raw,
+		contentType: "application/json",
+		errPrefix:   "party",
+	})
 	if err != nil {
-		return "", fmt.Errorf("party: build POST /v2/parties: %w", err)
-	}
-	token, err := p.tokens.Token(ctx)
-	if err != nil {
-		return "", fmt.Errorf("party: acquire token: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.ContentLength = int64(len(raw))
-
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("party: POST /v2/parties: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("party: read response: %w", err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("party: POST /v2/parties returned HTTP %d: %s", resp.StatusCode, truncateBodyForError(body))
+		return "", err
 	}
 	var decoded partyAllocateResponse
 	if err := json.Unmarshal(body, &decoded); err != nil {
