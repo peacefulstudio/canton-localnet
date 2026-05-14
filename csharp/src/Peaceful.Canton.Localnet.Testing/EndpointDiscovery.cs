@@ -6,12 +6,14 @@ namespace Peaceful.Canton.Localnet.Testing;
 /// <summary>
 /// Selects which Canton LocalNet profile a fixture is wired to. The profile
 /// determines the host-exposed JSON Ledger API port (sv-validator-1=10xxx,
-/// a-validator-1=11xxx, b-validator-1=12xxx) and which Keycloak realm issues tokens.
+/// a-validator-1=11xxx, b-validator-1=12xxx, c-validator-1=13xxx) and which
+/// Keycloak realm issues tokens.
 /// </summary>
 public enum LocalnetProfile
 {
     BValidator1,
     AValidator1,
+    CValidator1,
     SvValidator1,
 }
 
@@ -108,9 +110,10 @@ public static class EndpointDiscovery
         {
             "b-validator-1" => LocalnetProfile.BValidator1,
             "a-validator-1" => LocalnetProfile.AValidator1,
+            "c-validator-1" => LocalnetProfile.CValidator1,
             "sv-validator-1" or "super-validator" or "supervalidator" => LocalnetProfile.SvValidator1,
             _ => throw new InvalidOperationException(
-                $"Unknown profile '{raw}' in {ProfileEnv}; expected one of: a-validator-1, b-validator-1, sv-validator-1."),
+                $"Unknown profile '{raw}' in {ProfileEnv}; expected one of: a-validator-1, b-validator-1, c-validator-1, sv-validator-1."),
         };
     }
 
@@ -118,6 +121,7 @@ public static class EndpointDiscovery
     {
         LocalnetProfile.BValidator1 => "http://localhost:12975",
         LocalnetProfile.AValidator1 => "http://localhost:11975",
+        LocalnetProfile.CValidator1 => "http://localhost:13975",
         LocalnetProfile.SvValidator1 => "http://localhost:10975",
         _ => throw new ArgumentOutOfRangeException(nameof(profile), profile, null),
     };
@@ -128,6 +132,7 @@ public static class EndpointDiscovery
         {
             LocalnetProfile.BValidator1 => "BValidator1",
             LocalnetProfile.AValidator1 => "AValidator1",
+            LocalnetProfile.CValidator1 => "CValidator1",
             LocalnetProfile.SvValidator1 => "AValidator1",
             _ => throw new ArgumentOutOfRangeException(nameof(profile), profile, null),
         };

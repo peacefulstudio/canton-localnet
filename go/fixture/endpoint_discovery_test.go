@@ -19,6 +19,7 @@ func TestEndpointDiscovery_Defaults(t *testing.T) {
 	}{
 		{RoleAValidator1, "http://localhost:11975", "/realms/AValidator1/protocol/openid-connect/token", "a-validator-1-validator"},
 		{RoleBValidator1, "http://localhost:12975", "/realms/BValidator1/protocol/openid-connect/token", "b-validator-1-validator"},
+		{RoleCValidator1, "http://localhost:13975", "/realms/CValidator1/protocol/openid-connect/token", "c-validator-1-validator"},
 	}
 	for _, tc := range cases {
 		t.Run(string(tc.role), func(t *testing.T) {

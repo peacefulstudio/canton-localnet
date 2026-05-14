@@ -10,6 +10,10 @@ x-vars:
     path: ${B_VALIDATOR_1_AUTH_ENV}
     required: false
 
+  c-validator-1-auth-env: &c-validator-1-auth-env
+    path: ${C_VALIDATOR_1_AUTH_ENV}
+    required: false
+
 volumes:
   onboarding:
 
@@ -21,6 +25,7 @@ services:
       - ${LOCALNET_ENV_DIR}/common.env
       - *a-validator-1-auth-env
       - *b-validator-1-auth-env
+      - *c-validator-1-auth-env
     environment:
       - AUTH_MODE=${AUTH_MODE}
       - TEST_MODE=${TEST_MODE}
@@ -30,6 +35,7 @@ services:
       - ${MODULES_DIR}/splice-onboarding/docker/utils.sh:/app/utils.sh
       - ${MODULES_DIR}/splice-onboarding/docker/a-validator-1.sh:/app/a-validator-1-auth.sh
       - ${MODULES_DIR}/splice-onboarding/docker/b-validator-1.sh:/app/b-validator-1-auth.sh
+      - ${MODULES_DIR}/splice-onboarding/docker/c-validator-1.sh:/app/c-validator-1-auth.sh
       - onboarding:/onboarding
     healthcheck:
       test: ["CMD", "bash", "/app/health-check.sh"]

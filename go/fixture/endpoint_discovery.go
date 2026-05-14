@@ -18,6 +18,8 @@ const (
 	RoleAValidator1 Role = "a-validator-1"
 	// RoleBValidator1 is the b-validator-1 participant, host-exposed on the 12xxx port range.
 	RoleBValidator1 Role = "b-validator-1"
+	// RoleCValidator1 is the c-validator-1 participant, host-exposed on the 13xxx port range.
+	RoleCValidator1 Role = "c-validator-1"
 	// RoleSvValidator1 is the super-validator participant, host-exposed on the 10xxx port range.
 	RoleSvValidator1 Role = "sv-validator-1"
 )
@@ -37,20 +39,21 @@ type Endpoints struct {
 // EndpointDiscovery resolves LocalNet endpoints from environment variables,
 // falling back to the defaults baked into the compose stack.
 //
-// SECURITY: the default ClientSecret values for RoleAValidator1 and
-// RoleBValidator1 are the demo credentials shipped with the splice quickstart
-// compose files. They are public LocalNet test credentials valid only
-// against an ephemeral local Keycloak realm — never use them in any
-// non-localhost or production deployment. Override via the
-// CANTON_LOCALNET_*_CLIENT_SECRET env vars in any real environment.
-// RoleSvValidator1 has no demo default; CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET must be
-// set explicitly.
+// SECURITY: the default ClientSecret values for RoleAValidator1,
+// RoleBValidator1, and RoleCValidator1 are the demo credentials shipped
+// with the splice quickstart compose files. They are public LocalNet test
+// credentials valid only against an ephemeral local Keycloak realm —
+// never use them in any non-localhost or production deployment. Override
+// via the CANTON_LOCALNET_*_CLIENT_SECRET env vars in any real
+// environment. RoleSvValidator1 has no demo default;
+// CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET must be set explicitly.
 //
 // Environment variables consulted (with defaults):
 //
 //	CANTON_LOCALNET_HOST                       (default "localhost")
 //	CANTON_LOCALNET_A_VALIDATOR_1_JSON_PORT     (default "11975")
 //	CANTON_LOCALNET_B_VALIDATOR_1_JSON_PORT         (default "12975")
+//	CANTON_LOCALNET_C_VALIDATOR_1_JSON_PORT         (default "13975")
 //	CANTON_LOCALNET_SV_VALIDATOR_1_JSON_PORT               (default "10975")
 //	CANTON_LOCALNET_KEYCLOAK_HOST              (default "keycloak.localhost")
 //	CANTON_LOCALNET_KEYCLOAK_PORT              (default "8082")
@@ -60,6 +63,8 @@ type Endpoints struct {
 //	CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET (LocalNet demo default — see SECURITY note above)
 //	CANTON_LOCALNET_B_VALIDATOR_1_CLIENT_ID         (default "b-validator-1-validator")
 //	CANTON_LOCALNET_B_VALIDATOR_1_CLIENT_SECRET     (LocalNet demo default — see SECURITY note above)
+//	CANTON_LOCALNET_C_VALIDATOR_1_CLIENT_ID         (default "c-validator-1-validator")
+//	CANTON_LOCALNET_C_VALIDATOR_1_CLIENT_SECRET     (LocalNet demo default — see SECURITY note above)
 //	CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_ID               (default "sv-validator")
 //	CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET           (no default — required for RoleSvValidator1)
 type EndpointDiscovery struct {
@@ -107,6 +112,16 @@ func (d *EndpointDiscovery) For(role Role) (Endpoints, error) {
 			TokenURL:         fmt.Sprintf("http://%s:%s/realms/BValidator1/protocol/openid-connect/token", keycloakHost, keycloakPort),
 			ClientID:         d.lookupOr("CANTON_LOCALNET_B_VALIDATOR_1_CLIENT_ID", "b-validator-1-validator"),
 			ClientSecret:     d.lookupOr("CANTON_LOCALNET_B_VALIDATOR_1_CLIENT_SECRET", "6m12QyyGl81d9nABWQXMycZdXho6ejEX"),
+			Audience:         audience,
+			Scope:            scope,
+		}, nil
+	case RoleCValidator1:
+		return Endpoints{
+			Role:             role,
+			JSONLedgerAPIURL: fmt.Sprintf("http://%s:%s", host, d.lookupOr("CANTON_LOCALNET_C_VALIDATOR_1_JSON_PORT", "13975")),
+			TokenURL:         fmt.Sprintf("http://%s:%s/realms/CValidator1/protocol/openid-connect/token", keycloakHost, keycloakPort),
+			ClientID:         d.lookupOr("CANTON_LOCALNET_C_VALIDATOR_1_CLIENT_ID", "c-validator-1-validator"),
+			ClientSecret:     d.lookupOr("CANTON_LOCALNET_C_VALIDATOR_1_CLIENT_SECRET", "6m12QyyGl81d9nABWQXMycZdXho6ejEX"),
 			Audience:         audience,
 			Scope:            scope,
 		}, nil

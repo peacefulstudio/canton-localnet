@@ -51,7 +51,7 @@ func TestBuild(t *testing.T) {
 				"compose/modules/keycloak/compose.env",
 			},
 			wantProfiles:   []string{"a-validator-1", "b-validator-1", "sv-validator-1", "keycloak"},
-			wantNotProfile: []string{"pqs-a-validator-1", "observability"},
+			wantNotProfile: []string{"c-validator-1", "pqs-a-validator-1", "observability"},
 		},
 		{
 			name: "pqs and obs enabled on linux",
@@ -165,6 +165,43 @@ func TestBuildResourceConstraintsFollowBase(t *testing.T) {
 	}
 	if constraintsIdx < baseIdx {
 		t.Errorf("resource-constraints overlay must come after base compose.yaml (base=%d, constraints=%d)", baseIdx, constraintsIdx)
+	}
+}
+
+func TestBuildAddsCValidator1ProfileWhenEnvOn(t *testing.T) {
+	root := newTestRepoRoot(t)
+	t.Setenv("C_VALIDATOR_1_PROFILE", "on")
+	plan, err := Build(Options{RepoRoot: root, AuthMode: AuthOAuth2})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if !containsPair(plan.Args, "--profile", "c-validator-1") {
+		t.Errorf("expected --profile c-validator-1 when C_VALIDATOR_1_PROFILE=on, full args: %v", plan.Args)
+	}
+}
+
+func TestBuildOmitsCValidator1ProfileWhenEnvOff(t *testing.T) {
+	root := newTestRepoRoot(t)
+	t.Setenv("C_VALIDATOR_1_PROFILE", "off")
+	plan, err := Build(Options{RepoRoot: root, AuthMode: AuthOAuth2})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if containsPair(plan.Args, "--profile", "c-validator-1") {
+		t.Errorf("did not expect --profile c-validator-1 when C_VALIDATOR_1_PROFILE=off, full args: %v", plan.Args)
+	}
+}
+
+func TestBuildAddsPqsCValidator1ProfileWhenBothEnvOn(t *testing.T) {
+	root := newTestRepoRoot(t)
+	t.Setenv("C_VALIDATOR_1_PROFILE", "on")
+	t.Setenv("PQS_C_VALIDATOR_1_PROFILE", "on")
+	plan, err := Build(Options{RepoRoot: root, AuthMode: AuthOAuth2, Pqs: true})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if !containsPair(plan.Args, "--profile", "pqs-c-validator-1") {
+		t.Errorf("expected --profile pqs-c-validator-1, full args: %v", plan.Args)
 	}
 }
 

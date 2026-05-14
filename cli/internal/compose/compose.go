@@ -157,11 +157,17 @@ func Build(opts Options) (Plan, error) {
 	args = append(args, "--profile", "a-validator-1")
 	args = append(args, "--profile", "b-validator-1")
 	args = append(args, "--profile", "sv-validator-1")
+	if os.Getenv("C_VALIDATOR_1_PROFILE") == "on" {
+		args = append(args, "--profile", "c-validator-1")
+	}
 	if opts.AuthMode == AuthOAuth2 {
 		args = append(args, "--profile", "keycloak")
 	}
 	if opts.Pqs {
 		args = append(args, "--profile", "pqs-a-validator-1")
+		if os.Getenv("PQS_C_VALIDATOR_1_PROFILE") == "on" {
+			args = append(args, "--profile", "pqs-c-validator-1")
+		}
 	}
 	if opts.Obs {
 		args = append(args, "--profile", "observability")

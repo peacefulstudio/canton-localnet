@@ -50,6 +50,8 @@ services:
       - *canton-metrics-config
   wallet-web-ui-b-validator-1: *set-default-logging
   ans-web-ui-b-validator-1: *set-default-logging
+  wallet-web-ui-c-validator-1: *set-default-logging
+  ans-web-ui-c-validator-1: *set-default-logging
   wallet-web-ui-a-validator-1: *set-default-logging
   ans-web-ui-a-validator-1: *set-default-logging
   wallet-web-ui-sv-validator-1: *set-default-logging

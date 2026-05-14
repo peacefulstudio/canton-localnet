@@ -10,6 +10,7 @@ public class EndpointDiscoveryTests
     [Theory]
     [InlineData(LocalnetProfile.BValidator1, "http://localhost:12975")]
     [InlineData(LocalnetProfile.AValidator1, "http://localhost:11975")]
+    [InlineData(LocalnetProfile.CValidator1, "http://localhost:13975")]
     [InlineData(LocalnetProfile.SvValidator1, "http://localhost:10975")]
     public void Resolve_returns_default_json_api_url_per_profile(LocalnetProfile profile, string expected)
     {
@@ -86,6 +87,7 @@ public class EndpointDiscoveryTests
     [InlineData("b-validator-1", LocalnetProfile.BValidator1)]
     [InlineData("B-VALIDATOR-1", LocalnetProfile.BValidator1)]
     [InlineData("a-validator-1", LocalnetProfile.AValidator1)]
+    [InlineData("c-validator-1", LocalnetProfile.CValidator1)]
     [InlineData("sv-validator-1", LocalnetProfile.SvValidator1)]
     [InlineData("super-validator", LocalnetProfile.SvValidator1)]
     public void ResolveProfile_maps_string_to_enum(string raw, LocalnetProfile expected)

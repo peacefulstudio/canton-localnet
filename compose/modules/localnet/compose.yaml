@@ -13,6 +13,10 @@ x-vars:
     path: ${B_VALIDATOR_1_AUTH_ENV}
     required: false
 
+  c-validator-1-auth-env: &c-validator-1-auth-env
+    path: ${C_VALIDATOR_1_AUTH_ENV}
+    required: false
+
   sv-validator-1-auth-env: &sv-validator-1-auth-env
     path: ${SV_VALIDATOR_1_AUTH_ENV}
     required: false
@@ -56,6 +60,7 @@ services:
     profiles:
       - a-validator-1
       - b-validator-1
+      - c-validator-1
       - sv-validator-1
 
   nginx:
@@ -67,12 +72,14 @@ services:
       - ${LOCALNET_DIR}/conf/nginx/nginx.conf:/etc/nginx/nginx.conf
       - ${LOCALNET_DIR}/conf/nginx/a-validator-1.conf:/etc/nginx/templates/a-validator-1.c${A_VALIDATOR_1_PROFILE}f.template
       - ${LOCALNET_DIR}/conf/nginx/b-validator-1.conf:/etc/nginx/templates/b-validator-1.c${B_VALIDATOR_1_PROFILE}f.template
+      - ${LOCALNET_DIR}/conf/nginx/c-validator-1.conf:/etc/nginx/templates/c-validator-1.c${C_VALIDATOR_1_PROFILE}f.template
       - ${LOCALNET_DIR}/conf/nginx/sv-validator-1.conf:/etc/nginx/templates/sv-validator-1.c${SV_VALIDATOR_1_PROFILE}f.template
       - ${LOCALNET_DIR}/conf/nginx/swagger-ui:/etc/nginx/includes
     ports:
       - "${HOST_BIND_IP:-127.0.0.1}:${SV_VALIDATOR_1_UI_PORT}:${SV_VALIDATOR_1_UI_PORT}"
       - "${HOST_BIND_IP:-127.0.0.1}:${A_VALIDATOR_1_UI_PORT}:${A_VALIDATOR_1_UI_PORT}"
       - "${HOST_BIND_IP:-127.0.0.1}:${B_VALIDATOR_1_UI_PORT}:${B_VALIDATOR_1_UI_PORT}"
+      - "${HOST_BIND_IP:-127.0.0.1}:${C_VALIDATOR_1_UI_PORT}:${C_VALIDATOR_1_UI_PORT}"
     depends_on:
       wallet-web-ui-sv-validator-1:
         condition: service_healthy
@@ -83,12 +90,16 @@ services:
       wallet-web-ui-b-validator-1:
         condition: service_healthy
         required: false
+      wallet-web-ui-c-validator-1:
+        condition: service_healthy
+        required: false
       splice:
         condition: service_healthy
     restart: always
     profiles:
       - a-validator-1
       - b-validator-1
+      - c-validator-1
       - sv-validator-1
 
   canton:
@@ -97,6 +108,7 @@ services:
       - ${LOCALNET_ENV_DIR}/common.env
       - *a-validator-1-auth-env
       - *b-validator-1-auth-env
+      - *c-validator-1-auth-env
       - *sv-validator-1-auth-env
     container_name: canton
     volumes:
@@ -104,6 +116,7 @@ services:
       - ${LOCALNET_DIR}/conf/canton/app.conf:/app/app.conf
       - ${LOCALNET_DIR}/conf/canton/a-validator-1:/app/a-validator-1/${A_VALIDATOR_1_PROFILE}
       - ${LOCALNET_DIR}/conf/canton/b-validator-1:/app/b-validator-1/${B_VALIDATOR_1_PROFILE}
+      - ${LOCALNET_DIR}/conf/canton/c-validator-1:/app/c-validator-1/${C_VALIDATOR_1_PROFILE}
       - ${LOCALNET_DIR}/conf/canton/sv-validator-1:/app/sv-validator-1/${SV_VALIDATOR_1_PROFILE}
     ports:
       - "${TEST_PORT-10$PARTICIPANT_LEDGER_API_PORT_SUFFIX:}10${PARTICIPANT_LEDGER_API_PORT_SUFFIX}"
@@ -115,6 +128,9 @@ services:
       - "${TEST_PORT-12$PARTICIPANT_LEDGER_API_PORT_SUFFIX:}12${PARTICIPANT_LEDGER_API_PORT_SUFFIX}"
       - "${TEST_PORT-12$PARTICIPANT_ADMIN_API_PORT_SUFFIX:}12${PARTICIPANT_ADMIN_API_PORT_SUFFIX}"
       - "${TEST_PORT-12$PARTICIPANT_JSON_API_PORT_SUFFIX:}12${PARTICIPANT_JSON_API_PORT_SUFFIX}"
+      - "${TEST_PORT-13$PARTICIPANT_LEDGER_API_PORT_SUFFIX:}13${PARTICIPANT_LEDGER_API_PORT_SUFFIX}"
+      - "${TEST_PORT-13$PARTICIPANT_ADMIN_API_PORT_SUFFIX:}13${PARTICIPANT_ADMIN_API_PORT_SUFFIX}"
+      - "${TEST_PORT-13$PARTICIPANT_JSON_API_PORT_SUFFIX:}13${PARTICIPANT_JSON_API_PORT_SUFFIX}"
     healthcheck:
       test: ["CMD", "bash", "/app/health-check.sh"]
       interval: 20s
@@ -129,6 +145,7 @@ services:
     profiles:
       - a-validator-1
       - b-validator-1
+      - c-validator-1
       - sv-validator-1
 
   splice:
@@ -139,12 +156,14 @@ services:
       - ${LOCALNET_ENV_DIR}/splice.env
       - *a-validator-1-auth-env
       - *b-validator-1-auth-env
+      - *c-validator-1-auth-env
       - *sv-validator-1-auth-env
     volumes:
       - ${LOCALNET_DIR}/docker/splice/health-check.sh:/app/health-check.sh
       - ${LOCALNET_DIR}/conf/splice/app.conf:/app/app.conf
       - ${LOCALNET_DIR}/conf/splice/a-validator-1:/app/a-validator-1/${A_VALIDATOR_1_PROFILE}
       - ${LOCALNET_DIR}/conf/splice/b-validator-1:/app/b-validator-1/${B_VALIDATOR_1_PROFILE}
+      - ${LOCALNET_DIR}/conf/splice/c-validator-1:/app/c-validator-1/${C_VALIDATOR_1_PROFILE}
       - ${LOCALNET_DIR}/conf/splice/sv-validator-1:/app/sv-validator-1/${SV_VALIDATOR_1_PROFILE}
       - domain-upgrade-dump:/domain-upgrade-dump
     healthcheck:
@@ -158,6 +177,7 @@ services:
       - "${TEST_PORT-10$VALIDATOR_ADMIN_API_PORT_SUFFIX:}10${VALIDATOR_ADMIN_API_PORT_SUFFIX}"
       - "${TEST_PORT-11$VALIDATOR_ADMIN_API_PORT_SUFFIX:}11${VALIDATOR_ADMIN_API_PORT_SUFFIX}"
       - "${TEST_PORT-12$VALIDATOR_ADMIN_API_PORT_SUFFIX:}12${VALIDATOR_ADMIN_API_PORT_SUFFIX}"
+      - "${TEST_PORT-13$VALIDATOR_ADMIN_API_PORT_SUFFIX:}13${VALIDATOR_ADMIN_API_PORT_SUFFIX}"
     depends_on:
       canton:
         condition: service_healthy
@@ -165,6 +185,7 @@ services:
     profiles:
       - a-validator-1
       - b-validator-1
+      - c-validator-1
       - sv-validator-1
 
   console:
@@ -176,11 +197,13 @@ services:
       - ${LOCALNET_ENV_DIR}/common.env
       - *a-validator-1-auth-env
       - *b-validator-1-auth-env
+      - *c-validator-1-auth-env
       - *sv-validator-1-auth-env
     volumes:
       - ${LOCALNET_DIR}/conf/console/app.conf:/app/app.conf
       - ${LOCALNET_DIR}/conf/console/a-validator-1:/app/a-validator-1/${A_VALIDATOR_1_PROFILE}
       - ${LOCALNET_DIR}/conf/console/b-validator-1:/app/b-validator-1/${B_VALIDATOR_1_PROFILE}
+      - ${LOCALNET_DIR}/conf/console/c-validator-1:/app/c-validator-1/${C_VALIDATOR_1_PROFILE}
       - ${LOCALNET_DIR}/conf/console/sv-validator-1:/app/sv-validator-1/${SV_VALIDATOR_1_PROFILE}
       - ${LOCALNET_DIR}/docker/console/entrypoint.sh:/app/entrypoint.sh
     entrypoint: /app/entrypoint.sh
@@ -195,6 +218,7 @@ services:
     environment:
       URLS: '[{"url": "http://canton.localhost:${A_VALIDATOR_1_UI_PORT}/docs/openapi", "name": "a-validator-1"},
               {"url": "http://canton.localhost:${B_VALIDATOR_1_UI_PORT}/docs/openapi", "name": "b-validator-1"},
+              {"url": "http://canton.localhost:${C_VALIDATOR_1_UI_PORT}/docs/openapi", "name": "c-validator-1"},
               {"url": "http://canton.localhost:${SV_VALIDATOR_1_UI_PORT}/docs/openapi", "name": "sv-validator-1"}]'
     ports:
       - "${SWAGGER_UI_PORT}:8080"
@@ -223,6 +247,29 @@ services:
       - SPLICE_APP_WALLET_REDIRECT=http://wallet.localhost:${B_VALIDATOR_1_UI_PORT}
     profiles:
       - b-validator-1
+
+  ###############################################################################################################
+  ### C Validator
+  ###############################################################################################################
+  wallet-web-ui-c-validator-1:
+    image: "${IMAGE_REPO}wallet-web-ui:${IMAGE_TAG}"
+    container_name: wallet-web-ui-c-validator-1
+    env_file:
+      - ${LOCALNET_ENV_DIR}/common.env
+      - *c-validator-1-auth-env
+    profiles:
+      - c-validator-1
+
+  ans-web-ui-c-validator-1:
+    image: "${IMAGE_REPO}ans-web-ui:${IMAGE_TAG}"
+    container_name: ans-web-ui-c-validator-1
+    env_file:
+      - ${LOCALNET_ENV_DIR}/common.env
+      - *c-validator-1-auth-env
+    environment:
+      - SPLICE_APP_WALLET_REDIRECT=http://wallet.localhost:${C_VALIDATOR_1_UI_PORT}
+    profiles:
+      - c-validator-1
 
   ###############################################################################################################
   ### Application Provider

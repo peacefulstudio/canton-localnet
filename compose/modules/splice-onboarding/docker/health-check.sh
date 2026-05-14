@@ -36,6 +36,14 @@ if [ ! -f /tmp/all-done ]; then
     fi
   fi
 
+  if [ "$C_VALIDATOR_1_PROFILE" == "on" ]; then
+    source /app/c-validator-1-auth.sh
+    if [ "$DO_INIT" == "true" ] && [ ! -f /tmp/c-validator-1-init-dars-uploaded ]; then
+      upload_dars "$C_VALIDATOR_1_PARTICIPANT_ADMIN_TOKEN" "canton:13${PARTICIPANT_JSON_API_PORT_SUFFIX}"
+      touch /tmp/c-validator-1-init-dars-uploaded
+    fi
+  fi
+
   echo "Executing onboarding scripts..." >&2
 
   for script in $(ls "$ONBOARDING_SCRIPTS_DIR"); do

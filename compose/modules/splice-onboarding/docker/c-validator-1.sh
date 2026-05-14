@@ -1,0 +1,35 @@
+#!/bin/bash
+# Copyright (c) 2026, Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
+# SPDX-License-Identifier: 0BSD
+
+set -eo pipefail
+
+source /app/utils.sh
+
+if [ "$AUTH_MODE" = "oauth2" ]; then
+  export C_VALIDATOR_1_PARTICIPANT_ADMIN_TOKEN=$(get_admin_token $AUTH_C_VALIDATOR_1_VALIDATOR_CLIENT_SECRET $AUTH_C_VALIDATOR_1_VALIDATOR_CLIENT_ID $AUTH_C_VALIDATOR_1_TOKEN_URL)
+  export C_VALIDATOR_1_PARTY=$(get_user_party "$C_VALIDATOR_1_PARTICIPANT_ADMIN_TOKEN" $AUTH_C_VALIDATOR_1_VALIDATOR_USER_ID "canton:13${PARTICIPANT_JSON_API_PORT_SUFFIX}")
+  export C_VALIDATOR_1_WALLET_ADMIN_TOKEN=$(get_user_token $AUTH_C_VALIDATOR_1_WALLET_ADMIN_USER_NAME $AUTH_C_VALIDATOR_1_WALLET_ADMIN_USER_PASSWORD $AUTH_C_VALIDATOR_1_AUTO_CONFIG_CLIENT_ID $AUTH_C_VALIDATOR_1_TOKEN_URL)
+  export DSO_PARTY=$(get_dso_party_id "$C_VALIDATOR_1_WALLET_ADMIN_TOKEN" "splice:13${VALIDATOR_ADMIN_API_PORT_SUFFIX}")
+
+
+  if [ "$DO_INIT" == "true" ] && [ ! -f /tmp/c-validator-1-init-user-cleanup ]; then
+    # To update user name in metadata
+    update_user "$C_VALIDATOR_1_PARTICIPANT_ADMIN_TOKEN" $AUTH_C_VALIDATOR_1_WALLET_ADMIN_USER_ID $AUTH_C_VALIDATOR_1_WALLET_ADMIN_USER_NAME $C_VALIDATOR_1_PARTY "canton:13${PARTICIPANT_JSON_API_PORT_SUFFIX}"
+    update_user "$C_VALIDATOR_1_PARTICIPANT_ADMIN_TOKEN" $AUTH_C_VALIDATOR_1_VALIDATOR_USER_ID $AUTH_C_VALIDATOR_1_VALIDATOR_USER_NAME $C_VALIDATOR_1_PARTY "canton:13${PARTICIPANT_JSON_API_PORT_SUFFIX}"
+
+    delete_user "$C_VALIDATOR_1_PARTICIPANT_ADMIN_TOKEN" participant_admin "canton:13${PARTICIPANT_JSON_API_PORT_SUFFIX}"
+    touch /tmp/c-validator-1-init-user-cleanup
+  fi
+
+else
+  export C_VALIDATOR_1_PARTICIPANT_ADMIN_TOKEN=$(generate_jwt "$AUTH_C_VALIDATOR_1_VALIDATOR_USER_NAME" "$AUTH_C_VALIDATOR_1_AUDIENCE")
+  export C_VALIDATOR_1_PARTY=$(get_user_party "$C_VALIDATOR_1_PARTICIPANT_ADMIN_TOKEN" $AUTH_C_VALIDATOR_1_VALIDATOR_USER_NAME "canton:13${PARTICIPANT_JSON_API_PORT_SUFFIX}")
+  export C_VALIDATOR_1_WALLET_ADMIN_TOKEN=$(generate_jwt "$AUTH_C_VALIDATOR_1_WALLET_ADMIN_USER_NAME" "$AUTH_C_VALIDATOR_1_AUDIENCE")
+  export DSO_PARTY=$(get_dso_party_id "$C_VALIDATOR_1_WALLET_ADMIN_TOKEN" "splice:13${VALIDATOR_ADMIN_API_PORT_SUFFIX}")
+
+  if [ "$DO_INIT" == "true" ] && [ ! -f /tmp/c-validator-1-init-user-cleanup ]; then
+    delete_user "$C_VALIDATOR_1_PARTICIPANT_ADMIN_TOKEN" participant_admin "canton:13${PARTICIPANT_JSON_API_PORT_SUFFIX}"
+    touch /tmp/c-validator-1-init-user-cleanup
+  fi
+fi

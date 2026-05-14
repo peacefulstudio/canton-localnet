@@ -1,0 +1,78 @@
+{
+  "realm" : "CValidator1",
+  "users" : [ {
+    "id" : "d33b4fbf-fe74-4137-9799-acb1fc776e18",
+    "username" : "adrian",
+    "firstName" : "Adrian",
+    "lastName" : "Doe",
+    "email" : "adrian@c-validator-1.localhost",
+    "emailVerified" : true,
+    "createdTimestamp" : 1739918088579,
+    "enabled" : true,
+    "totp" : false,
+    "credentials" : [ {
+      "id" : "b4c84f4c-0182-4497-9c36-8cadcddf8057",
+      "type" : "password",
+      "userLabel" : "My password",
+      "createdDate" : 1739918102418,
+      "secretData" : "{\"value\":\"oTEtPmIuYh7ubG7sSZpHw8r9wP1R3d06sIlMXCDALiA=\",\"salt\":\"9B/eNu4KcL4UtbJLUi4fvw==\",\"additionalParameters\":{}}",
+      "credentialData" : "{\"hashIterations\":5,\"algorithm\":\"argon2\",\"additionalParameters\":{\"hashLength\":[\"32\"],\"memory\":[\"7168\"],\"type\":[\"id\"],\"version\":[\"1.3\"],\"parallelism\":[\"1\"]}}"
+    } ],
+    "disableableCredentialTypes" : [ ],
+    "requiredActions" : [ ],
+    "realmRoles" : [ "default-roles-appuser" ],
+    "notBefore" : 0,
+    "groups" : [ ]
+  }, {
+    "id" : "64ffa5f6-8495-4154-9dfb-33f175e21727",
+    "username" : "c-validator-1",
+    "firstName" : "app",
+    "lastName" : "user",
+    "email" : "c-validator-1@c-validator-1.localhost",
+    "emailVerified" : true,
+    "createdTimestamp" : 1739918000869,
+    "enabled" : true,
+    "totp" : false,
+    "credentials" : [ {
+      "id" : "44a9a786-c8e7-448e-a526-325e0dde777d",
+      "type" : "password",
+      "userLabel" : "My password",
+      "createdDate" : 1741844043993,
+      "secretData" : "{\"value\":\"HaSk51Fk0Ymc7yI3zXBcvCR8xZsAo5ZA8nCDQDLTr2s=\",\"salt\":\"/IgPeaGVZmbye9EAqcBGkQ==\",\"additionalParameters\":{}}",
+      "credentialData" : "{\"hashIterations\":5,\"algorithm\":\"argon2\",\"additionalParameters\":{\"hashLength\":[\"32\"],\"memory\":[\"7168\"],\"type\":[\"id\"],\"version\":[\"1.3\"],\"parallelism\":[\"1\"]}}"
+    } ],
+    "disableableCredentialTypes" : [ ],
+    "requiredActions" : [ ],
+    "realmRoles" : [ "default-roles-appuser" ],
+    "notBefore" : 0,
+    "groups" : [ ]
+  }, {
+    "id" : "4349cf4f-47d7-4072-903e-ce488f88915e",
+    "username" : "service-account-c-validator-1-pqs",
+    "emailVerified" : false,
+    "createdTimestamp" : 1748398373576,
+    "enabled" : true,
+    "totp" : false,
+    "serviceAccountClientId" : "c-validator-1-pqs",
+    "credentials" : [ ],
+    "disableableCredentialTypes" : [ ],
+    "requiredActions" : [ ],
+    "realmRoles" : [ "default-roles-appuser" ],
+    "notBefore" : 0,
+    "groups" : [ ]
+  }, {
+    "id" : "f902df23-9d11-4836-94c1-b9b584112755",
+    "username" : "service-account-c-validator-1-validator",
+    "emailVerified" : false,
+    "createdTimestamp" : 1739918628352,
+    "enabled" : true,
+    "totp" : false,
+    "serviceAccountClientId" : "c-validator-1-validator",
+    "credentials" : [ ],
+    "disableableCredentialTypes" : [ ],
+    "requiredActions" : [ ],
+    "realmRoles" : [ "default-roles-appuser" ],
+    "notBefore" : 0,
+    "groups" : [ ]
+  } ]
+}

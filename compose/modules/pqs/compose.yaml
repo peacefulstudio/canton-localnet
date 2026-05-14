@@ -10,6 +10,10 @@ x-vars:
     path: ${MODULES_DIR}/pqs/env/b-validator-1/${PQS_B_VALIDATOR_1_PROFILE}/${AUTH_MODE}.env
     required: false
 
+  c-validator-1-pqs-env: &c-validator-1-pqs-env
+    path: ${MODULES_DIR}/pqs/env/c-validator-1/${PQS_C_VALIDATOR_1_PROFILE}/${AUTH_MODE}.env
+    required: false
+
   sv-pqs-env: &sv-pqs-env
     path: ${MODULES_DIR}/pqs/env/sv-validator-1/${PQS_SV_VALIDATOR_1_PROFILE}.env
     required: false
@@ -20,6 +24,10 @@ x-vars:
 
   b-validator-1-pqs-onboarding-env: &b-validator-1-pqs-onboarding-env
     path: ${MODULES_DIR}/pqs/onboarding/b-validator-1/${PQS_B_VALIDATOR_1_PROFILE}/${AUTH_MODE}.env
+    required: false
+
+  c-validator-1-pqs-onboarding-env: &c-validator-1-pqs-onboarding-env
+    path: ${MODULES_DIR}/pqs/onboarding/c-validator-1/${PQS_C_VALIDATOR_1_PROFILE}/${AUTH_MODE}.env
     required: false
 
 volumes:
@@ -74,6 +82,30 @@ services:
     profiles:
       - pqs-b-validator-1
 
+  pqs-c-validator-1:
+    image: ${SCRIBE_IMAGE}:${SCRIBE_VERSION}
+    container_name: pqs-c-validator-1
+    working_dir: /daml3.4
+    env_file:
+      - ${LOCALNET_ENV_DIR}/common.env
+      - ${MODULES_DIR}/pqs/env/pqs.env
+      - *c-validator-1-pqs-onboarding-env
+      - *c-validator-1-pqs-env
+    volumes:
+      - onboarding:/onboarding
+    command:
+      - "pipeline"
+      - "ledger"
+      - "postgres-document"
+    depends_on:
+      canton:
+        condition: service_healthy
+      splice-onboarding:
+        condition: service_healthy
+    restart: on-failure:100
+    profiles:
+      - pqs-c-validator-1
+
   pqs-sv-validator-1:
     image: ${SCRIBE_IMAGE}:${SCRIBE_VERSION}
     container_name: pqs-sv-validator-1
@@ -102,13 +134,16 @@ services:
     env_file:
       - *a-validator-1-pqs-onboarding-env
       - *b-validator-1-pqs-onboarding-env
+      - *c-validator-1-pqs-onboarding-env
     volumes:
       - ${MODULES_DIR}/pqs/onboarding/a-validator-1/env.sh:/app/scripts/${PQS_A_VALIDATOR_1_PROFILE}/a-validator-1-pqs.sh
       - ${MODULES_DIR}/pqs/onboarding/b-validator-1/env.sh:/app/scripts/${PQS_B_VALIDATOR_1_PROFILE}/b-validator-1-pqs.sh
+      - ${MODULES_DIR}/pqs/onboarding/c-validator-1/env.sh:/app/scripts/${PQS_C_VALIDATOR_1_PROFILE}/c-validator-1-pqs.sh
       - ${MODULES_DIR}/pqs/onboarding/sv-validator-1/env.sh:/app/scripts/${PQS_SV_VALIDATOR_1_PROFILE}/sv-pqs.sh
 
   postgres:
     environment:
       - CREATE_DATABASE_pqs_app_provider=pqs-a-validator-1
       - CREATE_DATABASE_pqs_app_user=pqs-b-validator-1
+      - CREATE_DATABASE_pqs_c_validator_1=pqs-c-validator-1
       - CREATE_DATABASE_pqs_sv=pqs-sv-validator-1
