@@ -65,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Validator slot `d-validator-1` at port prefix 14 (#42).
 - Validator slot `c-validator-1` at port prefix 13 (#41)
 - `canton-localnet.yaml` consumer config (preview-1, unstable) —
   walk-up discovery and env translation (#43). The CLI walks up from

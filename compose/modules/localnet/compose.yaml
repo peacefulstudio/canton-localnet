@@ -21,6 +21,10 @@ x-vars:
     path: ${SV_VALIDATOR_1_AUTH_ENV}
     required: false
 
+  d-validator-1-auth-env: &d-validator-1-auth-env
+    path: ${D_VALIDATOR_1_AUTH_ENV}
+    required: false
+
 volumes:
   postgres:
   domain-upgrade-dump:
@@ -62,6 +66,7 @@ services:
       - b-validator-1
       - c-validator-1
       - sv-validator-1
+      - d-validator-1
 
   nginx:
     image: "nginx:${NGINX_VERSION}"
@@ -74,12 +79,14 @@ services:
       - ${LOCALNET_DIR}/conf/nginx/b-validator-1.conf:/etc/nginx/templates/b-validator-1.c${B_VALIDATOR_1_PROFILE}f.template
       - ${LOCALNET_DIR}/conf/nginx/c-validator-1.conf:/etc/nginx/templates/c-validator-1.c${C_VALIDATOR_1_PROFILE}f.template
       - ${LOCALNET_DIR}/conf/nginx/sv-validator-1.conf:/etc/nginx/templates/sv-validator-1.c${SV_VALIDATOR_1_PROFILE}f.template
+      - ${LOCALNET_DIR}/conf/nginx/d-validator-1.conf:/etc/nginx/templates/d-validator-1.c${D_VALIDATOR_1_PROFILE}f.template
       - ${LOCALNET_DIR}/conf/nginx/swagger-ui:/etc/nginx/includes
     ports:
       - "${HOST_BIND_IP:-127.0.0.1}:${SV_VALIDATOR_1_UI_PORT}:${SV_VALIDATOR_1_UI_PORT}"
       - "${HOST_BIND_IP:-127.0.0.1}:${A_VALIDATOR_1_UI_PORT}:${A_VALIDATOR_1_UI_PORT}"
       - "${HOST_BIND_IP:-127.0.0.1}:${B_VALIDATOR_1_UI_PORT}:${B_VALIDATOR_1_UI_PORT}"
       - "${HOST_BIND_IP:-127.0.0.1}:${C_VALIDATOR_1_UI_PORT}:${C_VALIDATOR_1_UI_PORT}"
+      - "${HOST_BIND_IP:-127.0.0.1}:${D_VALIDATOR_1_UI_PORT}:${D_VALIDATOR_1_UI_PORT}"
     depends_on:
       wallet-web-ui-sv-validator-1:
         condition: service_healthy
@@ -93,6 +100,9 @@ services:
       wallet-web-ui-c-validator-1:
         condition: service_healthy
         required: false
+      wallet-web-ui-d-validator-1:
+        condition: service_healthy
+        required: false
       splice:
         condition: service_healthy
     restart: always
@@ -101,6 +111,7 @@ services:
       - b-validator-1
       - c-validator-1
       - sv-validator-1
+      - d-validator-1
 
   canton:
     image: "${IMAGE_REPO}canton:${IMAGE_TAG}"
@@ -110,6 +121,7 @@ services:
       - *b-validator-1-auth-env
       - *c-validator-1-auth-env
       - *sv-validator-1-auth-env
+      - *d-validator-1-auth-env
     container_name: canton
     volumes:
       - ${LOCALNET_DIR}/docker/canton/health-check.sh:/app/health-check.sh
@@ -118,6 +130,7 @@ services:
       - ${LOCALNET_DIR}/conf/canton/b-validator-1:/app/b-validator-1/${B_VALIDATOR_1_PROFILE}
       - ${LOCALNET_DIR}/conf/canton/c-validator-1:/app/c-validator-1/${C_VALIDATOR_1_PROFILE}
       - ${LOCALNET_DIR}/conf/canton/sv-validator-1:/app/sv-validator-1/${SV_VALIDATOR_1_PROFILE}
+      - ${LOCALNET_DIR}/conf/canton/d-validator-1:/app/d-validator-1/${D_VALIDATOR_1_PROFILE}
     ports:
       - "${TEST_PORT-10$PARTICIPANT_LEDGER_API_PORT_SUFFIX:}10${PARTICIPANT_LEDGER_API_PORT_SUFFIX}"
       - "${TEST_PORT-10$PARTICIPANT_ADMIN_API_PORT_SUFFIX:}10${PARTICIPANT_ADMIN_API_PORT_SUFFIX}"
@@ -131,6 +144,9 @@ services:
       - "${TEST_PORT-13$PARTICIPANT_LEDGER_API_PORT_SUFFIX:}13${PARTICIPANT_LEDGER_API_PORT_SUFFIX}"
       - "${TEST_PORT-13$PARTICIPANT_ADMIN_API_PORT_SUFFIX:}13${PARTICIPANT_ADMIN_API_PORT_SUFFIX}"
       - "${TEST_PORT-13$PARTICIPANT_JSON_API_PORT_SUFFIX:}13${PARTICIPANT_JSON_API_PORT_SUFFIX}"
+      - "${TEST_PORT-14$PARTICIPANT_LEDGER_API_PORT_SUFFIX:}14${PARTICIPANT_LEDGER_API_PORT_SUFFIX}"
+      - "${TEST_PORT-14$PARTICIPANT_ADMIN_API_PORT_SUFFIX:}14${PARTICIPANT_ADMIN_API_PORT_SUFFIX}"
+      - "${TEST_PORT-14$PARTICIPANT_JSON_API_PORT_SUFFIX:}14${PARTICIPANT_JSON_API_PORT_SUFFIX}"
     healthcheck:
       test: ["CMD", "bash", "/app/health-check.sh"]
       interval: 20s
@@ -147,6 +163,7 @@ services:
       - b-validator-1
       - c-validator-1
       - sv-validator-1
+      - d-validator-1
 
   splice:
     image: "${IMAGE_REPO}splice-app:${IMAGE_TAG}"
@@ -158,6 +175,7 @@ services:
       - *b-validator-1-auth-env
       - *c-validator-1-auth-env
       - *sv-validator-1-auth-env
+      - *d-validator-1-auth-env
     volumes:
       - ${LOCALNET_DIR}/docker/splice/health-check.sh:/app/health-check.sh
       - ${LOCALNET_DIR}/conf/splice/app.conf:/app/app.conf
@@ -165,6 +183,7 @@ services:
       - ${LOCALNET_DIR}/conf/splice/b-validator-1:/app/b-validator-1/${B_VALIDATOR_1_PROFILE}
       - ${LOCALNET_DIR}/conf/splice/c-validator-1:/app/c-validator-1/${C_VALIDATOR_1_PROFILE}
       - ${LOCALNET_DIR}/conf/splice/sv-validator-1:/app/sv-validator-1/${SV_VALIDATOR_1_PROFILE}
+      - ${LOCALNET_DIR}/conf/splice/d-validator-1:/app/d-validator-1/${D_VALIDATOR_1_PROFILE}
       - domain-upgrade-dump:/domain-upgrade-dump
     healthcheck:
       test: ["CMD", "bash", "/app/health-check.sh"]
@@ -178,6 +197,7 @@ services:
       - "${TEST_PORT-11$VALIDATOR_ADMIN_API_PORT_SUFFIX:}11${VALIDATOR_ADMIN_API_PORT_SUFFIX}"
       - "${TEST_PORT-12$VALIDATOR_ADMIN_API_PORT_SUFFIX:}12${VALIDATOR_ADMIN_API_PORT_SUFFIX}"
       - "${TEST_PORT-13$VALIDATOR_ADMIN_API_PORT_SUFFIX:}13${VALIDATOR_ADMIN_API_PORT_SUFFIX}"
+      - "${TEST_PORT-14$VALIDATOR_ADMIN_API_PORT_SUFFIX:}14${VALIDATOR_ADMIN_API_PORT_SUFFIX}"
     depends_on:
       canton:
         condition: service_healthy
@@ -187,6 +207,7 @@ services:
       - b-validator-1
       - c-validator-1
       - sv-validator-1
+      - d-validator-1
 
   console:
     build:
@@ -199,12 +220,14 @@ services:
       - *b-validator-1-auth-env
       - *c-validator-1-auth-env
       - *sv-validator-1-auth-env
+      - *d-validator-1-auth-env
     volumes:
       - ${LOCALNET_DIR}/conf/console/app.conf:/app/app.conf
       - ${LOCALNET_DIR}/conf/console/a-validator-1:/app/a-validator-1/${A_VALIDATOR_1_PROFILE}
       - ${LOCALNET_DIR}/conf/console/b-validator-1:/app/b-validator-1/${B_VALIDATOR_1_PROFILE}
       - ${LOCALNET_DIR}/conf/console/c-validator-1:/app/c-validator-1/${C_VALIDATOR_1_PROFILE}
       - ${LOCALNET_DIR}/conf/console/sv-validator-1:/app/sv-validator-1/${SV_VALIDATOR_1_PROFILE}
+      - ${LOCALNET_DIR}/conf/console/d-validator-1:/app/d-validator-1/${D_VALIDATOR_1_PROFILE}
       - ${LOCALNET_DIR}/docker/console/entrypoint.sh:/app/entrypoint.sh
     entrypoint: /app/entrypoint.sh
     stdin_open: true
@@ -219,7 +242,8 @@ services:
       URLS: '[{"url": "http://canton.localhost:${A_VALIDATOR_1_UI_PORT}/docs/openapi", "name": "a-validator-1"},
               {"url": "http://canton.localhost:${B_VALIDATOR_1_UI_PORT}/docs/openapi", "name": "b-validator-1"},
               {"url": "http://canton.localhost:${C_VALIDATOR_1_UI_PORT}/docs/openapi", "name": "c-validator-1"},
-              {"url": "http://canton.localhost:${SV_VALIDATOR_1_UI_PORT}/docs/openapi", "name": "sv-validator-1"}]'
+              {"url": "http://canton.localhost:${SV_VALIDATOR_1_UI_PORT}/docs/openapi", "name": "sv-validator-1"},
+              {"url": "http://canton.localhost:${D_VALIDATOR_1_UI_PORT}/docs/openapi", "name": "d-validator-1"}]'
     ports:
       - "${SWAGGER_UI_PORT}:8080"
     profiles:
@@ -323,3 +347,26 @@ services:
       - *sv-validator-1-auth-env
     profiles:
       - sv-validator-1
+
+  ###############################################################################################################
+  ### Witness Validator (slot d)
+  ###############################################################################################################
+  wallet-web-ui-d-validator-1:
+    image: "${IMAGE_REPO}wallet-web-ui:${IMAGE_TAG}"
+    container_name: wallet-web-ui-d-validator-1
+    env_file:
+      - ${LOCALNET_ENV_DIR}/common.env
+      - *d-validator-1-auth-env
+    profiles:
+      - d-validator-1
+
+  ans-web-ui-d-validator-1:
+    image: "${IMAGE_REPO}ans-web-ui:${IMAGE_TAG}"
+    container_name: ans-web-ui-d-validator-1
+    env_file:
+      - ${LOCALNET_ENV_DIR}/common.env
+      - *d-validator-1-auth-env
+    environment:
+      - SPLICE_APP_WALLET_REDIRECT=http://wallet.localhost:${D_VALIDATOR_1_UI_PORT}
+    profiles:
+      - d-validator-1

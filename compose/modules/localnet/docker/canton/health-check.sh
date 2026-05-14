@@ -16,3 +16,7 @@ if [ "$SV_VALIDATOR_1_PROFILE" = "on" ]; then
   echo "Checking 10${CANTON_GRPC_HEALTHCHECK_PORT_SUFFIX}"
   grpcurl -plaintext "localhost:10${CANTON_GRPC_HEALTHCHECK_PORT_SUFFIX}" grpc.health.v1.Health/Check
 fi
+if [ "$D_VALIDATOR_1_PROFILE" = "on" ]; then
+  echo "Checking 14${CANTON_GRPC_HEALTHCHECK_PORT_SUFFIX}"
+  grpcurl -plaintext "localhost:14${CANTON_GRPC_HEALTHCHECK_PORT_SUFFIX}" grpc.health.v1.Health/Check
+fi

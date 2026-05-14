@@ -157,6 +157,7 @@ func Build(opts Options) (Plan, error) {
 	args = append(args, "--profile", "a-validator-1")
 	args = append(args, "--profile", "b-validator-1")
 	args = append(args, "--profile", "sv-validator-1")
+	args = append(args, "--profile", "d-validator-1")
 	if os.Getenv("C_VALIDATOR_1_PROFILE") == "on" {
 		args = append(args, "--profile", "c-validator-1")
 	}

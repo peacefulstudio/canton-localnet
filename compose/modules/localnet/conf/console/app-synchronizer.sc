@@ -9,8 +9,10 @@ bootstrap.synchronizer(
 
 `a-validator-1`.synchronizers.connect_local(`app-sequencer`, "app-synchronizer")
 `b-validator-1`.synchronizers.connect_local(`app-sequencer`, "app-synchronizer")
+`d-validator-1`.synchronizers.connect_local(`app-sequencer`, "app-synchronizer")
 
 utils.retry_until_true {
   `a-validator-1`.synchronizers.active("app-synchronizer") &&
-    `b-validator-1`.synchronizers.active("app-synchronizer")
+    `b-validator-1`.synchronizers.active("app-synchronizer") &&
+    `d-validator-1`.synchronizers.active("app-synchronizer")
 }

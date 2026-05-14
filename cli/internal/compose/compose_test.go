@@ -50,7 +50,7 @@ func TestBuild(t *testing.T) {
 				"compose/modules/localnet/compose.env",
 				"compose/modules/keycloak/compose.env",
 			},
-			wantProfiles:   []string{"a-validator-1", "b-validator-1", "sv-validator-1", "keycloak"},
+			wantProfiles:   []string{"a-validator-1", "b-validator-1", "sv-validator-1", "d-validator-1", "keycloak"},
 			wantNotProfile: []string{"c-validator-1", "pqs-a-validator-1", "observability"},
 		},
 		{
@@ -67,7 +67,7 @@ func TestBuild(t *testing.T) {
 			wantNotFiles: []string{
 				"compose/modules/observability/cadvisor-darwin.yaml",
 			},
-			wantProfiles: []string{"a-validator-1", "b-validator-1", "sv-validator-1", "keycloak", "pqs-a-validator-1", "observability"},
+			wantProfiles: []string{"a-validator-1", "b-validator-1", "sv-validator-1", "d-validator-1", "keycloak", "pqs-a-validator-1", "observability"},
 		},
 		{
 			name: "obs enabled on darwin selects darwin cadvisor",

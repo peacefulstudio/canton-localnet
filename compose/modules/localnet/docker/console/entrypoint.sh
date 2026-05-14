@@ -16,6 +16,8 @@ B_VALIDATOR_1_VALIDATOR_USER_TOKEN=$(generate_jwt "$AUTH_B_VALIDATOR_1_VALIDATOR
 export B_VALIDATOR_1_VALIDATOR_USER_TOKEN
 SV_VALIDATOR_USER_TOKEN=$(generate_jwt "$AUTH_SV_VALIDATOR_1_VALIDATOR_USER_NAME" "$AUTH_SV_VALIDATOR_1_AUDIENCE")
 export SV_VALIDATOR_USER_TOKEN
+D_VALIDATOR_1_VALIDATOR_USER_TOKEN=$(generate_jwt "$AUTH_D_VALIDATOR_1_VALIDATOR_USER_NAME" "$AUTH_D_VALIDATOR_1_AUDIENCE")
+export D_VALIDATOR_1_VALIDATOR_USER_TOKEN
 
 # source all scripts from /app/pre-startup/on so that env variables exported by them are available in the current shell
 for script in /app/pre-startup/on/*.sh; do

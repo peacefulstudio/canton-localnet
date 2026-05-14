@@ -31,7 +31,7 @@ COMPOSE_FILES := -f $(LOCALNET_DIR)/compose.yaml \
 ENV_FILES     := --env-file $(COMPOSE_DIR)/.env.defaults \
                  --env-file $(LOCALNET_DIR)/compose.env \
                  --env-file $(LOCALNET_DIR)/env/common.env
-PROFILES      := --profile a-validator-1 --profile b-validator-1 --profile sv-validator-1
+PROFILES      := --profile a-validator-1 --profile b-validator-1 --profile sv-validator-1 --profile d-validator-1
 
 ifeq ($(RES),on)
   COMPOSE_FILES += -f $(LOCALNET_DIR)/resource-constraints.yaml \
