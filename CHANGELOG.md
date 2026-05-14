@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+### Fixed
+
+- Removed unused `xunit.v3` PackageReference from
+  `Peaceful.Canton.Localnet.Testing.csproj` (it was unused in the
+  library source and leaked as a transitive runtime dependency on
+  the published nupkg, causing
+  `CS0433 The type 'Assert' exists in both 'xunit.assert' and 'xunit.v3.assert'`
+  in consumer projects pinned to xunit v2). Discovered while wiring
+  the package into the `murmures` test suite, which uses xunit 2.
+
 ## [0.6.2-2] - 2026-05-14
 
 ### Fixed
