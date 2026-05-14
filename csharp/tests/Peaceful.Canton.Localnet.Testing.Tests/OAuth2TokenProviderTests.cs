@@ -12,7 +12,7 @@ namespace Peaceful.Canton.Localnet.Testing.Tests;
 public class OAuth2TokenProviderTests
 {
     private static OAuth2TokenProviderOptions DefaultOptions(string? scope = "openid") => new(
-        TokenEndpoint: new Uri("https://keycloak.test/realms/AppProvider/protocol/openid-connect/token"),
+        TokenEndpoint: new Uri("https://keycloak.test/realms/AValidator1/protocol/openid-connect/token"),
         ClientId: "test-client",
         ClientSecret: "shhh",
         Audience: "https://canton.network.global",

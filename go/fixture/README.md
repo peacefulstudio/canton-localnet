@@ -21,7 +21,7 @@ import "github.com/peacefulstudio/canton-localnet/go/fixture"
 
 func TestMyLedgerThing(t *testing.T) {
     ctx := context.Background()
-    f, err := fixture.New(fixture.Config{Role: fixture.RoleAppProvider})
+    f, err := fixture.New(fixture.Config{Role: fixture.RoleAValidator1})
     if err != nil { t.Fatal(err) }
     if err := f.Setup(ctx); err != nil { t.Fatal(err) }
     t.Cleanup(func() { _ = f.Teardown(context.Background()) })
@@ -48,21 +48,21 @@ All have defaults that match `compose/modules/localnet/env/common.env` and `comp
 | Variable | Default | Notes |
 |---|---|---|
 | `CANTON_LOCALNET_HOST` | `localhost` | Host that exposes the JSON Ledger API. |
-| `CANTON_LOCALNET_APP_PROVIDER_JSON_PORT` | `3975` | `3${PARTICIPANT_JSON_API_PORT_SUFFIX}` in compose. |
-| `CANTON_LOCALNET_APP_USER_JSON_PORT` | `2975` | `2${PARTICIPANT_JSON_API_PORT_SUFFIX}`. |
-| `CANTON_LOCALNET_SV_JSON_PORT` | `4975` | `4${PARTICIPANT_JSON_API_PORT_SUFFIX}`. |
+| `CANTON_LOCALNET_A_VALIDATOR_1_JSON_PORT` | `11975` | `11${PARTICIPANT_JSON_API_PORT_SUFFIX}` in compose. |
+| `CANTON_LOCALNET_B_VALIDATOR_1_JSON_PORT` | `12975` | `12${PARTICIPANT_JSON_API_PORT_SUFFIX}`. |
+| `CANTON_LOCALNET_SV_VALIDATOR_1_JSON_PORT` | `10975` | `10${PARTICIPANT_JSON_API_PORT_SUFFIX}`. |
 | `CANTON_LOCALNET_KEYCLOAK_HOST` | `keycloak.localhost` | Matches the host-exposed nginx-keycloak alias. |
 | `CANTON_LOCALNET_KEYCLOAK_PORT` | `8082` | |
 | `CANTON_LOCALNET_AUDIENCE` | `https://canton.network.global` | Sent as the `audience` form field on token requests. |
 | `CANTON_LOCALNET_SCOPE` | _empty_ | Optional `scope` form field. |
-| `CANTON_LOCALNET_APP_PROVIDER_CLIENT_ID` | `app-provider-validator` | Matches `AUTH_APP_PROVIDER_VALIDATOR_CLIENT_ID`. |
-| `CANTON_LOCALNET_APP_PROVIDER_CLIENT_SECRET` | demo secret | Matches `AUTH_APP_PROVIDER_VALIDATOR_CLIENT_SECRET`. |
-| `CANTON_LOCALNET_APP_USER_CLIENT_ID` | `app-user-validator` | |
-| `CANTON_LOCALNET_APP_USER_CLIENT_SECRET` | demo secret | |
-| `CANTON_LOCALNET_SV_CLIENT_ID` | `sv-validator` | |
-| `CANTON_LOCALNET_SV_CLIENT_SECRET` | _empty_ | Required for `RoleSV` — discovery returns an error if unset. |
+| `CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_ID` | `a-validator-1-validator` | Matches `AUTH_A_VALIDATOR_1_VALIDATOR_CLIENT_ID`. |
+| `CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET` | demo secret | Matches `AUTH_A_VALIDATOR_1_VALIDATOR_CLIENT_SECRET`. |
+| `CANTON_LOCALNET_B_VALIDATOR_1_CLIENT_ID` | `b-validator-1-validator` | |
+| `CANTON_LOCALNET_B_VALIDATOR_1_CLIENT_SECRET` | demo secret | |
+| `CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_ID` | `sv-validator` | |
+| `CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET` | _empty_ | Required for `RoleSvValidator1` — discovery returns an error if unset. |
 
-> ⚠️ **Security note — demo credentials only.** The default `CLIENT_SECRET` values for `RoleAppProvider` and `RoleAppUser` are the demo credentials shipped with the splice quickstart compose files (also visible in `compose/modules/keycloak/env/`). They are public, valid only against an ephemeral LocalNet Keycloak realm, and **must never be used in any non-`localhost` or production deployment**. Override via the `CANTON_LOCALNET_*_CLIENT_SECRET` env vars in any real environment. `RoleSV` ships with no demo default — its secret must be supplied explicitly.
+> ⚠️ **Security note — demo credentials only.** The default `CLIENT_SECRET` values for `RoleAValidator1` and `RoleBValidator1` are the demo credentials shipped with the splice quickstart compose files (also visible in `compose/modules/keycloak/env/`). They are public, valid only against an ephemeral LocalNet Keycloak realm, and **must never be used in any non-`localhost` or production deployment**. Override via the `CANTON_LOCALNET_*_CLIENT_SECRET` env vars in any real environment. `RoleSvValidator1` ships with no demo default — its secret must be supplied explicitly.
 
 ## Tests
 

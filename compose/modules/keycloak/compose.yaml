@@ -2,22 +2,22 @@
 # SPDX-License-Identifier: Apache-2.0
 
 ---
-# Since app-provider and app-user profiles are optional, we relax the environment file requirements to avoid Docker errors when a profile is disabled.
+# Since a-validator-1 and b-validator-1 profiles are optional, we relax the environment file requirements to avoid Docker errors when a profile is disabled.
 x-vars:
-  app-provider-wallet-auth-env: &app-provider-wallet-auth-env
-    path: ${MODULES_DIR}/keycloak/env/app-provider/${APP_PROVIDER_PROFILE}/wallet.oauth2.env
+  a-validator-1-wallet-auth-env: &a-validator-1-wallet-auth-env
+    path: ${MODULES_DIR}/keycloak/env/a-validator-1/${A_VALIDATOR_1_PROFILE}/wallet.oauth2.env
     required: false
 
-  app-user-wallet-auth-env: &app-user-wallet-auth-env
-    path: ${MODULES_DIR}/keycloak/env/app-user/${APP_USER_PROFILE}/wallet.oauth2.env
+  b-validator-1-wallet-auth-env: &b-validator-1-wallet-auth-env
+    path: ${MODULES_DIR}/keycloak/env/b-validator-1/${B_VALIDATOR_1_PROFILE}/wallet.oauth2.env
     required: false
 
-  app-provider-ans-auth-env: &app-provider-ans-auth-env
-    path: ${MODULES_DIR}/keycloak/env/app-provider/${APP_PROVIDER_PROFILE}/ans.oauth2.env
+  a-validator-1-ans-auth-env: &a-validator-1-ans-auth-env
+    path: ${MODULES_DIR}/keycloak/env/a-validator-1/${A_VALIDATOR_1_PROFILE}/ans.oauth2.env
     required: false
 
-  app-user-ans-auth-env: &app-user-ans-auth-env
-    path: ${MODULES_DIR}/keycloak/env/app-user/${APP_USER_PROFILE}/ans.oauth2.env
+  b-validator-1-ans-auth-env: &b-validator-1-ans-auth-env
+    path: ${MODULES_DIR}/keycloak/env/b-validator-1/${B_VALIDATOR_1_PROFILE}/ans.oauth2.env
     required: false
 
 services:
@@ -69,34 +69,34 @@ services:
        keycloak:
          condition: service_healthy
     volumes:
-      - ${MODULES_DIR}/keycloak/conf/canton/app-provider.conf:/app/app-provider/${APP_PROVIDER_PROFILE}/app-auth.conf
-      - ${MODULES_DIR}/keycloak/conf/canton/app-user.conf:/app/app-user/${APP_USER_PROFILE}/app-auth.conf
+      - ${MODULES_DIR}/keycloak/conf/canton/a-validator-1.conf:/app/a-validator-1/${A_VALIDATOR_1_PROFILE}/app-auth.conf
+      - ${MODULES_DIR}/keycloak/conf/canton/b-validator-1.conf:/app/b-validator-1/${B_VALIDATOR_1_PROFILE}/app-auth.conf
 
   splice:
     depends_on:
       keycloak:
         condition: service_healthy
     volumes:
-      - ${MODULES_DIR}/keycloak/conf/splice/app-provider.conf:/app/app-provider/${APP_PROVIDER_PROFILE}/app-auth.conf
-      - ${MODULES_DIR}/keycloak/conf/splice/app-user.conf:/app/app-user/${APP_USER_PROFILE}/app-auth.conf
+      - ${MODULES_DIR}/keycloak/conf/splice/a-validator-1.conf:/app/a-validator-1/${A_VALIDATOR_1_PROFILE}/app-auth.conf
+      - ${MODULES_DIR}/keycloak/conf/splice/b-validator-1.conf:/app/b-validator-1/${B_VALIDATOR_1_PROFILE}/app-auth.conf
 
-  ans-web-ui-app-provider:
+  ans-web-ui-a-validator-1:
     env_file:
-      - *app-provider-ans-auth-env
+      - *a-validator-1-ans-auth-env
 
-  ans-web-ui-app-user:
+  ans-web-ui-b-validator-1:
     env_file:
-      - *app-user-ans-auth-env
+      - *b-validator-1-ans-auth-env
 
-  wallet-web-ui-app-provider:
+  wallet-web-ui-a-validator-1:
     env_file:
-      - *app-provider-wallet-auth-env
+      - *a-validator-1-wallet-auth-env
 
-  wallet-web-ui-app-user:
+  wallet-web-ui-b-validator-1:
     env_file:
-      - *app-user-wallet-auth-env
+      - *b-validator-1-wallet-auth-env
 
   console:
     volumes:
-      - ${MODULES_DIR}/keycloak/docker/console/app-provider.sh:/app/pre-startup/${APP_PROVIDER_PROFILE}/app-provider.sh
-      - ${MODULES_DIR}/keycloak/docker/console/app-user.sh:/app/pre-startup/${APP_USER_PROFILE}/app-user.sh
+      - ${MODULES_DIR}/keycloak/docker/console/a-validator-1.sh:/app/pre-startup/${A_VALIDATOR_1_PROFILE}/a-validator-1.sh
+      - ${MODULES_DIR}/keycloak/docker/console/b-validator-1.sh:/app/pre-startup/${B_VALIDATOR_1_PROFILE}/b-validator-1.sh

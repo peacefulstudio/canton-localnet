@@ -20,19 +20,19 @@ if [ ! -f /tmp/all-done ]; then
   fi
   source /app/utils.sh
 
-  if [ "$APP_PROVIDER_PROFILE" == "on" ]; then
-    source /app/app-provider-auth.sh
-    if [ "$DO_INIT" == "true" ] && [ ! -f /tmp/app-provider-init-dars-uploaded ]; then
-      upload_dars "$APP_PROVIDER_PARTICIPANT_ADMIN_TOKEN" "canton:3${PARTICIPANT_JSON_API_PORT_SUFFIX}"
-      touch /tmp/app-provider-init-dars-uploaded
+  if [ "$A_VALIDATOR_1_PROFILE" == "on" ]; then
+    source /app/a-validator-1-auth.sh
+    if [ "$DO_INIT" == "true" ] && [ ! -f /tmp/a-validator-1-init-dars-uploaded ]; then
+      upload_dars "$A_VALIDATOR_1_PARTICIPANT_ADMIN_TOKEN" "canton:11${PARTICIPANT_JSON_API_PORT_SUFFIX}"
+      touch /tmp/a-validator-1-init-dars-uploaded
     fi
   fi
 
-  if [ "$APP_USER_PROFILE" == "on" ]; then
-    source /app/app-user-auth.sh
-    if [ "$DO_INIT" == "true" ] && [ ! -f /tmp/app-user-init-dars-uploaded ]; then
-      upload_dars "$APP_USER_PARTICIPANT_ADMIN_TOKEN" "canton:2${PARTICIPANT_JSON_API_PORT_SUFFIX}"
-      touch /tmp/app-user-init-dars-uploaded
+  if [ "$B_VALIDATOR_1_PROFILE" == "on" ]; then
+    source /app/b-validator-1-auth.sh
+    if [ "$DO_INIT" == "true" ] && [ ! -f /tmp/b-validator-1-init-dars-uploaded ]; then
+      upload_dars "$B_VALIDATOR_1_PARTICIPANT_ADMIN_TOKEN" "canton:12${PARTICIPANT_JSON_API_PORT_SUFFIX}"
+      touch /tmp/b-validator-1-init-dars-uploaded
     fi
   fi
 

@@ -22,15 +22,15 @@ services:
     mem_limit: 256mb
   sv-web-ui:
     mem_limit: 512mb
-  wallet-web-ui-app-provider:
+  wallet-web-ui-a-validator-1:
     mem_limit: 256mb
-  ans-web-ui-app-provider:
+  ans-web-ui-a-validator-1:
     mem_limit: 256mb
-  wallet-web-ui-app-user:
+  wallet-web-ui-b-validator-1:
     mem_limit: 256mb
-  ans-web-ui-app-user:
+  ans-web-ui-b-validator-1:
     mem_limit: 256mb
-  wallet-web-ui-sv:
+  wallet-web-ui-sv-validator-1:
     mem_limit: 256mb
   swagger-ui:
     mem_limit: 128mb

@@ -16,12 +16,12 @@ import (
 )
 
 func TestSmoke_GetParticipantId(t *testing.T) {
-	skipIfStackUnreachable(t, RoleAppProvider)
+	skipIfStackUnreachable(t, RoleAValidator1)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	f, err := New(Config{Role: RoleAppProvider})
+	f, err := New(Config{Role: RoleAValidator1})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -43,12 +43,12 @@ func TestSmoke_GetParticipantId(t *testing.T) {
 }
 
 func TestSmoke_AllocatePartyUploadDarBuildUser(t *testing.T) {
-	skipIfStackUnreachable(t, RoleAppProvider)
+	skipIfStackUnreachable(t, RoleAValidator1)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	f, err := New(Config{Role: RoleAppProvider})
+	f, err := New(Config{Role: RoleAValidator1})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

@@ -32,14 +32,14 @@ public sealed class JsonLedgerAdminClient
         if (_httpClient.BaseAddress is null)
         {
             throw new ArgumentException(
-                "HttpClient must have a BaseAddress set to the JSON Ledger API root (e.g. http://localhost:3975/).",
+                "HttpClient must have a BaseAddress set to the JSON Ledger API root (e.g. http://localhost:11975/).",
                 nameof(httpClient));
         }
     }
 
     /// <summary>
     /// Calls <c>GET /v2/parties/participant-id</c> and returns the participant's
-    /// identifier (e.g. <c>app-provider::1220...</c>). Throws
+    /// identifier (e.g. <c>a-validator-1::1220...</c>). Throws
     /// <see cref="JsonLedgerApiException"/> if the server returns a non-success
     /// status or an empty body.
     /// </summary>

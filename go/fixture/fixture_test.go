@@ -46,14 +46,14 @@ func TestFixture_SetupWiresTokenAndAdminAgainstStub(t *testing.T) {
 
 	env := map[string]string{
 		"CANTON_LOCALNET_HOST":                       ledgerHost,
-		"CANTON_LOCALNET_APP_PROVIDER_JSON_PORT":     ledgerPort,
+		"CANTON_LOCALNET_A_VALIDATOR_1_JSON_PORT":     ledgerPort,
 		"CANTON_LOCALNET_KEYCLOAK_HOST":              keycloakHost,
 		"CANTON_LOCALNET_KEYCLOAK_PORT":              keycloakPort,
-		"CANTON_LOCALNET_APP_PROVIDER_CLIENT_ID":     "cid",
-		"CANTON_LOCALNET_APP_PROVIDER_CLIENT_SECRET": "csecret",
+		"CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_ID":     "cid",
+		"CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET": "csecret",
 	}
 	f, err := New(Config{
-		Role:      RoleAppProvider,
+		Role:      RoleAValidator1,
 		Discovery: NewEndpointDiscoveryWithEnv(func(k string) string { return env[k] }),
 	})
 	if err != nil {
@@ -79,7 +79,7 @@ func TestFixture_SetupWiresTokenAndAdminAgainstStub(t *testing.T) {
 
 func TestFixture_AccessorsPanicBeforeSetup(t *testing.T) {
 	f, err := New(Config{
-		Role:      RoleAppProvider,
+		Role:      RoleAValidator1,
 		Discovery: NewEndpointDiscoveryWithEnv(func(string) string { return "" }),
 	})
 	if err != nil {
@@ -117,7 +117,7 @@ func TestFixture_AccessorsPanicBeforeSetup(t *testing.T) {
 
 func TestFixture_TeardownHonorsCtxCancel(t *testing.T) {
 	f, err := New(Config{
-		Role:      RoleAppProvider,
+		Role:      RoleAValidator1,
 		Discovery: NewEndpointDiscoveryWithEnv(func(string) string { return "" }),
 	})
 	if err != nil {

@@ -16,8 +16,8 @@ import (
 )
 
 // DefaultURL is the host-exposed JSON Ledger API readiness endpoint for
-// the app-provider participant in the splice LocalNet stack.
-const DefaultURL = "http://localhost:3975/readyz"
+// the a-validator-1 participant in the splice LocalNet stack.
+const DefaultURL = "http://localhost:11975/readyz"
 
 // Options configures a wait loop. When HTTPClient is supplied, its
 // existing timeout is preserved and RequestTimeout is enforced by
@@ -95,10 +95,11 @@ func WaitReady(ctx context.Context, opts Options) error {
 			log(fmt.Sprintf("Ready after attempt %d: HTTP %d", attempt, status))
 			return nil
 		}
-		lastStatus, lastErr = status, err
 		if err != nil {
+			lastErr = err
 			log(fmt.Sprintf("Attempt %d: %s", attempt, err.Error()))
 		} else {
+			lastStatus = status
 			log(fmt.Sprintf("Attempt %d: HTTP %d", attempt, status))
 		}
 
@@ -116,10 +117,10 @@ func WaitReady(ctx context.Context, opts Options) error {
 
 func formatTimeout(url string, lastStatus int, lastErr error) error {
 	switch {
-	case lastErr != nil:
-		return fmt.Errorf("%w: %s (last error: %v)", ErrTimeout, url, lastErr)
 	case lastStatus != 0:
 		return fmt.Errorf("%w: %s (last status: HTTP %d)", ErrTimeout, url, lastStatus)
+	case lastErr != nil:
+		return fmt.Errorf("%w: %s (last error: %v)", ErrTimeout, url, lastErr)
 	default:
 		return fmt.Errorf("%w: %s", ErrTimeout, url)
 	}

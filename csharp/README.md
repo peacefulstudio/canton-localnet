@@ -43,9 +43,9 @@ The fixture reads these env vars (matching the compose stack ports in `compose/m
 
 | Variable | Required | Default | Purpose |
 |----------|----------|---------|---------|
-| `CANTON_LOCALNET_PROFILE` | no | `app-provider` | One of `app-user`, `app-provider`, `sv`. |
-| `CANTON_LOCALNET_JSON_API_URL` | no | `http://localhost:{2,3,4}975` per profile | Base URL of the JSON Ledger API. |
-| `CANTON_LOCALNET_TOKEN_URL` | no | `http://localhost:8082/realms/{AppProvider,AppUser}/protocol/openid-connect/token` | Keycloak token endpoint. |
+| `CANTON_LOCALNET_PROFILE` | no | `a-validator-1` | One of `a-validator-1`, `b-validator-1`, `sv-validator-1`. |
+| `CANTON_LOCALNET_JSON_API_URL` | no | `http://localhost:{11,12,10}975` per profile | Base URL of the JSON Ledger API. |
+| `CANTON_LOCALNET_TOKEN_URL` | no | `http://localhost:8082/realms/{AValidator1,BValidator1}/protocol/openid-connect/token` | Keycloak token endpoint. |
 | `CANTON_LOCALNET_AUDIENCE` | no | `https://canton.network.global` | Expected `aud` claim. |
 | `CANTON_LOCALNET_CLIENT_ID` | **yes** | — | OAuth2 `client_id`. |
 | `CANTON_LOCALNET_CLIENT_SECRET` | **yes** | — | OAuth2 `client_secret`. |

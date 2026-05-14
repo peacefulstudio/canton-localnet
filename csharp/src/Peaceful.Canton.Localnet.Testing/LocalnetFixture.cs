@@ -39,7 +39,7 @@ public sealed class LocalnetFixture : IAsyncDisposable
 
     /// <summary>
     /// Builds a fixture from the ambient environment. The profile is selected
-    /// by <c>CANTON_LOCALNET_PROFILE</c> (default: app-provider).
+    /// by <c>CANTON_LOCALNET_PROFILE</c> (default: a-validator-1).
     /// </summary>
     public static LocalnetFixture FromEnvironment(ILoggerFactory? loggerFactory = null)
     {
@@ -54,7 +54,7 @@ public sealed class LocalnetFixture : IAsyncDisposable
     /// </summary>
     public static LocalnetFixture FromEndpoints(
         LocalnetEndpoints endpoints,
-        LocalnetProfile profile = LocalnetProfile.AppProvider,
+        LocalnetProfile profile = LocalnetProfile.AValidator1,
         ILoggerFactory? loggerFactory = null) => Build(endpoints, profile, loggerFactory);
 
     private static LocalnetFixture Build(LocalnetEndpoints endpoints, LocalnetProfile profile, ILoggerFactory? loggerFactory)

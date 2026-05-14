@@ -4,15 +4,15 @@
 
 set -eou pipefail
 
-if [ "$APP_USER_PROFILE" = "on" ]; then
-  echo "Checking 2${CANTON_GRPC_HEALTHCHECK_PORT_SUFFIX}"
-  grpcurl -plaintext "localhost:2${CANTON_GRPC_HEALTHCHECK_PORT_SUFFIX}" grpc.health.v1.Health/Check
+if [ "$B_VALIDATOR_1_PROFILE" = "on" ]; then
+  echo "Checking 12${CANTON_GRPC_HEALTHCHECK_PORT_SUFFIX}"
+  grpcurl -plaintext "localhost:12${CANTON_GRPC_HEALTHCHECK_PORT_SUFFIX}" grpc.health.v1.Health/Check
 fi
-if [ "$APP_PROVIDER_PROFILE" = "on" ]; then
-  echo "Checking 3${CANTON_GRPC_HEALTHCHECK_PORT_SUFFIX}"
-  grpcurl -plaintext "localhost:3${CANTON_GRPC_HEALTHCHECK_PORT_SUFFIX}" grpc.health.v1.Health/Check
+if [ "$A_VALIDATOR_1_PROFILE" = "on" ]; then
+  echo "Checking 11${CANTON_GRPC_HEALTHCHECK_PORT_SUFFIX}"
+  grpcurl -plaintext "localhost:11${CANTON_GRPC_HEALTHCHECK_PORT_SUFFIX}" grpc.health.v1.Health/Check
 fi
-if [ "$SV_PROFILE" = "on" ]; then
-  echo "Checking 4${CANTON_GRPC_HEALTHCHECK_PORT_SUFFIX}"
-  grpcurl -plaintext "localhost:4${CANTON_GRPC_HEALTHCHECK_PORT_SUFFIX}" grpc.health.v1.Health/Check
+if [ "$SV_VALIDATOR_1_PROFILE" = "on" ]; then
+  echo "Checking 10${CANTON_GRPC_HEALTHCHECK_PORT_SUFFIX}"
+  grpcurl -plaintext "localhost:10${CANTON_GRPC_HEALTHCHECK_PORT_SUFFIX}" grpc.health.v1.Health/Check
 fi

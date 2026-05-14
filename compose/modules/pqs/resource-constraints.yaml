@@ -1,10 +1,10 @@
 services:
-  pqs-app-provider:
+  pqs-a-validator-1:
     mem_limit: 1g
     environment:
       _JAVA_OPTIONS: "-XX:-UseCompressedOops -Xms512m -Xmx768m"
 
-  pqs-app-user:
+  pqs-b-validator-1:
     mem_limit: 1g
     environment:
       _JAVA_OPTIONS: "-XX:-UseCompressedOops -Xms512m -Xmx768m"

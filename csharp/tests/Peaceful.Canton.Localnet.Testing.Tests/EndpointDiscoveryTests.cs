@@ -8,9 +8,9 @@ namespace Peaceful.Canton.Localnet.Testing.Tests;
 public class EndpointDiscoveryTests
 {
     [Theory]
-    [InlineData(LocalnetProfile.AppUser, "http://localhost:2975")]
-    [InlineData(LocalnetProfile.AppProvider, "http://localhost:3975")]
-    [InlineData(LocalnetProfile.Sv, "http://localhost:4975")]
+    [InlineData(LocalnetProfile.BValidator1, "http://localhost:12975")]
+    [InlineData(LocalnetProfile.AValidator1, "http://localhost:11975")]
+    [InlineData(LocalnetProfile.SvValidator1, "http://localhost:10975")]
     public void Resolve_returns_default_json_api_url_per_profile(LocalnetProfile profile, string expected)
     {
         var env = new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -63,7 +63,7 @@ public class EndpointDiscoveryTests
     {
         var env = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
-            [EndpointDiscovery.JsonApiUrlEnv] = "http://localhost:3975",
+            [EndpointDiscovery.JsonApiUrlEnv] = "http://localhost:11975",
         };
 
         Assert.False(EndpointDiscovery.IsLocalnetAvailable(env));
@@ -74,7 +74,7 @@ public class EndpointDiscoveryTests
     {
         var env = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
-            [EndpointDiscovery.JsonApiUrlEnv] = "http://localhost:3975",
+            [EndpointDiscovery.JsonApiUrlEnv] = "http://localhost:11975",
             [EndpointDiscovery.ClientIdEnv] = "client",
             [EndpointDiscovery.ClientSecretEnv] = "secret",
         };
@@ -83,11 +83,11 @@ public class EndpointDiscoveryTests
     }
 
     [Theory]
-    [InlineData("app-user", LocalnetProfile.AppUser)]
-    [InlineData("APP-USER", LocalnetProfile.AppUser)]
-    [InlineData("app-provider", LocalnetProfile.AppProvider)]
-    [InlineData("sv", LocalnetProfile.Sv)]
-    [InlineData("super-validator", LocalnetProfile.Sv)]
+    [InlineData("b-validator-1", LocalnetProfile.BValidator1)]
+    [InlineData("B-VALIDATOR-1", LocalnetProfile.BValidator1)]
+    [InlineData("a-validator-1", LocalnetProfile.AValidator1)]
+    [InlineData("sv-validator-1", LocalnetProfile.SvValidator1)]
+    [InlineData("super-validator", LocalnetProfile.SvValidator1)]
     public void ResolveProfile_maps_string_to_enum(string raw, LocalnetProfile expected)
     {
         var env = new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -99,10 +99,10 @@ public class EndpointDiscoveryTests
     }
 
     [Fact]
-    public void ResolveProfile_defaults_to_app_provider()
+    public void ResolveProfile_defaults_to_a_validator_1()
     {
         var env = new Dictionary<string, string?>(StringComparer.Ordinal);
-        Assert.Equal(LocalnetProfile.AppProvider, EndpointDiscovery.ResolveProfile(env));
+        Assert.Equal(LocalnetProfile.AValidator1, EndpointDiscovery.ResolveProfile(env));
     }
 
     [Fact]

@@ -50,7 +50,7 @@ func WithDarHTTPClient(c *http.Client) DarUploaderOption {
 }
 
 // NewDarUploader constructs a DarUploader. baseURL is the JSON Ledger API
-// origin (e.g. "http://localhost:3975"); trailing slashes are tolerated.
+// origin (e.g. "http://localhost:11975"); trailing slashes are tolerated.
 func NewDarUploader(baseURL string, tokens TokenProvider, opts ...DarUploaderOption) (*DarUploader, error) {
 	if strings.TrimSpace(baseURL) == "" {
 		return nil, errors.New("dar: baseURL is required")

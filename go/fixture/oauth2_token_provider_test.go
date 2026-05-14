@@ -231,7 +231,7 @@ func TestOAuth2TokenProvider_RejectsNonPositiveExpiresIn(t *testing.T) {
 }
 
 func TestOAuth2TokenProvider_TruncatesLongErrorBody(t *testing.T) {
-	long := strings.Repeat("X", 2000)
+	long := strings.Repeat("X", 12000)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
 		_, _ = io.WriteString(w, long)

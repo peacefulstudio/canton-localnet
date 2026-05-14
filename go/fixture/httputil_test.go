@@ -20,10 +20,10 @@ func TestNormalizeBaseURL(t *testing.T) {
 		want string
 	}{
 		{name: "empty input is unchanged", in: "", want: ""},
-		{name: "no trailing slash is unchanged", in: "http://localhost:3975", want: "http://localhost:3975"},
-		{name: "single trailing slash is stripped", in: "http://localhost:3975/", want: "http://localhost:3975"},
-		{name: "multiple trailing slashes are stripped", in: "http://localhost:3975///", want: "http://localhost:3975"},
-		{name: "trailing slash preserves path", in: "http://localhost:3975/api/", want: "http://localhost:3975/api"},
+		{name: "no trailing slash is unchanged", in: "http://localhost:11975", want: "http://localhost:11975"},
+		{name: "single trailing slash is stripped", in: "http://localhost:11975/", want: "http://localhost:11975"},
+		{name: "multiple trailing slashes are stripped", in: "http://localhost:11975///", want: "http://localhost:11975"},
+		{name: "trailing slash preserves path", in: "http://localhost:11975/api/", want: "http://localhost:11975/api"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -144,7 +144,7 @@ func newVMTunnelCommand(deps vmDeps) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "tunnel",
 		Short: "Open an ssh -L tunnel to the canton-localnet VM",
-		Long:  "Opens `ssh -L 3901:localhost:3901 -L 7575:localhost:7575 -L 8082:localhost:8082` against the provisioned VM. By default the host, user, and identity file are read from `terraform output -json`; --host, --user, and --identity override the discovered values.",
+		Long:  "Opens `ssh -L 11901:localhost:11901 -L 7575:localhost:7575 -L 8082:localhost:8082` against the provisioned VM. By default the host, user, and identity file are read from `terraform output -json`; --host, --user, and --identity override the discovered values.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			repoRoot, err := resolveRepoRoot(cmd)
 			if err != nil {

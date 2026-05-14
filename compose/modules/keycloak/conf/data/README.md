@@ -1,15 +1,15 @@
 # Keycloak export
 Keycloak imports configuration from `docker/oauth/data/*.json` files on startup. Those file were exported from Keycloak that had been configured in Keycloak Administration Console as described below using 
 ```sh
-/opt/keycloak/bin/kc.sh export --dir=/tmp/export --realm AppProvider
-/opt/keycloak/bin/kc.sh export --dir=/tmp/export --realm AppUser
+/opt/keycloak/bin/kc.sh export --dir=/tmp/export --realm AValidator1
+/opt/keycloak/bin/kc.sh export --dir=/tmp/export --realm BValidator1
 ```
 
 ## Setup via Keycloak Administration Console
 In http://keycloak.localhost:8082/admin/master/console/#/master admin/admin setup
 - two realms
-  - AppProvider
-  - AppUser
+  - AValidator1
+  - BValidator1
 
 For each realm create a `client scope` >
   - Type: Default
@@ -19,48 +19,48 @@ with a `mapper` by configuration `Audience` >
   - Included Custom Audience: https://canton.network.global
 
 For each realm create clients:
-  - AppProvider:
-    - app-provider-backend-oidc:
+  - AValidator1:
+    - a-validator-1-backend-oidc:
       - Client authentication: off
       - Authentication flow: Standard Flow
-      - Valid redirect URIs: http://app-provider.localhost:3000/*
+      - Valid redirect URIs: http://a-validator-1.localhost:11000/*
       - Valid post logout redirect URIs: +
       - Web origins: * 
-    - app-provider-unsafe:
+    - a-validator-1-unsafe:
       - Client authentication: off
       - Authentication flow: Direct access grant  
-    - app-provider-validator:
+    - a-validator-1-validator:
       - Client authentication: on
       - Authentication flow: Service accounts roles
-    - app-provider-backend:
+    - a-validator-1-backend:
         - Client authentication: on
         - Authentication flow: Service accounts roles
-    - app-provider-pqs:
+    - a-validator-1-pqs:
         - Client authentication: on
         - Authentication flow: Service accounts roles
-  - AppUser:
-      - app-user-wallet:
+  - BValidator1:
+      - b-validator-1-wallet:
           - Client authentication: off
           - Authentication flow: Standard Flow
-          - Valid redirect URIs: http://wallet.localhost:2000
+          - Valid redirect URIs: http://wallet.localhost:12000
           - Valid post logout redirect URIs: +
           - Web origins: *
-      - app-provider-backend-oidc:
+      - a-validator-1-backend-oidc:
           - Client authentication: off
           - Authentication flow: Standard Flow
-          - Valid redirect URIs: http://app-provider.localhost:3000/*
+          - Valid redirect URIs: http://a-validator-1.localhost:11000/*
           - Valid post logout redirect URIs: +
           - Web origins: *
-      - app-user-unsafe:
+      - b-validator-1-unsafe:
           - Client authentication: off
           - Authentication flow: Direct access grant
-      - app-user-validator:
+      - b-validator-1-validator:
           - Client authentication: on
           - Authentication flow: Service accounts roles 
 
 For each realm create users:    
-  - app-provider
-  - app-user
+  - a-validator-1
+  - b-validator-1
 
 ### NOTE: if you make changes to keycloak configuration don't forget to change also .env file in the root directory of the project
 

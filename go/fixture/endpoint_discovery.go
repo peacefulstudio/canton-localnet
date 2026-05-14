@@ -14,12 +14,12 @@ import (
 type Role string
 
 const (
-	// RoleAppProvider is the app-provider participant, host-exposed on the 3xxx port range.
-	RoleAppProvider Role = "app-provider"
-	// RoleAppUser is the app-user participant, host-exposed on the 2xxx port range.
-	RoleAppUser Role = "app-user"
-	// RoleSV is the super-validator participant, host-exposed on the 4xxx port range.
-	RoleSV Role = "sv"
+	// RoleAValidator1 is the a-validator-1 participant, host-exposed on the 11xxx port range.
+	RoleAValidator1 Role = "a-validator-1"
+	// RoleBValidator1 is the b-validator-1 participant, host-exposed on the 12xxx port range.
+	RoleBValidator1 Role = "b-validator-1"
+	// RoleSvValidator1 is the super-validator participant, host-exposed on the 10xxx port range.
+	RoleSvValidator1 Role = "sv-validator-1"
 )
 
 // Endpoints groups the URLs and OAuth2 client credentials a fixture needs
@@ -37,31 +37,31 @@ type Endpoints struct {
 // EndpointDiscovery resolves LocalNet endpoints from environment variables,
 // falling back to the defaults baked into the compose stack.
 //
-// SECURITY: the default ClientSecret values for RoleAppProvider and
-// RoleAppUser are the demo credentials shipped with the splice quickstart
+// SECURITY: the default ClientSecret values for RoleAValidator1 and
+// RoleBValidator1 are the demo credentials shipped with the splice quickstart
 // compose files. They are public LocalNet test credentials valid only
 // against an ephemeral local Keycloak realm — never use them in any
 // non-localhost or production deployment. Override via the
 // CANTON_LOCALNET_*_CLIENT_SECRET env vars in any real environment.
-// RoleSV has no demo default; CANTON_LOCALNET_SV_CLIENT_SECRET must be
+// RoleSvValidator1 has no demo default; CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET must be
 // set explicitly.
 //
 // Environment variables consulted (with defaults):
 //
 //	CANTON_LOCALNET_HOST                       (default "localhost")
-//	CANTON_LOCALNET_APP_PROVIDER_JSON_PORT     (default "3975")
-//	CANTON_LOCALNET_APP_USER_JSON_PORT         (default "2975")
-//	CANTON_LOCALNET_SV_JSON_PORT               (default "4975")
+//	CANTON_LOCALNET_A_VALIDATOR_1_JSON_PORT     (default "11975")
+//	CANTON_LOCALNET_B_VALIDATOR_1_JSON_PORT         (default "12975")
+//	CANTON_LOCALNET_SV_VALIDATOR_1_JSON_PORT               (default "10975")
 //	CANTON_LOCALNET_KEYCLOAK_HOST              (default "keycloak.localhost")
 //	CANTON_LOCALNET_KEYCLOAK_PORT              (default "8082")
 //	CANTON_LOCALNET_AUDIENCE                   (default "https://canton.network.global")
 //	CANTON_LOCALNET_SCOPE                      (default "")
-//	CANTON_LOCALNET_APP_PROVIDER_CLIENT_ID     (default "app-provider-validator")
-//	CANTON_LOCALNET_APP_PROVIDER_CLIENT_SECRET (LocalNet demo default — see SECURITY note above)
-//	CANTON_LOCALNET_APP_USER_CLIENT_ID         (default "app-user-validator")
-//	CANTON_LOCALNET_APP_USER_CLIENT_SECRET     (LocalNet demo default — see SECURITY note above)
-//	CANTON_LOCALNET_SV_CLIENT_ID               (default "sv-validator")
-//	CANTON_LOCALNET_SV_CLIENT_SECRET           (no default — required for RoleSV)
+//	CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_ID     (default "a-validator-1-validator")
+//	CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET (LocalNet demo default — see SECURITY note above)
+//	CANTON_LOCALNET_B_VALIDATOR_1_CLIENT_ID         (default "b-validator-1-validator")
+//	CANTON_LOCALNET_B_VALIDATOR_1_CLIENT_SECRET     (LocalNet demo default — see SECURITY note above)
+//	CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_ID               (default "sv-validator")
+//	CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET           (no default — required for RoleSvValidator1)
 type EndpointDiscovery struct {
 	getenv func(string) string
 }
@@ -90,36 +90,36 @@ func (d *EndpointDiscovery) For(role Role) (Endpoints, error) {
 	scope := d.lookupOr("CANTON_LOCALNET_SCOPE", "")
 
 	switch role {
-	case RoleAppProvider:
+	case RoleAValidator1:
 		return Endpoints{
 			Role:             role,
-			JSONLedgerAPIURL: fmt.Sprintf("http://%s:%s", host, d.lookupOr("CANTON_LOCALNET_APP_PROVIDER_JSON_PORT", "3975")),
-			TokenURL:         fmt.Sprintf("http://%s:%s/realms/AppProvider/protocol/openid-connect/token", keycloakHost, keycloakPort),
-			ClientID:         d.lookupOr("CANTON_LOCALNET_APP_PROVIDER_CLIENT_ID", "app-provider-validator"),
-			ClientSecret:     d.lookupOr("CANTON_LOCALNET_APP_PROVIDER_CLIENT_SECRET", "AL8648b9SfdTFImq7FV56Vd0KHifHBuC"),
+			JSONLedgerAPIURL: fmt.Sprintf("http://%s:%s", host, d.lookupOr("CANTON_LOCALNET_A_VALIDATOR_1_JSON_PORT", "11975")),
+			TokenURL:         fmt.Sprintf("http://%s:%s/realms/AValidator1/protocol/openid-connect/token", keycloakHost, keycloakPort),
+			ClientID:         d.lookupOr("CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_ID", "a-validator-1-validator"),
+			ClientSecret:     d.lookupOr("CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET", "AL8648b9SfdTFImq7FV56Vd0KHifHBuC"),
 			Audience:         audience,
 			Scope:            scope,
 		}, nil
-	case RoleAppUser:
+	case RoleBValidator1:
 		return Endpoints{
 			Role:             role,
-			JSONLedgerAPIURL: fmt.Sprintf("http://%s:%s", host, d.lookupOr("CANTON_LOCALNET_APP_USER_JSON_PORT", "2975")),
-			TokenURL:         fmt.Sprintf("http://%s:%s/realms/AppUser/protocol/openid-connect/token", keycloakHost, keycloakPort),
-			ClientID:         d.lookupOr("CANTON_LOCALNET_APP_USER_CLIENT_ID", "app-user-validator"),
-			ClientSecret:     d.lookupOr("CANTON_LOCALNET_APP_USER_CLIENT_SECRET", "6m12QyyGl81d9nABWQXMycZdXho6ejEX"),
+			JSONLedgerAPIURL: fmt.Sprintf("http://%s:%s", host, d.lookupOr("CANTON_LOCALNET_B_VALIDATOR_1_JSON_PORT", "12975")),
+			TokenURL:         fmt.Sprintf("http://%s:%s/realms/BValidator1/protocol/openid-connect/token", keycloakHost, keycloakPort),
+			ClientID:         d.lookupOr("CANTON_LOCALNET_B_VALIDATOR_1_CLIENT_ID", "b-validator-1-validator"),
+			ClientSecret:     d.lookupOr("CANTON_LOCALNET_B_VALIDATOR_1_CLIENT_SECRET", "6m12QyyGl81d9nABWQXMycZdXho6ejEX"),
 			Audience:         audience,
 			Scope:            scope,
 		}, nil
-	case RoleSV:
-		secret := d.lookupOr("CANTON_LOCALNET_SV_CLIENT_SECRET", "")
+	case RoleSvValidator1:
+		secret := d.lookupOr("CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET", "")
 		if secret == "" {
-			return Endpoints{}, errors.New("endpoint discovery: CANTON_LOCALNET_SV_CLIENT_SECRET must be set for RoleSV (no demo default ships in compose)")
+			return Endpoints{}, errors.New("endpoint discovery: CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET must be set for RoleSvValidator1 (no demo default ships in compose)")
 		}
 		return Endpoints{
 			Role:             role,
-			JSONLedgerAPIURL: fmt.Sprintf("http://%s:%s", host, d.lookupOr("CANTON_LOCALNET_SV_JSON_PORT", "4975")),
-			TokenURL:         fmt.Sprintf("http://%s:%s/realms/sv/protocol/openid-connect/token", keycloakHost, keycloakPort),
-			ClientID:         d.lookupOr("CANTON_LOCALNET_SV_CLIENT_ID", "sv-validator"),
+			JSONLedgerAPIURL: fmt.Sprintf("http://%s:%s", host, d.lookupOr("CANTON_LOCALNET_SV_VALIDATOR_1_JSON_PORT", "10975")),
+			TokenURL:         fmt.Sprintf("http://%s:%s/realms/sv-validator-1/protocol/openid-connect/token", keycloakHost, keycloakPort),
+			ClientID:         d.lookupOr("CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_ID", "sv-validator"),
 			ClientSecret:     secret,
 			Audience:         audience,
 			Scope:            scope,

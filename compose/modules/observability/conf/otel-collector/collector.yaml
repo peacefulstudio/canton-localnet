@@ -32,7 +32,7 @@ receivers:
         - job_name: canton
           static_configs:
             - targets: [ "canton:${env:CANTON_METRICS_PORT}" ]
-        - job_name: nginx-sv
+        - job_name: nginx-sv-validator-1
           static_configs:
             - targets: [ "nginx-metrics:${env:NGINX_EXPORTER_METRICS_PORT}" ]
         - job_name: postgres

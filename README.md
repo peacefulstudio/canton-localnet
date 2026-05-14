@@ -16,16 +16,21 @@ make down         # stop the stack and remove containers
 
 JSON Ledger API endpoints once ready (see `compose/modules/localnet/env/common.env`):
 
-| Profile        | Port |
-|----------------|------|
-| app-provider   | 3975 |
-| app-user       | 2975 |
-| sv             | 4975 |
+| Slot             | JSON Ledger API |
+|------------------|-----------------|
+| `sv-validator-1` | 10975           |
+| `a-validator-1`  | 11975           |
+| `b-validator-1`  | 12975           |
+
+Slot ports follow the 5-digit two-digit-prefix scheme (`<prefix><suffix>`) — see
+[ADR-0002](docs/adr/0002-two-digit-port-prefix.md) for the rationale and the
+full port table (participant ledger / admin / JSON / Splice validator admin
+per slot).
 
 Optional layers:
 
 ```bash
-make up PQS=on              # opt in to PQS app-provider profile
+make up PQS=on              # opt in to PQS a-validator-1 profile
 make up OBS=on              # add Grafana (http://localhost:3030) + Prometheus / Loki / Tempo / cAdvisor
 make up RES=off             # remove the default mem_limit / JVM heap caps
 make up AUTH_MODE=secret    # shared-secret JWT (escape hatch; not CI-tested)
@@ -42,7 +47,7 @@ For consumers that prefer running LocalNet on a shared EC2 instance, the
 
 ```bash
 canton-localnet vm provision        # terraform apply, prints public IP + ssh command
-canton-localnet vm tunnel           # ssh -L 3901/7575/8082 to the VM (Ctrl-C to close)
+canton-localnet vm tunnel           # ssh -L 11901/7575/8082 to the VM (Ctrl-C to close)
 canton-localnet vm destroy --yes    # terraform destroy (interactive prompt without --yes)
 ```
 

@@ -7,10 +7,10 @@ bootstrap.synchronizer(
   staticSynchronizerParameters = StaticSynchronizerParameters.defaultsWithoutKMS(ProtocolVersion.latest),
 )
 
-`app-provider`.synchronizers.connect_local(`app-sequencer`, "app-synchronizer")
-`app-user`.synchronizers.connect_local(`app-sequencer`, "app-synchronizer")
+`a-validator-1`.synchronizers.connect_local(`app-sequencer`, "app-synchronizer")
+`b-validator-1`.synchronizers.connect_local(`app-sequencer`, "app-synchronizer")
 
 utils.retry_until_true {
-  `app-provider`.synchronizers.active("app-synchronizer") &&
-    `app-user`.synchronizers.active("app-synchronizer")
+  `a-validator-1`.synchronizers.active("app-synchronizer") &&
+    `b-validator-1`.synchronizers.active("app-synchronizer")
 }

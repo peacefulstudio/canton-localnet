@@ -5,14 +5,14 @@ namespace Peaceful.Canton.Localnet.Testing;
 
 /// <summary>
 /// Selects which Canton LocalNet profile a fixture is wired to. The profile
-/// determines the host-exposed JSON Ledger API port (app-user=2xxx,
-/// app-provider=3xxx, sv=4xxx) and which Keycloak realm issues tokens.
+/// determines the host-exposed JSON Ledger API port (sv-validator-1=10xxx,
+/// a-validator-1=11xxx, b-validator-1=12xxx) and which Keycloak realm issues tokens.
 /// </summary>
 public enum LocalnetProfile
 {
-    AppUser,
-    AppProvider,
-    Sv,
+    BValidator1,
+    AValidator1,
+    SvValidator1,
 }
 
 /// <summary>
@@ -67,7 +67,7 @@ public static class EndpointDiscovery
     /// <see cref="ClientSecretEnv"/> are required and have no fallback.
     /// </summary>
     public static LocalnetEndpoints Resolve(
-        LocalnetProfile profile = LocalnetProfile.AppProvider,
+        LocalnetProfile profile = LocalnetProfile.AValidator1,
         IReadOnlyDictionary<string, string?>? environment = null)
     {
         var env = environment ?? Snapshot();
@@ -93,7 +93,7 @@ public static class EndpointDiscovery
 
     /// <summary>
     /// Returns the profile selected by <see cref="ProfileEnv"/>, defaulting to
-    /// <see cref="LocalnetProfile.AppProvider"/>.
+    /// <see cref="LocalnetProfile.AValidator1"/>.
     /// </summary>
     public static LocalnetProfile ResolveProfile(IReadOnlyDictionary<string, string?>? environment = null)
     {
@@ -101,24 +101,24 @@ public static class EndpointDiscovery
         var raw = GetValue(env, ProfileEnv);
         if (string.IsNullOrWhiteSpace(raw))
         {
-            return LocalnetProfile.AppProvider;
+            return LocalnetProfile.AValidator1;
         }
 
         return raw.Trim().ToLowerInvariant() switch
         {
-            "app-user" or "appuser" => LocalnetProfile.AppUser,
-            "app-provider" or "appprovider" => LocalnetProfile.AppProvider,
-            "sv" or "super-validator" or "supervalidator" => LocalnetProfile.Sv,
+            "b-validator-1" => LocalnetProfile.BValidator1,
+            "a-validator-1" => LocalnetProfile.AValidator1,
+            "sv-validator-1" or "super-validator" or "supervalidator" => LocalnetProfile.SvValidator1,
             _ => throw new InvalidOperationException(
-                $"Unknown profile '{raw}' in {ProfileEnv}; expected one of: app-user, app-provider, sv."),
+                $"Unknown profile '{raw}' in {ProfileEnv}; expected one of: a-validator-1, b-validator-1, sv-validator-1."),
         };
     }
 
     private static string DefaultJsonApiUrl(LocalnetProfile profile) => profile switch
     {
-        LocalnetProfile.AppUser => "http://localhost:2975",
-        LocalnetProfile.AppProvider => "http://localhost:3975",
-        LocalnetProfile.Sv => "http://localhost:4975",
+        LocalnetProfile.BValidator1 => "http://localhost:12975",
+        LocalnetProfile.AValidator1 => "http://localhost:11975",
+        LocalnetProfile.SvValidator1 => "http://localhost:10975",
         _ => throw new ArgumentOutOfRangeException(nameof(profile), profile, null),
     };
 
@@ -126,9 +126,9 @@ public static class EndpointDiscovery
     {
         var realm = profile switch
         {
-            LocalnetProfile.AppUser => "AppUser",
-            LocalnetProfile.AppProvider => "AppProvider",
-            LocalnetProfile.Sv => "AppProvider",
+            LocalnetProfile.BValidator1 => "BValidator1",
+            LocalnetProfile.AValidator1 => "AValidator1",
+            LocalnetProfile.SvValidator1 => "AValidator1",
             _ => throw new ArgumentOutOfRangeException(nameof(profile), profile, null),
         };
         return $"{DefaultKeycloakHost}/realms/{realm}/protocol/openid-connect/token";

@@ -153,14 +153,14 @@ func Build(opts Options) (Plan, error) {
 		args = append(args, "--env-file", filepath.Join(obsDir, "compose.env"))
 	}
 
-	args = append(args, "--profile", "app-provider")
-	args = append(args, "--profile", "app-user")
-	args = append(args, "--profile", "sv")
+	args = append(args, "--profile", "a-validator-1")
+	args = append(args, "--profile", "b-validator-1")
+	args = append(args, "--profile", "sv-validator-1")
 	if opts.AuthMode == AuthOAuth2 {
 		args = append(args, "--profile", "keycloak")
 	}
 	if opts.Pqs {
-		args = append(args, "--profile", "pqs-app-provider")
+		args = append(args, "--profile", "pqs-a-validator-1")
 	}
 	if opts.Obs {
 		args = append(args, "--profile", "observability")

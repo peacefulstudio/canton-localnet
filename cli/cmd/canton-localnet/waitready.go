@@ -15,7 +15,7 @@ func newWaitReadyCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "wait-ready",
 		Short: "Poll the JSON Ledger API until the participant is ready",
-		Long:  "Polls the host-exposed JSON Ledger API readiness endpoint (default http://localhost:3975/readyz) until it returns HTTP 200, or fails the timeout window. Exit code is 0 on ready, non-zero on timeout.",
+		Long:  "Polls the host-exposed JSON Ledger API readiness endpoint (default http://localhost:11975/readyz) until it returns HTTP 200, or fails the timeout window. Exit code is 0 on ready, non-zero on timeout.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts.Logger = func(msg string) {
 				cmd.PrintErrln(msg)

@@ -3,7 +3,7 @@
 
 // Package tunnel wraps an `ssh -L` invocation that mirrors the bespoke
 // tunnel scripts murmures and terraform-provider-canton's CI rely on
-// today. It opens the splice LocalNet port set (Canton public 3901,
+// today. It opens the splice LocalNet port set (Canton public 11901,
 // JSON Ledger API 7575, validator UI 8082) against a remote VM.
 package tunnel
 
@@ -22,12 +22,12 @@ import (
 // DefaultPorts is the port set murmures' historical tunnel.sh and
 // terraform-provider-canton's bash tunnel scripts both forward:
 //
-//   - 3901: Canton public API (gRPC) on the app-provider participant
-//   - 7575: JSON Ledger API on the app-provider participant
-//   - 8082: validator wallet UI on the app-provider validator
+//   - 11901: Canton public API (gRPC) on the a-validator-1 participant
+//   - 7575: JSON Ledger API on the a-validator-1 participant
+//   - 8082: validator wallet UI on the a-validator-1 validator
 //
 // Changing this set is a breaking change for downstream consumers.
-var DefaultPorts = []int{3901, 7575, 8082}
+var DefaultPorts = []int{11901, 7575, 8082}
 
 // Runner abstracts process execution so unit tests can assert the ssh
 // argument vector without forking real ssh.

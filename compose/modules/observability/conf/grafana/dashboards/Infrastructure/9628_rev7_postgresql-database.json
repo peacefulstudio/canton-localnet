@@ -3237,8 +3237,8 @@
       {
         "current": {
           "selected": false,
-          "text": "postgres-splice-sv-metrics:9187",
-          "value": "postgres-splice-sv-metrics:9187"
+          "text": "postgres-splice-sv-validator-1-metrics:9187",
+          "value": "postgres-splice-sv-validator-1-metrics:9187"
         },
         "datasource": {
           "type": "prometheus",

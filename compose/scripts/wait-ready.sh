@@ -2,15 +2,15 @@
 # Copyright (c) 2026 Peaceful Studio OÜ
 # SPDX-License-Identifier: Apache-2.0
 #
-# Polls the JSON Ledger API on the host-exposed app-provider port until it
+# Polls the JSON Ledger API on the host-exposed a-validator-1 port until it
 # answers a /readyz probe, or fails after a bounded number of attempts.
 #
-# Default port follows the splice convention: 3${PARTICIPANT_JSON_API_PORT_SUFFIX}
-# = 3975. Override READY_URL to target a different participant or path.
+# Default port follows the splice convention: 11${PARTICIPANT_JSON_API_PORT_SUFFIX}
+# = 11975. Override READY_URL to target a different participant or path.
 
 set -euo pipefail
 
-READY_URL="${READY_URL:-http://localhost:3975/readyz}"
+READY_URL="${READY_URL:-http://localhost:11975/readyz}"
 ATTEMPTS="${ATTEMPTS:-60}"
 SLEEP_SECONDS="${SLEEP_SECONDS:-5}"
 

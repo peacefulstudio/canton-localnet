@@ -48,10 +48,10 @@ services:
     logging: *default-logging
     environment:
       - *canton-metrics-config
-  wallet-web-ui-app-user: *set-default-logging
-  ans-web-ui-app-user: *set-default-logging
-  wallet-web-ui-app-provider: *set-default-logging
-  ans-web-ui-app-provider: *set-default-logging
-  wallet-web-ui-sv: *set-default-logging
+  wallet-web-ui-b-validator-1: *set-default-logging
+  ans-web-ui-b-validator-1: *set-default-logging
+  wallet-web-ui-a-validator-1: *set-default-logging
+  ans-web-ui-a-validator-1: *set-default-logging
+  wallet-web-ui-sv-validator-1: *set-default-logging
   sv-web-ui: *set-default-logging
   scan-web-ui: *set-default-logging

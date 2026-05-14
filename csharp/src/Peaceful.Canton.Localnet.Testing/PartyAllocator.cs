@@ -41,7 +41,7 @@ public sealed class PartyAllocator
         if (_httpClient.BaseAddress is null)
         {
             throw new ArgumentException(
-                "HttpClient must have a BaseAddress set to the JSON Ledger API root (e.g. http://localhost:3975/).",
+                "HttpClient must have a BaseAddress set to the JSON Ledger API root (e.g. http://localhost:11975/).",
                 nameof(httpClient));
         }
     }

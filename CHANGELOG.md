@@ -7,12 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- **Slot rename — `sv` → `sv-validator-1`, `app-provider` → `a-validator-1`,
+  `app-user` → `b-validator-1`** (#40). The rename applies to every form
+  of the identifier across the artifact:
+  - **Kebab / lowercase** (compose profile names, file paths under
+    `compose/modules/localnet/conf/{canton,splice,console}/<slot>/`,
+    service / container names like `wallet-web-ui-<slot>` /
+    `ans-web-ui-<slot>` / `pqs-<slot>`, Keycloak client IDs like
+    `app-provider-validator` → `a-validator-1-validator`).
+  - **SCREAMING_SNAKE** (env var prefixes): `APP_PROVIDER_PARTY_HINT` →
+    `A_VALIDATOR_1_PARTY_HINT`; `APP_USER_PARTY_HINT` →
+    `B_VALIDATOR_1_PARTY_HINT`; `SV_PROFILE` → `SV_VALIDATOR_1_PROFILE`;
+    `APP_PROVIDER_PROFILE` → `A_VALIDATOR_1_PROFILE`;
+    `APP_USER_PROFILE` → `B_VALIDATOR_1_PROFILE`;
+    `AUTH_APP_PROVIDER_*` → `AUTH_A_VALIDATOR_1_*`;
+    `AUTH_APP_USER_*` → `AUTH_B_VALIDATOR_1_*`;
+    `AUTH_SV_*` → `AUTH_SV_VALIDATOR_1_*`;
+    `CANTON_LOCALNET_APP_PROVIDER_*` → `CANTON_LOCALNET_A_VALIDATOR_1_*`;
+    `CANTON_LOCALNET_APP_USER_*` → `CANTON_LOCALNET_B_VALIDATOR_1_*`;
+    `CANTON_LOCALNET_SV_*` → `CANTON_LOCALNET_SV_VALIDATOR_1_*`;
+    `PQS_APP_PROVIDER_PROFILE` → `PQS_A_VALIDATOR_1_PROFILE`;
+    `PQS_APP_USER_PROFILE` → `PQS_B_VALIDATOR_1_PROFILE`;
+    `PQS_SV_PROFILE` → `PQS_SV_VALIDATOR_1_PROFILE`.
+  - **PascalCase** (Keycloak realm names): `AppProvider` → `AValidator1`;
+    `AppUser` → `BValidator1`. C# enum `LocalnetProfile.AppProvider` →
+    `LocalnetProfile.AValidator1`; `LocalnetProfile.AppUser` →
+    `LocalnetProfile.BValidator1`; `LocalnetProfile.Sv` →
+    `LocalnetProfile.SvValidator1`.
+  - **Go** (`Role` constants in `go/fixture`): `RoleAppProvider` →
+    `RoleAValidator1`; `RoleAppUser` → `RoleBValidator1`; `RoleSV` →
+    `RoleSvValidator1`.
+  - **CLI** (compose profile names emitted by `cli/internal/compose`):
+    `--profile app-provider` → `--profile a-validator-1`;
+    `--profile app-user` → `--profile b-validator-1`;
+    `--profile sv` → `--profile sv-validator-1`;
+    `--profile pqs-app-provider` → `--profile pqs-a-validator-1`.
+- **5-digit port scheme** (ADR-0002, #40). Host-exposed ports follow a
+  two-digit prefix per slot (`sv-validator-1`=10, `a-validator-1`=11,
+  `b-validator-1`=12) plus the existing 3-digit suffix:
+  - Participant ledger API: `3901`/`2901`/`4901` →
+    `11901`/`12901`/`10901`.
+  - Participant admin API: `3902`/`2902`/`4902` →
+    `11902`/`12902`/`10902`.
+  - Participant JSON API: `3975`/`2975`/`4975` →
+    `11975`/`12975`/`10975`.
+  - Splice validator admin: `3903`/`2903`/`4903` →
+    `11903`/`12903`/`10903`.
+  - UIs: `3000`/`2000`/`4000` → `11000`/`12000`/`10000`.
+  - Canton-internal ports (5008 sequencer, 5009 mediator, 5012 scan,
+    etc.) are unchanged.
+- New foundational docs ship with this release: `CONTEXT.md` (domain
+  glossary), `docs/adr/0001-yaml-config-without-codegen.md`,
+  `docs/adr/0002-two-digit-port-prefix.md`, and `docs/MIGRATION.md`
+  (terse before/after table for consumer migration).
+
 ### Added
 
 ### Changed
 
 ### Fixed
 
+- `cli/internal/health.WaitReady` now preserves the last observed HTTP
+  status in its timeout error even when a later probe ends in a
+  transport error (e.g. context-deadline-exceeded as the overall
+  budget expires). Previously the most recent probe's error
+  unconditionally overwrote the diagnostic, so seeing a 503 followed
+  by a deadline-exceeded would report only the deadline. Also
+  de-flaked `TestWaitReadyTimeout` on macOS-arm64, where this race
+  was reliably reproducible.
 - Removed unused `xunit.v3` PackageReference from
   `Peaceful.Canton.Localnet.Testing.csproj` (it was unused in the
   library source and leaked as a transitive runtime dependency on
@@ -69,7 +133,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   terraform refresh); `destroy` runs `terraform destroy
   -auto-approve` behind an interactive `Type DESTROY` confirmation
   prompt (skippable with `--yes`, required for non-TTY use); `tunnel`
-  opens `ssh -L 3901:localhost:3901 -L 7575:localhost:7575 -L
+  opens `ssh -L 11901:localhost:11901 -L 7575:localhost:7575 -L
   8082:localhost:8082` against the provisioned VM, defaulting the
   host / user / identity to the terraform outputs `elastic_ip` /
   `ssh_command` / `ssh_key_path` and accepting `--host` / `--user` /

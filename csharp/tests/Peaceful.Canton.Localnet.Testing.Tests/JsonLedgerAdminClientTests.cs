@@ -10,7 +10,7 @@ namespace Peaceful.Canton.Localnet.Testing.Tests;
 
 public class JsonLedgerAdminClientTests
 {
-    private static readonly Uri JsonApiBase = new("http://localhost:3975/");
+    private static readonly Uri JsonApiBase = new("http://localhost:11975/");
 
     private static OAuth2TokenProvider StaticTokenProvider(string token)
     {

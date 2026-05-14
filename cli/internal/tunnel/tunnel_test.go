@@ -37,7 +37,7 @@ func TestBuildArgsDefaultPorts(t *testing.T) {
 		t.Fatalf("BuildArgs: %v", err)
 	}
 	for _, want := range []string{
-		"3901:localhost:3901",
+		"11901:localhost:11901",
 		"7575:localhost:7575",
 		"8082:localhost:8082",
 	} {
@@ -130,7 +130,7 @@ func TestBuildArgsCustomPortsOverrideDefaults(t *testing.T) {
 			t.Errorf("expected -L %s, got %v", p, args)
 		}
 	}
-	for _, p := range []string{"3901:localhost:3901", "7575:localhost:7575", "8082:localhost:8082"} {
+	for _, p := range []string{"11901:localhost:11901", "7575:localhost:7575", "8082:localhost:8082"} {
 		if containsAdjacent(args, "-L", p) {
 			t.Errorf("default port %s should not be present when Ports overridden, got %v", p, args)
 		}
@@ -218,7 +218,7 @@ func TestOpenPropagatesContextCancel(t *testing.T) {
 
 func TestDefaultPortsMatchHistoricalSet(t *testing.T) {
 	t.Parallel()
-	want := []int{3901, 7575, 8082}
+	want := []int{11901, 7575, 8082}
 	if len(DefaultPorts) != len(want) {
 		t.Fatalf("expected %d default ports, got %d (%v)", len(want), len(DefaultPorts), DefaultPorts)
 	}

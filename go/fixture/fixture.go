@@ -19,7 +19,7 @@ import (
 )
 
 // Config configures a Fixture. All fields are optional and have sensible
-// defaults; in particular, an empty Role defaults to RoleAppProvider, and a
+// defaults; in particular, an empty Role defaults to RoleAValidator1, and a
 // nil Discovery defaults to NewEndpointDiscovery (env-based).
 type Config struct {
 	Role       Role
@@ -33,7 +33,7 @@ type Config struct {
 //
 // Lifecycle:
 //
-//	f, err := fixture.New(fixture.Config{Role: fixture.RoleAppProvider})
+//	f, err := fixture.New(fixture.Config{Role: fixture.RoleAValidator1})
 //	if err != nil { t.Fatal(err) }
 //	if err := f.Setup(ctx); err != nil { t.Fatal(err) }
 //	t.Cleanup(func() { _ = f.Teardown(context.Background()) })
@@ -55,7 +55,7 @@ type Fixture struct {
 // network I/O; call Setup before issuing requests.
 func New(cfg Config) (*Fixture, error) {
 	if cfg.Role == "" {
-		cfg.Role = RoleAppProvider
+		cfg.Role = RoleAValidator1
 	}
 	if cfg.Discovery == nil {
 		cfg.Discovery = NewEndpointDiscovery()

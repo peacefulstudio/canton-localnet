@@ -17,8 +17,8 @@ func TestEndpointDiscovery_Defaults(t *testing.T) {
 		tokenPath string
 		clientID  string
 	}{
-		{RoleAppProvider, "http://localhost:3975", "/realms/AppProvider/protocol/openid-connect/token", "app-provider-validator"},
-		{RoleAppUser, "http://localhost:2975", "/realms/AppUser/protocol/openid-connect/token", "app-user-validator"},
+		{RoleAValidator1, "http://localhost:11975", "/realms/AValidator1/protocol/openid-connect/token", "a-validator-1-validator"},
+		{RoleBValidator1, "http://localhost:12975", "/realms/BValidator1/protocol/openid-connect/token", "b-validator-1-validator"},
 	}
 	for _, tc := range cases {
 		t.Run(string(tc.role), func(t *testing.T) {
@@ -48,22 +48,22 @@ func TestEndpointDiscovery_Defaults(t *testing.T) {
 func TestEndpointDiscovery_OverridesFromEnv(t *testing.T) {
 	env := map[string]string{
 		"CANTON_LOCALNET_HOST":                       "ledger.example.com",
-		"CANTON_LOCALNET_APP_PROVIDER_JSON_PORT":     "9001",
+		"CANTON_LOCALNET_A_VALIDATOR_1_JSON_PORT":     "9001",
 		"CANTON_LOCALNET_KEYCLOAK_HOST":              "auth.example.com",
 		"CANTON_LOCALNET_KEYCLOAK_PORT":              "8443",
 		"CANTON_LOCALNET_AUDIENCE":                   "https://example.audience",
-		"CANTON_LOCALNET_APP_PROVIDER_CLIENT_ID":     "custom-client",
-		"CANTON_LOCALNET_APP_PROVIDER_CLIENT_SECRET": "custom-secret",
+		"CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_ID":     "custom-client",
+		"CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET": "custom-secret",
 	}
 	d := NewEndpointDiscoveryWithEnv(func(k string) string { return env[k] })
-	e, err := d.For(RoleAppProvider)
+	e, err := d.For(RoleAValidator1)
 	if err != nil {
 		t.Fatalf("For: %v", err)
 	}
 	if e.JSONLedgerAPIURL != "http://ledger.example.com:9001" {
 		t.Errorf("JSONLedgerAPIURL = %q", e.JSONLedgerAPIURL)
 	}
-	if !strings.HasPrefix(e.TokenURL, "http://auth.example.com:8443/realms/AppProvider/") {
+	if !strings.HasPrefix(e.TokenURL, "http://auth.example.com:8443/realms/AValidator1/") {
 		t.Errorf("TokenURL = %q", e.TokenURL)
 	}
 	if e.ClientID != "custom-client" {
@@ -84,33 +84,33 @@ func TestEndpointDiscovery_UnknownRole(t *testing.T) {
 	}
 }
 
-func TestEndpointDiscovery_RoleSVRequiresClientSecret(t *testing.T) {
+func TestEndpointDiscovery_RoleSvValidator1RequiresClientSecret(t *testing.T) {
 	d := NewEndpointDiscoveryWithEnv(func(string) string { return "" })
-	_, err := d.For(RoleSV)
+	_, err := d.For(RoleSvValidator1)
 	if err == nil {
-		t.Fatal("expected error when CANTON_LOCALNET_SV_CLIENT_SECRET is unset")
+		t.Fatal("expected error when CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET is unset")
 	}
-	if !strings.Contains(err.Error(), "CANTON_LOCALNET_SV_CLIENT_SECRET") {
+	if !strings.Contains(err.Error(), "CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET") {
 		t.Errorf("err = %q, want it to mention the env var", err.Error())
 	}
 }
 
-func TestEndpointDiscovery_RoleSVResolvesWithExplicitSecret(t *testing.T) {
+func TestEndpointDiscovery_RoleSvValidator1ResolvesWithExplicitSecret(t *testing.T) {
 	env := map[string]string{
-		"CANTON_LOCALNET_SV_CLIENT_SECRET": "sv-secret",
+		"CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET": "sv-secret",
 	}
 	d := NewEndpointDiscoveryWithEnv(func(k string) string { return env[k] })
-	e, err := d.For(RoleSV)
+	e, err := d.For(RoleSvValidator1)
 	if err != nil {
 		t.Fatalf("For(SV): %v", err)
 	}
 	if e.ClientSecret != "sv-secret" {
 		t.Fatalf("ClientSecret = %q, want sv-secret", e.ClientSecret)
 	}
-	if e.JSONLedgerAPIURL != "http://localhost:4975" {
+	if e.JSONLedgerAPIURL != "http://localhost:10975" {
 		t.Errorf("JSONLedgerAPIURL = %q", e.JSONLedgerAPIURL)
 	}
-	if !strings.HasSuffix(e.TokenURL, "/realms/sv/protocol/openid-connect/token") {
+	if !strings.HasSuffix(e.TokenURL, "/realms/sv-validator-1/protocol/openid-connect/token") {
 		t.Errorf("TokenURL = %q", e.TokenURL)
 	}
 }

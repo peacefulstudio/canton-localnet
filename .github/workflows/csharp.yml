@@ -104,9 +104,9 @@ jobs:
       - name: Run integration smoke test
         env:
           CANTON_LOCALNET_TEST_DAR_PATH: ${{ steps.extract-dar.outputs.dar_path }}
-          CANTON_LOCALNET_JSON_API_URL: http://localhost:3975
-          CANTON_LOCALNET_TOKEN_URL: http://localhost:8082/realms/AppProvider/protocol/openid-connect/token
-          CANTON_LOCALNET_CLIENT_ID: app-provider-validator
+          CANTON_LOCALNET_JSON_API_URL: http://localhost:11975
+          CANTON_LOCALNET_TOKEN_URL: http://localhost:8082/realms/AValidator1/protocol/openid-connect/token
+          CANTON_LOCALNET_CLIENT_ID: a-validator-1-validator
           CANTON_LOCALNET_CLIENT_SECRET: AL8648b9SfdTFImq7FV56Vd0KHifHBuC
         run: |
           set -euo pipefail

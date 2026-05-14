@@ -41,7 +41,7 @@ func WithHTTPClient(c *http.Client) JsonLedgerAdminClientOption {
 
 // NewJsonLedgerAdminClient constructs a JsonLedgerAdminClient.
 //
-// baseURL is the JSON Ledger API origin, e.g. "http://localhost:3975".
+// baseURL is the JSON Ledger API origin, e.g. "http://localhost:11975".
 // tokens supplies bearer tokens for the Authorization header.
 func NewJsonLedgerAdminClient(baseURL string, tokens TokenProvider, opts ...JsonLedgerAdminClientOption) (*JsonLedgerAdminClient, error) {
 	if strings.TrimSpace(baseURL) == "" {
