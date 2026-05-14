@@ -59,6 +59,33 @@ Prerequisites: Docker ≥ 27, Docker Compose ≥ 2.27. The compose stack is
 vendored into `compose/modules/` from `hyperledger-labs/splice` at the SHA
 pinned in `compose/splice.sha`. Re-vendor with `make vendor`.
 
+## Configuration
+
+The CLI reads an optional `canton-localnet.yaml` from the working
+directory or any ancestor (walk-up discovery, matching `git` / `docker
+compose` / `kubectl`), overridable with `--config <path>`. With no
+file found anywhere, the CLI uses built-in defaults (all five
+validator slots enabled, observability + PQS on, party hints equal to
+slot names). Partial configs merge over the defaults.
+
+```yaml
+schemaVersion: preview-1
+modules:
+  obs: true
+  pqs: true
+validators:
+  a-validator-1:
+    partyHint: featuredapp-validator-1
+    auth: { clientId: app-provider-validator, clientSecret: ${FEATUREDAPP_VALIDATOR_SECRET} }
+  c-validator-1: { enabled: false }
+  d-validator-1: { enabled: false }
+```
+
+The schema is **preview / unstable** until compose codegen lands —
+see [ADR-0001](docs/adr/0001-yaml-config-without-codegen.md) for the
+rationale and [`docs/canton-localnet-yaml-schema.md`](docs/canton-localnet-yaml-schema.md)
+for the full reference.
+
 ## Project stewardship
 
 `canton-localnet` is currently developed and maintained by **Peaceful Studio

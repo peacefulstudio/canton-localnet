@@ -65,6 +65,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `canton-localnet.yaml` consumer config (preview-1, unstable) —
+  walk-up discovery and env translation (#43). The CLI walks up from
+  the working directory looking for a `canton-localnet.yaml` (matching
+  `git` / `docker compose` / `kubectl` semantics), or accepts an
+  explicit `--config <path>`. With no file found anywhere, the CLI
+  falls back to built-in defaults (all five slots enabled, obs + pqs
+  on, party hints equal to slot names). Partial configs merge over
+  the defaults; references to unknown slots are a hard error. The
+  parser emits env vars (`<SLOT>_PROFILE`, `<SLOT>_PARTY_HINT`,
+  `<SLOT>_OAUTH_CLIENT_ID`, `<SLOT>_OAUTH_CLIENT_SECRET`,
+  `OBS_PROFILE`, `PQS_PROFILE`) that the existing compose pipeline
+  already consumes. Schema documented in
+  `docs/canton-localnet-yaml-schema.md`.
+
 ### Changed
 
 ### Fixed
@@ -84,6 +98,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `CS0433 The type 'Assert' exists in both 'xunit.assert' and 'xunit.v3.assert'`
   in consumer projects pinned to xunit v2). Discovered while wiring
   the package into the `murmures` test suite, which uses xunit 2.
+
+### Notes
+
+- The `canton-localnet.yaml` schema (`schemaVersion: preview-1`) is
+  **preview / unstable** until compose codegen lands (per
+  [ADR-0001](docs/adr/0001-yaml-config-without-codegen.md)). Breaking
+  schema changes are allowed in this window and will be called out
+  in subsequent CHANGELOG entries.
 
 ## [0.6.2-2] - 2026-05-14
 

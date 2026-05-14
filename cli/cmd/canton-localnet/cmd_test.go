@@ -174,6 +174,62 @@ func TestUpMissingRepoRoot(t *testing.T) {
 	}
 }
 
+func TestUpExplicitConfigFileWins(t *testing.T) {
+	t.Parallel()
+	root := newTestRepoRoot(t)
+	cfgPath := filepath.Join(root, "alt.yaml")
+	body := "schemaVersion: preview-1\n" +
+		"modules:\n" +
+		"  obs: false\n" +
+		"  pqs: false\n" +
+		"validators:\n" +
+		"  c-validator-1: { enabled: false }\n" +
+		"  d-validator-1: { enabled: false }\n"
+	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runner, _, err := runRoot(t, "up", "--repo-root", root, "--config", cfgPath)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	env := runner.calls[0].plan.Env
+	if !containsString(env, "C_VALIDATOR_1_PROFILE=off") {
+		t.Errorf("expected C_VALIDATOR_1_PROFILE=off in env, got %v", env)
+	}
+	if !containsString(env, "D_VALIDATOR_1_PROFILE=off") {
+		t.Errorf("expected D_VALIDATOR_1_PROFILE=off in env, got %v", env)
+	}
+	if !containsString(env, "A_VALIDATOR_1_PROFILE=on") {
+		t.Errorf("expected A_VALIDATOR_1_PROFILE=on in env, got %v", env)
+	}
+}
+
+func TestUpRejectsUnknownSlotInConfig(t *testing.T) {
+	t.Parallel()
+	root := newTestRepoRoot(t)
+	cfgPath := filepath.Join(root, "bad.yaml")
+	body := "schemaVersion: preview-1\nvalidators:\n  e-validator-1: { enabled: true }\n"
+	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := runRoot(t, "up", "--repo-root", root, "--config", cfgPath)
+	if err == nil {
+		t.Fatal("expected error for unknown slot, got nil")
+	}
+	if !strings.Contains(err.Error(), "unknown validator slot") {
+		t.Errorf("expected unknown-slot error, got %q", err.Error())
+	}
+}
+
+func containsString(haystack []string, needle string) bool {
+	for _, s := range haystack {
+		if s == needle {
+			return true
+		}
+	}
+	return false
+}
+
 func containsPair(args []string, flag, value string) bool {
 	for i := 0; i < len(args)-1; i++ {
 		if args[i] == flag && args[i+1] == value {

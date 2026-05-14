@@ -27,6 +27,7 @@ func newRootCommandWithVM(makeRunner runnerFactory, vm vmDeps) *cobra.Command {
 		SilenceErrors: true,
 	}
 	cmd.PersistentFlags().String("repo-root", "", "Path to the canton-localnet repository root (defaults to walking up from the working directory until compose/ is found)")
+	cmd.PersistentFlags().String("config", "", "Path to a canton-localnet.yaml config file (defaults to walking up from the working directory; preview/unstable schema)")
 	cmd.AddCommand(newUpCommand(makeRunner))
 	cmd.AddCommand(newDownCommand(makeRunner))
 	cmd.AddCommand(newWaitReadyCommand())

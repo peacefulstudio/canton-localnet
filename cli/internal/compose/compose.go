@@ -51,6 +51,7 @@ type Options struct {
 	Obs        bool
 	Pqs        bool
 	HostOS     string
+	ExtraEnv   []string
 }
 
 // DefaultOptions returns the Makefile-equivalent defaults rooted at
@@ -171,6 +172,7 @@ func Build(opts Options) (Plan, error) {
 		"LOCALNET_DIR=" + localnetDir,
 		"AUTH_MODE=" + string(opts.AuthMode),
 	}
+	env = append(env, opts.ExtraEnv...)
 
 	return Plan{Args: args, Env: env}, nil
 }
