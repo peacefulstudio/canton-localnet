@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+## [0.6.2-1] - 2026-05-14
+
+### Added
+
 - Tag-driven release pipeline (#11) — `.github/workflows/release.yml`
   triggered on `v<splice>-<patch>` tag pushes (e.g. `v0.6.2-1`).
   Produces four artifacts in lockstep on every tag: the
