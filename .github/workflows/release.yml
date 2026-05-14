@@ -299,6 +299,7 @@ jobs:
       - name: Publish draft (transition to immutable final)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.parse-version.outputs.tag }}
         run: |
           set -euo pipefail
