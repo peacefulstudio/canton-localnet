@@ -15,6 +15,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -41,14 +42,16 @@ type Config struct {
 // Setup is idempotent. Teardown invalidates the cached token and resets
 // the fixture so a subsequent Setup re-establishes credentials.
 type Fixture struct {
-	cfg       Config
-	endpoints Endpoints
-	tokens    *OAuth2TokenProvider
-	admin     *JsonLedgerAdminClient
-	dars      *DarUploader
-	parties   *PartyAllocator
-	users     *UserBuilder
-	ready     bool
+	cfg          Config
+	endpoints    Endpoints
+	tokens       *OAuth2TokenProvider
+	admin        *JsonLedgerAdminClient
+	dars         *DarUploader
+	parties      *PartyAllocator
+	users        *UserBuilder
+	ready        bool
+	validatorsMu sync.Mutex
+	validators   map[Role]*ValidatorFixture
 }
 
 // New constructs a Fixture from the supplied Config. It does not perform any
@@ -132,6 +135,14 @@ func (f *Fixture) Teardown(ctx context.Context) error {
 	f.dars = nil
 	f.parties = nil
 	f.users = nil
+	f.validatorsMu.Lock()
+	for _, v := range f.validators {
+		if v.tokens != nil && v.tokens != f.tokens {
+			v.tokens.Invalidate()
+		}
+	}
+	f.validators = nil
+	f.validatorsMu.Unlock()
 	f.ready = false
 	return nil
 }

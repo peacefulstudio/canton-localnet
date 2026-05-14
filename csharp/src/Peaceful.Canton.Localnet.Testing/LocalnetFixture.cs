@@ -16,10 +16,14 @@ namespace Peaceful.Canton.Localnet.Testing;
 public sealed class LocalnetFixture : IAsyncDisposable
 {
     private readonly ServiceProvider _services;
+    private readonly ILoggerFactory? _loggerFactory;
+    private readonly Dictionary<LocalnetProfile, ValidatorFixture> _validators = new();
+    private readonly object _validatorsLock = new();
 
-    private LocalnetFixture(ServiceProvider services, LocalnetEndpoints endpoints, LocalnetProfile profile)
+    private LocalnetFixture(ServiceProvider services, LocalnetEndpoints endpoints, LocalnetProfile profile, ILoggerFactory? loggerFactory)
     {
         _services = services;
+        _loggerFactory = loggerFactory;
         Endpoints = endpoints;
         Profile = profile;
         AdminClient = services.GetRequiredService<JsonLedgerAdminClient>();
@@ -125,7 +129,7 @@ public sealed class LocalnetFixture : IAsyncDisposable
         });
 
         var provider = services.BuildServiceProvider();
-        return new LocalnetFixture(provider, endpoints, profile);
+        return new LocalnetFixture(provider, endpoints, profile, loggerFactory);
     }
 
     /// <summary>
@@ -168,8 +172,190 @@ public sealed class LocalnetFixture : IAsyncDisposable
         CancellationToken cancellationToken = default)
         => UserBuilder.CreateAsync(userId, primaryParty, actAs, readAs, cancellationToken);
 
+    /// <summary>
+    /// Returns a per-slot view of the fixture. The first call for each
+    /// slot resolves that slot's endpoints (via
+    /// <see cref="EndpointDiscovery.Resolve(LocalnetProfile, IReadOnlyDictionary{string, string?}?)"/>)
+    /// and constructs scoped admin, DAR, party, and user clients. Repeat
+    /// calls return the cached instance. Passing the same slot the
+    /// fixture was constructed with returns a view that shares the
+    /// fixture's clients, so existing code that mixes both surfaces stays
+    /// consistent.
+    /// </summary>
+    /// <param name="slot">Canonical slot name, e.g. <c>"a-validator-1"</c>.</param>
+    public ValidatorFixture Validator(string slot)
+    {
+        if (string.IsNullOrWhiteSpace(slot))
+        {
+            throw new ArgumentException("Slot name is required.", nameof(slot));
+        }
+        return Validator(ParseSlot(slot));
+    }
+
+    /// <summary>
+    /// Returns a per-slot view of the fixture for the given profile. See
+    /// <see cref="Validator(string)"/> for caching semantics.
+    /// </summary>
+    public ValidatorFixture Validator(LocalnetProfile profile)
+    {
+        lock (_validatorsLock)
+        {
+            if (_validators.TryGetValue(profile, out var existing))
+            {
+                return existing;
+            }
+            var view = BuildValidator(profile);
+            _validators[profile] = view;
+            return view;
+        }
+    }
+
+    private ValidatorFixture BuildValidator(LocalnetProfile profile)
+    {
+        if (profile == Profile)
+        {
+            return new ValidatorFixture(
+                slot: SlotName(profile),
+                profile: profile,
+                endpoints: Endpoints,
+                adminClient: AdminClient,
+                tokenProvider: TokenProvider,
+                darUploader: DarUploader,
+                partyAllocator: PartyAllocator,
+                userBuilder: UserBuilder,
+                ownedServices: null);
+        }
+        var endpoints = EndpointDiscovery.Resolve(profile);
+        var services = BuildServices(endpoints, _loggerFactory);
+        return new ValidatorFixture(
+            slot: SlotName(profile),
+            profile: profile,
+            endpoints: endpoints,
+            adminClient: services.GetRequiredService<JsonLedgerAdminClient>(),
+            tokenProvider: services.GetRequiredService<OAuth2TokenProvider>(),
+            darUploader: services.GetRequiredService<DarUploader>(),
+            partyAllocator: services.GetRequiredService<PartyAllocator>(),
+            userBuilder: services.GetRequiredService<UserBuilder>(),
+            ownedServices: services);
+    }
+
+    private static ServiceProvider BuildServices(LocalnetEndpoints endpoints, ILoggerFactory? loggerFactory)
+    {
+        var services = new ServiceCollection();
+        if (loggerFactory is not null)
+        {
+            services.AddSingleton(loggerFactory);
+            services.AddLogging();
+        }
+        else
+        {
+            services.AddLogging();
+        }
+
+        services.AddSingleton(endpoints);
+        services.AddSingleton(new OAuth2TokenProviderOptions(
+            endpoints.TokenEndpoint,
+            endpoints.ClientId,
+            endpoints.ClientSecret,
+            endpoints.Audience,
+            endpoints.Scope));
+
+        services.AddHttpClient("oauth2");
+        services.AddHttpClient("json-ledger", client =>
+        {
+            client.BaseAddress = endpoints.JsonLedgerApi.EnsureTrailingSlash();
+        });
+
+        services.AddSingleton(sp =>
+        {
+            var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+            var opts = sp.GetRequiredService<OAuth2TokenProviderOptions>();
+            var logger = sp.GetService<ILogger<OAuth2TokenProvider>>();
+            return new OAuth2TokenProvider(httpClientFactory.CreateClient("oauth2"), opts, logger);
+        });
+
+        services.AddSingleton(sp =>
+        {
+            var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+            var tokenProvider = sp.GetRequiredService<OAuth2TokenProvider>();
+            var logger = sp.GetService<ILogger<JsonLedgerAdminClient>>();
+            return new JsonLedgerAdminClient(httpClientFactory.CreateClient("json-ledger"), tokenProvider, logger);
+        });
+
+        services.AddSingleton(sp =>
+        {
+            var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+            var tokenProvider = sp.GetRequiredService<OAuth2TokenProvider>();
+            var logger = sp.GetService<ILogger<DarUploader>>();
+            return new DarUploader(httpClientFactory.CreateClient("json-ledger"), tokenProvider, logger);
+        });
+
+        services.AddSingleton(sp =>
+        {
+            var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+            var tokenProvider = sp.GetRequiredService<OAuth2TokenProvider>();
+            var logger = sp.GetService<ILogger<PartyAllocator>>();
+            return new PartyAllocator(httpClientFactory.CreateClient("json-ledger"), tokenProvider, logger);
+        });
+
+        services.AddSingleton(sp =>
+        {
+            var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+            var tokenProvider = sp.GetRequiredService<OAuth2TokenProvider>();
+            var logger = sp.GetService<ILogger<UserBuilder>>();
+            return new UserBuilder(httpClientFactory.CreateClient("json-ledger"), tokenProvider, logger);
+        });
+
+        return services.BuildServiceProvider();
+    }
+
+    private static LocalnetProfile ParseSlot(string slot) => slot.Trim().ToLowerInvariant() switch
+    {
+        "sv-validator-1" or "super-validator" or "supervalidator" => LocalnetProfile.SvValidator1,
+        "a-validator-1" => LocalnetProfile.AValidator1,
+        "b-validator-1" => LocalnetProfile.BValidator1,
+        "c-validator-1" => LocalnetProfile.CValidator1,
+        "d-validator-1" => LocalnetProfile.DValidator1,
+        _ => throw new ArgumentException(
+            $"Unknown slot '{slot}'; expected one of: sv-validator-1, a-validator-1, b-validator-1, c-validator-1, d-validator-1.",
+            nameof(slot)),
+    };
+
+    private static string SlotName(LocalnetProfile profile) => profile switch
+    {
+        LocalnetProfile.SvValidator1 => "sv-validator-1",
+        LocalnetProfile.AValidator1 => "a-validator-1",
+        LocalnetProfile.BValidator1 => "b-validator-1",
+        LocalnetProfile.CValidator1 => "c-validator-1",
+        LocalnetProfile.DValidator1 => "d-validator-1",
+        _ => throw new ArgumentOutOfRangeException(nameof(profile), profile, null),
+    };
+
+    /// <summary>
+    /// Returns the canonical slot names supported by the fixture, in a
+    /// stable order: sv, a, b, c, d.
+    /// </summary>
+    public static IReadOnlyList<string> KnownSlots() => new[]
+    {
+        "sv-validator-1",
+        "a-validator-1",
+        "b-validator-1",
+        "c-validator-1",
+        "d-validator-1",
+    };
+
     public async ValueTask DisposeAsync()
     {
+        ValidatorFixture[] extras;
+        lock (_validatorsLock)
+        {
+            extras = _validators.Values.ToArray();
+            _validators.Clear();
+        }
+        foreach (var extra in extras)
+        {
+            await extra.DisposeAsync().ConfigureAwait(false);
+        }
         TokenProvider.Dispose();
         await _services.DisposeAsync().ConfigureAwait(false);
     }

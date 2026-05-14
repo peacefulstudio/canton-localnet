@@ -13,6 +13,7 @@ Module path: `github.com/peacefulstudio/canton-localnet/go/fixture`. Go 1.23+.
 - `PartyAllocator` — `POST /v2/parties` with hints of the form `<prefix>-<suffix>`. The suffix is a random 16-character hex string generated once per allocator instance, so test runs sharing a ledger never collide.
 - `UserBuilder` — `POST /v2/users` and `POST /v2/users/{id}/rights` for `actAs` / `readAs` rights, in that order. The rights step is skipped when both lists are empty.
 - `Fixture` — composes the above behind `Setup(ctx)` / `Teardown(ctx)` and exposes convenience methods `GetParticipantId`, `UploadDar`, `UploadDars`, `AllocateParty`, `CreateUser`.
+- `ValidatorFixture` — per-slot view returned by `Fixture.Validator(role)` (or `Fixture.MustValidator(role)`). Exposes the same deep modules scoped to a single validator slot so tests that span multiple validators (e.g. allocate a party on `a-validator-1`, observe it on `b-validator-1`) don't have to juggle separate top-level fixtures. The first call for each role builds scoped clients; repeat calls return the cached instance. `KnownRoles()` returns the canonical slot set in stable order (sv, a, b, c, d).
 
 ## Usage
 
@@ -39,6 +40,27 @@ func TestMyLedgerThing(t *testing.T) {
     })
     if err != nil { t.Fatal(err) }
 }
+```
+
+### Multi-validator scenarios
+
+Use `Validator(role)` to scope deep modules to a specific slot — handy
+when a test allocates a party on one validator and verifies it from
+another:
+
+```go
+f, _ := fixture.New(fixture.Config{Role: fixture.RoleAValidator1})
+_ = f.Setup(ctx)
+defer f.Teardown(ctx)
+
+a := f.MustValidator(fixture.RoleAValidator1)
+b := f.MustValidator(fixture.RoleBValidator1)
+
+party, _ := a.AllocateParty(ctx, "shared", "Shared Party")
+// later, from B's perspective
+id, _ := b.GetParticipantId(ctx)
+_ = id
+_ = party
 ```
 
 ## Environment variables

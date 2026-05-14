@@ -42,6 +42,37 @@ func TestSmoke_GetParticipantId(t *testing.T) {
 	t.Logf("participantId = %s", id)
 }
 
+func TestSmoke_MultiValidator_GetParticipantIdPerSlot(t *testing.T) {
+	skipIfStackUnreachable(t, RoleAValidator1)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	f, err := New(Config{Role: RoleAValidator1})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := f.Setup(ctx); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	t.Cleanup(func() { _ = f.Teardown(context.Background()) })
+
+	for _, role := range []Role{RoleAValidator1, RoleBValidator1} {
+		v, err := f.Validator(role)
+		if err != nil {
+			t.Fatalf("Validator(%s): %v", role, err)
+		}
+		id, err := v.GetParticipantId(ctx)
+		if err != nil {
+			t.Fatalf("Validator(%s).GetParticipantId: %v", role, err)
+		}
+		if strings.TrimSpace(id) == "" {
+			t.Fatalf("Validator(%s) participantId is empty", role)
+		}
+		t.Logf("%s participantId = %s", role, id)
+	}
+}
+
 func TestSmoke_AllocatePartyUploadDarBuildUser(t *testing.T) {
 	skipIfStackUnreachable(t, RoleAValidator1)
 

@@ -65,6 +65,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Multi-validator fixture API (#44). `LocalnetFixture.Validator(slot)`
+  (C#) and `Fixture.Validator(role)` (Go) return a per-slot view
+  exposing the same deep modules (admin client, DAR uploader, party
+  allocator, user builder) scoped to a single validator slot. Tests
+  that span multiple validators — e.g. allocate a party on
+  `a-validator-1`, observe it on `b-validator-1` — no longer have to
+  juggle separate top-level fixtures. The first call for each slot
+  resolves endpoints and builds scoped clients; repeat calls return
+  the cached instance. Passing the fixture's default slot reuses the
+  fixture's root clients so the two surfaces stay consistent. C# also
+  exposes `LocalnetFixture.KnownSlots()` and Go exposes
+  `fixture.KnownRoles()` returning the canonical five slots in stable
+  order (sv, a, b, c, d).
 - Validator slot `d-validator-1` at port prefix 14 (#42).
 - Validator slot `c-validator-1` at port prefix 13 (#41)
 - `canton-localnet.yaml` consumer config (preview-1, unstable) —
