@@ -11,6 +11,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+## [0.6.2-2] - 2026-05-14
+
+### Fixed
+
+- `release.yml` now creates the GitHub Release as a draft with all
+  assets attached, then transitions it to a published release via
+  `gh release edit --draft=false`. This works around GitHub's
+  organization-level immutable-releases enforcement, which locks a
+  release on creation when published directly and caused v0.6.2-1's
+  `publish-release` job to fail at the asset-upload step with
+  `Cannot upload assets to an immutable release`. Drafts are mutable;
+  flipping `draft=false` after upload is the documented workaround.
+  v0.6.2-1's NuGet package, Go module, and OCI compose artifact are
+  valid and published — only the GitHub Release asset attachment
+  failed on that tag. v0.6.2-2 supersedes v0.6.2-1 as the first
+  complete release on splice 0.6.2; the tag `v0.6.2-1` cannot be
+  reused for a GitHub Release because GitHub retains its immutable
+  release record.
+
 ## [0.6.2-1] - 2026-05-14
 
 ### Added

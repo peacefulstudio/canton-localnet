@@ -282,15 +282,24 @@ jobs:
           sha256sum ./* > checksums.txt
           cat checksums.txt
 
-      - name: Create GitHub Release
+      - name: Create draft GitHub Release with assets
         uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
         with:
           tag_name: ${{ needs.parse-version.outputs.tag }}
           name: ${{ needs.parse-version.outputs.tag }}
           body_path: notes/release-notes.md
+          draft: true
           prerelease: true
           fail_on_unmatched_files: true
           files: |
             dist/canton-localnet-*
             dist/*.nupkg
             dist/checksums.txt
+
+      - name: Publish draft (transition to immutable final)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.parse-version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release edit "${TAG}" --draft=false --prerelease
