@@ -114,6 +114,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Docs refresh for the 5-validator topology and YAML config layer
+  (this PR). `README.md`'s JSON Ledger API port table now lists all
+  five slots (`sv`, `a`, `b`, `c`, `d`); the `vm tunnel` line spells
+  out which service each forwarded port belongs to and notes that the
+  default port set lags ADR-0002's 5-digit renumbering for legacy
+  tunnel-script compatibility. The Go and C# fixture READMEs gain
+  entries for the `c-validator-1` and `d-validator-1` env vars and
+  explicitly frame fixture env vars as the test-config layer distinct
+  from `canton-localnet.yaml`. `CONTEXT.md` no longer describes the
+  5-slot topology as "next iteration", and `docs/MIGRATION.md` calls
+  out that `c`/`d` are new slots without a "before" form. The README
+  YAML example and the `docs/canton-localnet-yaml-schema.md` example
+  both have their `clientId` updated from the legacy
+  `app-provider-validator` to `a-validator-1-validator` (the latter
+  caught in pre-flight review — the schema-doc example would have
+  produced auth failures for any user copy-pasting it, since no
+  `app-provider-validator` client exists in the Keycloak realm).
+  `csharp/README.md`'s `CANTON_LOCALNET_TOKEN_URL` row and
+  `go/fixture/README.md`'s `CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET`
+  row both now explain that the `SvValidator1` / `RoleSvValidator1`
+  profile derives a `realms/sv-validator-1` URL but no SV realm is
+  currently imported into Keycloak (only A/B/C/D realms ship), so the
+  URL 404s at runtime — users must either override
+  `CANTON_LOCALNET_TOKEN_URL` (C#) or supply an SV realm import.
+  `CONTRIBUTING.md` Go version updated to match the current `go.mod`
+  pins (fixture 1.23+, CLI 1.26+).
 - Consolidated `.github/workflows/compose-ci.yaml` into
   `.github/workflows/integration-tests.yaml` as new
   `observability-on` / `observability-off` scenarios and deleted the
@@ -128,6 +154,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `cli/internal/tunnel/tunnel.go` package and `DefaultPorts`
+  doc-comments updated: port `8082` is the Keycloak (`nginx-keycloak`)
+  endpoint, not a "validator wallet UI"; `7575` is now described as
+  the in-container Splice JSON Ledger API port with a cross-reference
+  to the host-side `11975` under ADR-0002. The default port set value
+  (`[11901, 7575, 8082]`) is unchanged — `vm tunnel`'s defaults still
+  mirror the legacy `tunnel.sh` scripts in `murmures` and
+  `terraform-provider-canton`; only the doc-comments describing the
+  set were stale.
 - `LocalnetFixture_returns_distinct_participant_ids_per_validator_slot`
   (C#) now gates on a new `EndpointDiscovery.IsSlotAvailable(profile)`
   helper for both a-validator-1 and b-validator-1 (was: only the default

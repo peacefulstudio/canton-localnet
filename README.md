@@ -21,13 +21,16 @@ JSON Ledger API endpoints once ready (see `compose/modules/localnet/env/common.e
 | `sv-validator-1` | 10975           |
 | `a-validator-1`  | 11975           |
 | `b-validator-1`  | 12975           |
+| `c-validator-1`  | 13975           |
+| `d-validator-1`  | 14975           |
 
 Slot ports follow the 5-digit two-digit-prefix scheme (`<prefix><suffix>`) — see
 [ADR-0002](docs/adr/0002-two-digit-port-prefix.md) for the rationale and the
 full port table (participant ledger / admin / JSON / Splice validator admin
 per slot).
 
-Optional layers:
+Optional layers via Make flags (shortcuts — the canonical config layer is
+`canton-localnet.yaml`, see **Configuration** below):
 
 ```bash
 make up PQS=on              # opt in to PQS a-validator-1 profile
@@ -47,13 +50,23 @@ For consumers that prefer running LocalNet on a shared EC2 instance, the
 
 ```bash
 canton-localnet vm provision        # terraform apply, prints public IP + ssh command
-canton-localnet vm tunnel           # ssh -L 11901/7575/8082 to the VM (Ctrl-C to close)
+canton-localnet vm tunnel           # ssh -L 11901, 7575, 8082 to the VM (Ctrl-C to close)
 canton-localnet vm destroy --yes    # terraform destroy (interactive prompt without --yes)
 ```
 
 The tunnel forwards the same port set the legacy `tunnel.sh` scripts in
-`murmures` and `terraform-provider-canton` open. `vm provision` is
-idempotent — re-running on an already-applied state is a no-op refresh.
+`murmures` and `terraform-provider-canton` open: `11901` (a-validator-1
+participant gRPC ledger API), `7575` (legacy in-container Splice JSON
+Ledger API), and `8082` (Keycloak). `vm provision` is idempotent —
+re-running on an already-applied state is a no-op refresh.
+
+> The 5-digit port renumbering in ADR-0002 applies to the host-exposed
+> port set on the local stack (`10975`/`11975`/… for JSON Ledger API).
+> The `vm tunnel` default port set is unchanged for backwards
+> compatibility with the legacy tunnel scripts and is documented as
+> such in [`cli/internal/tunnel`](cli/internal/tunnel/tunnel.go). If
+> you connect to JSON Ledger API on the VM, forward the corresponding
+> host port (`11975` for `a-validator-1`, etc.) explicitly.
 
 Prerequisites: Docker ≥ 27, Docker Compose ≥ 2.27. The compose stack is
 vendored into `compose/modules/` from `hyperledger-labs/splice` at the SHA
@@ -76,7 +89,7 @@ modules:
 validators:
   a-validator-1:
     partyHint: featuredapp-validator-1
-    auth: { clientId: app-provider-validator, clientSecret: ${FEATUREDAPP_VALIDATOR_SECRET} }
+    auth: { clientId: a-validator-1-validator, clientSecret: ${FEATUREDAPP_VALIDATOR_SECRET} }
   c-validator-1: { enabled: false }
   d-validator-1: { enabled: false }
 ```

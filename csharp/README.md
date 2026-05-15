@@ -20,7 +20,11 @@ xUnit fixtures for Canton LocalNet integration tests. Sub-modules:
 - `LocalnetFixture` — composes the above into a single user-facing surface
   via `Microsoft.Extensions.DependencyInjection` and exposes convenience
   pass-throughs (`UploadDarAsync`, `AllocatePartyAsync`, `CreateUserAsync`,
-  `GetParticipantIdAsync`).
+  `GetParticipantIdAsync`). `Validator(slot)` returns a per-slot view
+  exposing the same deep modules scoped to a single validator (handy for
+  cross-validator scenarios); `KnownSlots()` returns the canonical slot
+  set in stable order (`sv-validator-1`, `a-validator-1`,
+  `b-validator-1`, `c-validator-1`, `d-validator-1`).
 
 ## 30-line example
 
@@ -43,15 +47,21 @@ The fixture reads these env vars (matching the compose stack ports in `compose/m
 
 | Variable | Required | Default | Purpose |
 |----------|----------|---------|---------|
-| `CANTON_LOCALNET_PROFILE` | no | `a-validator-1` | One of `a-validator-1`, `b-validator-1`, `sv-validator-1`. |
-| `CANTON_LOCALNET_JSON_API_URL` | no | `http://localhost:{11,12,10}975` per profile | Base URL of the JSON Ledger API. |
-| `CANTON_LOCALNET_TOKEN_URL` | no | `http://localhost:8082/realms/{AValidator1,BValidator1}/protocol/openid-connect/token` | Keycloak token endpoint. |
+| `CANTON_LOCALNET_PROFILE` | no | `a-validator-1` | One of `sv-validator-1`, `a-validator-1`, `b-validator-1`, `c-validator-1`, `d-validator-1`. |
+| `CANTON_LOCALNET_JSON_API_URL` | no | `http://localhost:{10,11,12,13,14}975` per profile | Base URL of the JSON Ledger API. |
+| `CANTON_LOCALNET_TOKEN_URL` | no | `http://localhost:8082/realms/{AValidator1,BValidator1,CValidator1,DValidator1}/protocol/openid-connect/token` per profile. The `SvValidator1` profile derives a `realms/sv-validator-1` URL, but no SV realm is imported into Keycloak today (`compose/modules/keycloak/conf/data/` ships A/B/C/D only) — override `CANTON_LOCALNET_TOKEN_URL` to point at a custom realm if you've added one. | Keycloak token endpoint. |
 | `CANTON_LOCALNET_AUDIENCE` | no | `https://canton.network.global` | Expected `aud` claim. |
 | `CANTON_LOCALNET_CLIENT_ID` | **yes** | — | OAuth2 `client_id`. |
 | `CANTON_LOCALNET_CLIENT_SECRET` | **yes** | — | OAuth2 `client_secret`. |
 | `CANTON_LOCALNET_SCOPE` | no | `openid` | OAuth2 scope. |
 
 The integration smoke test (`LocalnetSmokeTests`) self-skips when `CANTON_LOCALNET_JSON_API_URL` / `CLIENT_ID` / `CLIENT_SECRET` are not set, so unit tests run cleanly on a developer machine without `make up`.
+
+These env vars are the **fixture / test config layer** — distinct from
+`canton-localnet.yaml`, which configures the CLI's stack-boot
+(`canton-localnet up`). The fixture connects to an already-running
+stack and needs per-slot URLs / credentials, so env vars are the
+discovery mechanism here.
 
 ## Run
 

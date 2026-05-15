@@ -4,7 +4,8 @@
 // Package tunnel wraps an `ssh -L` invocation that mirrors the bespoke
 // tunnel scripts murmures and terraform-provider-canton's CI rely on
 // today. It opens the splice LocalNet port set (Canton public 11901,
-// JSON Ledger API 7575, validator UI 8082) against a remote VM.
+// in-container Splice JSON Ledger API 7575, Keycloak 8082) against a
+// remote VM.
 package tunnel
 
 import (
@@ -23,8 +24,11 @@ import (
 // terraform-provider-canton's bash tunnel scripts both forward:
 //
 //   - 11901: Canton public API (gRPC) on the a-validator-1 participant
-//   - 7575: JSON Ledger API on the a-validator-1 participant
-//   - 8082: validator wallet UI on the a-validator-1 validator
+//   - 7575: in-container Splice JSON Ledger API on the a-validator-1
+//     participant. Note this is the in-container port; the host-side
+//     port under ADR-0002's 5-digit renumbering is 11975 — kept here
+//     for legacy tunnel-script compatibility.
+//   - 8082: Keycloak (nginx-keycloak), shared across all validators
 //
 // Changing this set is a breaking change for downstream consumers.
 var DefaultPorts = []int{11901, 7575, 8082}

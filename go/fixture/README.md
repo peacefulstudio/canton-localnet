@@ -70,21 +70,33 @@ All have defaults that match `compose/modules/localnet/env/common.env` and `comp
 | Variable | Default | Notes |
 |---|---|---|
 | `CANTON_LOCALNET_HOST` | `localhost` | Host that exposes the JSON Ledger API. |
+| `CANTON_LOCALNET_SV_VALIDATOR_1_JSON_PORT` | `10975` | `10${PARTICIPANT_JSON_API_PORT_SUFFIX}`. |
 | `CANTON_LOCALNET_A_VALIDATOR_1_JSON_PORT` | `11975` | `11${PARTICIPANT_JSON_API_PORT_SUFFIX}` in compose. |
 | `CANTON_LOCALNET_B_VALIDATOR_1_JSON_PORT` | `12975` | `12${PARTICIPANT_JSON_API_PORT_SUFFIX}`. |
-| `CANTON_LOCALNET_SV_VALIDATOR_1_JSON_PORT` | `10975` | `10${PARTICIPANT_JSON_API_PORT_SUFFIX}`. |
+| `CANTON_LOCALNET_C_VALIDATOR_1_JSON_PORT` | `13975` | `13${PARTICIPANT_JSON_API_PORT_SUFFIX}`. |
+| `CANTON_LOCALNET_D_VALIDATOR_1_JSON_PORT` | `14975` | `14${PARTICIPANT_JSON_API_PORT_SUFFIX}`. |
 | `CANTON_LOCALNET_KEYCLOAK_HOST` | `keycloak.localhost` | Matches the host-exposed nginx-keycloak alias. |
 | `CANTON_LOCALNET_KEYCLOAK_PORT` | `8082` | |
 | `CANTON_LOCALNET_AUDIENCE` | `https://canton.network.global` | Sent as the `audience` form field on token requests. |
 | `CANTON_LOCALNET_SCOPE` | _empty_ | Optional `scope` form field. |
+| `CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_ID` | `sv-validator` | |
+| `CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET` | _empty_ | Required for `RoleSvValidator1` — discovery returns an error if unset. Note: discovery derives a `realms/sv-validator-1` token URL, but no SV realm is currently imported into Keycloak (`compose/modules/keycloak/conf/data/` ships A/B/C/D only), so the URL 404s at runtime — supply an SV realm import or point the fixture at a Keycloak instance that has one. |
 | `CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_ID` | `a-validator-1-validator` | Matches `AUTH_A_VALIDATOR_1_VALIDATOR_CLIENT_ID`. |
 | `CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET` | demo secret | Matches `AUTH_A_VALIDATOR_1_VALIDATOR_CLIENT_SECRET`. |
 | `CANTON_LOCALNET_B_VALIDATOR_1_CLIENT_ID` | `b-validator-1-validator` | |
 | `CANTON_LOCALNET_B_VALIDATOR_1_CLIENT_SECRET` | demo secret | |
-| `CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_ID` | `sv-validator` | |
-| `CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET` | _empty_ | Required for `RoleSvValidator1` — discovery returns an error if unset. |
+| `CANTON_LOCALNET_C_VALIDATOR_1_CLIENT_ID` | `c-validator-1-validator` | |
+| `CANTON_LOCALNET_C_VALIDATOR_1_CLIENT_SECRET` | demo secret | |
+| `CANTON_LOCALNET_D_VALIDATOR_1_CLIENT_ID` | `d-validator-1-validator` | |
+| `CANTON_LOCALNET_D_VALIDATOR_1_CLIENT_SECRET` | demo secret | |
 
-> ⚠️ **Security note — demo credentials only.** The default `CLIENT_SECRET` values for `RoleAValidator1` and `RoleBValidator1` are the demo credentials shipped with the splice quickstart compose files (also visible in `compose/modules/keycloak/env/`). They are public, valid only against an ephemeral LocalNet Keycloak realm, and **must never be used in any non-`localhost` or production deployment**. Override via the `CANTON_LOCALNET_*_CLIENT_SECRET` env vars in any real environment. `RoleSvValidator1` ships with no demo default — its secret must be supplied explicitly.
+> Security note — demo credentials only. The default `CLIENT_SECRET` values for `RoleAValidator1`, `RoleBValidator1`, `RoleCValidator1`, and `RoleDValidator1` are the demo credentials shipped with the splice quickstart compose files (also visible in `compose/modules/keycloak/env/`). They are public, valid only against an ephemeral LocalNet Keycloak realm, and **must never be used in any non-`localhost` or production deployment**. Override via the `CANTON_LOCALNET_*_CLIENT_SECRET` env vars in any real environment. `RoleSvValidator1` ships with no demo default — its secret must be supplied explicitly.
+
+These env vars are the **fixture / test config layer** — distinct from
+`canton-localnet.yaml`, which configures the CLI's stack-boot
+(`canton-localnet up`). The fixture connects to an already-running
+stack and needs per-slot URLs / credentials, so env vars are the
+discovery mechanism here.
 
 ## Tests
 

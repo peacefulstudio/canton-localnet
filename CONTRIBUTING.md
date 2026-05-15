@@ -41,9 +41,11 @@ terraform -chdir=terraform fmt -check
 terraform -chdir=terraform validate
 ```
 
-You'll need [Go 1.22+](https://go.dev/dl/), the
-[.NET SDK](https://dotnet.microsoft.com/download) version pinned in
-`global.json` (when present), [Terraform 1.6+](https://developer.hashicorp.com/terraform/install),
+You'll need [Go 1.23+](https://go.dev/dl/) for the fixture module and
+Go 1.26+ for the CLI module (see each `go.mod` for the authoritative
+minimum), the [.NET SDK](https://dotnet.microsoft.com/download) version
+pinned in `global.json` (when present),
+[Terraform 1.6+](https://developer.hashicorp.com/terraform/install),
 and [Docker](https://docs.docker.com/get-docker/) with Compose v2.
 
 ### Pre-commit hook
@@ -84,7 +86,8 @@ dotnet test --configuration Release --collect:"XPlat Code Coverage" --results-di
 
 ## Code style
 
-- **Go 1.22+** and **.NET / C#** at the SDK pinned in `global.json`.
+- **Go 1.23+** (fixture) / **Go 1.26+** (CLI) — see each `go.mod` — and
+  **.NET / C#** at the SDK pinned in `global.json`.
 - Every source file starts with the two-line SPDX copyright header,
   regardless of language:
   ```
