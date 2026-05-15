@@ -126,18 +126,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `integration-up-wait-ready` and its diagnostics artifact follows
   suit (`smoke-diagnostics` → `integration-up-wait-ready-diagnostics`).
 
-### Known issues
-
-- `LocalnetFixture.Validator(slot)` (C#, added in #44/#50) returns the
-  root fixture's clients for every slot instead of routing to the
-  slot's own endpoints — `Validator("a-validator-1").GetParticipantIdAsync()`
-  and `Validator("b-validator-1").GetParticipantIdAsync()` return the
-  same participant id. Tracked in #52; the `returns_distinct_participant_ids_per_validator_slot`
-  smoke test is marked `[Fact(Skip = ...)]` until that issue is fixed.
-  Go fixture likely has the same bug and is in #52's scope.
-
 ### Fixed
 
+- `LocalnetFixture_returns_distinct_participant_ids_per_validator_slot`
+  (C#) now gates on a new `EndpointDiscovery.IsSlotAvailable(profile)`
+  helper for both a-validator-1 and b-validator-1 (was: only the default
+  profile via `IsLocalnetAvailable()`), so the test skips cleanly when
+  the b-validator side of the stack isn't reachable instead of failing
+  noisily. Matches the Go counterpart's per-slot `skipIfStackUnreachable`
+  gating. The `SkipMessage` constant is refreshed to mention the per-slot
+  `CANTON_LOCALNET_<SLOT>_*` variable shape alongside the legacy globals.
+- Multi-validator fixture routing (#52). `LocalnetFixture.Validator(slot)`
+  (C#) and `Fixture.Validator(role)` (Go) now route per-slot endpoints
+  through a slot-namespaced discovery surface — every override variable is
+  prefixed with the canonical slot (`CANTON_LOCALNET_A_VALIDATOR_1_*`,
+  `CANTON_LOCALNET_B_VALIDATOR_1_*`, etc.) and defaults derive from the
+  slot's two-digit port prefix (ADR-0002). The C# bug was that
+  `EndpointDiscovery.Resolve(profile)` read the legacy un-namespaced globals
+  (`CANTON_LOCALNET_JSON_API_URL`, `CANTON_LOCALNET_CLIENT_ID`,
+  `CANTON_LOCALNET_CLIENT_SECRET`, …) regardless of which profile it was
+  resolving, so when integration CI set those to a-validator-1's endpoints
+  every per-slot view collapsed onto a-validator-1 and
+  `Validator("a-validator-1").GetParticipantIdAsync()` ==
+  `Validator("b-validator-1").GetParticipantIdAsync()`. Fix: a new
+  `EndpointDiscovery.ResolveForSlot(profile)` ignores those legacy globals
+  entirely; `LocalnetFixture.BuildValidator(non-default-slot)` calls it
+  instead of `Resolve`. Legacy globals still apply to the fixture's selected
+  default profile (single-validator consumers see no behaviour change).
+  The Go side never had this bug — its `EndpointDiscovery.For` already used
+  per-slot env vars exclusively — but `TestSmoke_MultiValidator_GetParticipantIdPerSlot`
+  is upgraded to assert `participantId(a) != participantId(b)` so a
+  regression at that layer would also fail CI. Discovery shape decision
+  recorded in [ADR-0003](docs/adr/0003-per-slot-endpoint-discovery.md);
+  the previously-skipped
+  `LocalnetFixture_returns_distinct_participant_ids_per_validator_slot`
+  smoke test is re-enabled.
 - `.github/workflows/csharp.yml` now references the
   `peacefulstudio/github-actions` reusable CSharp CI workflow at
   `@v1` instead of an unreachable 40-char SHA pin. The pinned commit

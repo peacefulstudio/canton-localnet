@@ -11,21 +11,27 @@ public class ValidatorFixtureTests : IDisposable
     private const string FakeClientId = "test-client";
     private const string FakeClientSecret = "test-secret";
 
+    private const string SvSecretEnv = "CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET";
+
     private readonly string? _savedClientId;
     private readonly string? _savedClientSecret;
+    private readonly string? _savedSvSecret;
 
     public ValidatorFixtureTests()
     {
         _savedClientId = Environment.GetEnvironmentVariable(EndpointDiscovery.ClientIdEnv);
         _savedClientSecret = Environment.GetEnvironmentVariable(EndpointDiscovery.ClientSecretEnv);
+        _savedSvSecret = Environment.GetEnvironmentVariable(SvSecretEnv);
         Environment.SetEnvironmentVariable(EndpointDiscovery.ClientIdEnv, FakeClientId);
         Environment.SetEnvironmentVariable(EndpointDiscovery.ClientSecretEnv, FakeClientSecret);
+        Environment.SetEnvironmentVariable(SvSecretEnv, "sv-test-secret");
     }
 
     public void Dispose()
     {
         Environment.SetEnvironmentVariable(EndpointDiscovery.ClientIdEnv, _savedClientId);
         Environment.SetEnvironmentVariable(EndpointDiscovery.ClientSecretEnv, _savedClientSecret);
+        Environment.SetEnvironmentVariable(SvSecretEnv, _savedSvSecret);
     }
 
     private static LocalnetFixture NewFixture(LocalnetProfile profile = LocalnetProfile.AValidator1)
@@ -74,6 +80,29 @@ public class ValidatorFixtureTests : IDisposable
         Assert.NotSame(a.AdminClient, b.AdminClient);
         Assert.NotEqual(a.Endpoints.JsonLedgerApi, b.Endpoints.JsonLedgerApi);
         Assert.Equal(new Uri("http://localhost:12975"), b.Endpoints.JsonLedgerApi);
+    }
+
+    [Fact]
+    public async Task Validator_for_non_default_slot_does_not_inherit_legacy_global_env_vars()
+    {
+        var savedJsonApi = Environment.GetEnvironmentVariable(EndpointDiscovery.JsonApiUrlEnv);
+        Environment.SetEnvironmentVariable(EndpointDiscovery.JsonApiUrlEnv, "http://legacy-a:11975");
+        try
+        {
+            await using var fixture = NewFixture(LocalnetProfile.AValidator1);
+
+            var a = fixture.Validator("a-validator-1");
+            var b = fixture.Validator("b-validator-1");
+
+            Assert.NotEqual(a.Endpoints.JsonLedgerApi, b.Endpoints.JsonLedgerApi);
+            Assert.NotEqual(a.Endpoints.ClientId, b.Endpoints.ClientId);
+            Assert.Equal(new Uri("http://localhost:12975"), b.Endpoints.JsonLedgerApi);
+            Assert.Equal("b-validator-1-validator", b.Endpoints.ClientId);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(EndpointDiscovery.JsonApiUrlEnv, savedJsonApi);
+        }
     }
 
     [Fact]

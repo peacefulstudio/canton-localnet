@@ -44,6 +44,7 @@ func TestSmoke_GetParticipantId(t *testing.T) {
 
 func TestSmoke_MultiValidator_GetParticipantIdPerSlot(t *testing.T) {
 	skipIfStackUnreachable(t, RoleAValidator1)
+	skipIfStackUnreachable(t, RoleBValidator1)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -57,6 +58,7 @@ func TestSmoke_MultiValidator_GetParticipantIdPerSlot(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = f.Teardown(context.Background()) })
 
+	ids := map[Role]string{}
 	for _, role := range []Role{RoleAValidator1, RoleBValidator1} {
 		v, err := f.Validator(role)
 		if err != nil {
@@ -70,6 +72,11 @@ func TestSmoke_MultiValidator_GetParticipantIdPerSlot(t *testing.T) {
 			t.Fatalf("Validator(%s) participantId is empty", role)
 		}
 		t.Logf("%s participantId = %s", role, id)
+		ids[role] = id
+	}
+
+	if ids[RoleAValidator1] == ids[RoleBValidator1] {
+		t.Fatalf("expected distinct participant ids per validator slot, got %s for both a-validator-1 and b-validator-1 — multi-validator routing regression (issue #52)", ids[RoleAValidator1])
 	}
 }
 

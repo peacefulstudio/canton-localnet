@@ -225,7 +225,7 @@ public sealed class LocalnetFixture : IAsyncDisposable
                 userBuilder: UserBuilder,
                 ownedServices: null);
         }
-        var endpoints = EndpointDiscovery.Resolve(profile);
+        var endpoints = EndpointDiscovery.ResolveForSlot(profile);
         var services = BuildServices(endpoints, _loggerFactory);
         return new ValidatorFixture(
             slot: SlotName(profile),

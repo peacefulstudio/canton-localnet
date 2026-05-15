@@ -108,6 +108,10 @@ jobs:
           CANTON_LOCALNET_TOKEN_URL: http://localhost:8082/realms/AValidator1/protocol/openid-connect/token
           CANTON_LOCALNET_CLIENT_ID: a-validator-1-validator
           CANTON_LOCALNET_CLIENT_SECRET: AL8648b9SfdTFImq7FV56Vd0KHifHBuC
+          CANTON_LOCALNET_B_VALIDATOR_1_JSON_API_URL: http://localhost:12975
+          CANTON_LOCALNET_B_VALIDATOR_1_TOKEN_URL: http://localhost:8082/realms/BValidator1/protocol/openid-connect/token
+          CANTON_LOCALNET_B_VALIDATOR_1_CLIENT_ID: b-validator-1-validator
+          CANTON_LOCALNET_B_VALIDATOR_1_CLIENT_SECRET: 6m12QyyGl81d9nABWQXMycZdXho6ejEX
         run: |
           set -euo pipefail
           dotnet test csharp/tests/Peaceful.Canton.Localnet.Testing.Tests/Peaceful.Canton.Localnet.Testing.Tests.csproj \
