@@ -50,8 +50,8 @@ jobs:
           set -euo pipefail
           go test -race ./...
 
-  smoke:
-    name: smoke (up + wait-ready + down)
+  integration-up-wait-ready:
+    name: integration (up + wait-ready + down)
     runs-on: ubuntu-latest
     env:
       AUTH_MODE: oauth2
@@ -77,10 +77,21 @@ jobs:
           set -euo pipefail
           go build -o "${GITHUB_WORKSPACE}/canton-localnet" ./cmd/canton-localnet
 
-      - name: Bring up LocalNet via CLI
+      - name: Bring up LocalNet via CLI (one retry on splice bootstrap race)
         run: |
           set -euo pipefail
-          ./canton-localnet up
+          # Splice's SV-validator can lose a startup race on slower runners
+          # — "Ensuring decentralized synchronizer registered failed:
+          # UNAVAILABLE: No active synchronizer serial found". The initial
+          # bring-up is treated as setup, so one retry is allowed.
+          if ! ./canton-localnet up; then
+            echo "::warning::canton-localnet up failed on first attempt — capturing diagnostics, tearing down with volumes, and retrying once"
+            docker ps -a > docker-ps-attempt1.txt 2>&1 || true
+            timeout 60 make logs > logs-attempt1.txt 2>&1 || true
+            ./canton-localnet down --volumes || echo "::warning::pre-retry teardown failed; second up may fail with leaked state"
+            sleep 30
+            ./canton-localnet up
+          fi
 
       - name: Wait for readiness via CLI
         run: |
@@ -94,18 +105,20 @@ jobs:
           make status > status.txt 2>&1 || true
           timeout 30 make logs > logs.txt 2>&1 || true
 
-      - name: Upload smoke diagnostics on failure
+      - name: Upload diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: smoke-diagnostics
+          name: integration-up-wait-ready-diagnostics
           path: |
             status.txt
             logs.txt
+            docker-ps-attempt1.txt
+            logs-attempt1.txt
           if-no-files-found: warn
 
       - name: Tear down via CLI
         if: always()
         run: |
           set -euo pipefail
-          ./canton-localnet down
+          ./canton-localnet down --volumes || echo "::warning::teardown failed (non-fatal in CI; runner is ephemeral)"

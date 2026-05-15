@@ -114,6 +114,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Consolidated `.github/workflows/compose-ci.yaml` into
+  `.github/workflows/integration-tests.yaml` as new
+  `observability-on` / `observability-off` scenarios and deleted the
+  standalone `compose-ci.yaml` (#53). The same one-shot bring-up retry
+  that rescued the `warm-restart` scenario now wraps every initial
+  `make up` / `canton-localnet up` invocation across
+  `integration-tests.yaml` and `cli.yml`, absorbing the splice
+  SV-validator bootstrap race on slow runners. The `cli.yml` `smoke
+  (up + wait-ready + down)` job is renamed to
+  `integration-up-wait-ready` and its diagnostics artifact follows
+  suit (`smoke-diagnostics` → `integration-up-wait-ready-diagnostics`).
+
 ### Known issues
 
 - `LocalnetFixture.Validator(slot)` (C#, added in #44/#50) returns the

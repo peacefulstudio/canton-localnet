@@ -34,9 +34,13 @@ jobs:
           - 5-healthy-validators
           - 3-healthy-validators
           - warm-restart
+          - observability-on
+          - observability-off
     env:
       AUTH_MODE: oauth2
       SCENARIO: ${{ matrix.scenario }}
+      OBS: ${{ (matrix.scenario == 'observability-on') && 'on' || 'off' }}
+      IS_OBS: ${{ startsWith(matrix.scenario, 'observability-') }}
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -73,7 +77,8 @@ jobs:
           EOF
           cat canton-localnet.yaml
 
-      - name: Bring up LocalNet (one retry on splice bootstrap race)
+      - name: Bring up LocalNet via CLI (one retry on splice bootstrap race)
+        if: env.IS_OBS == 'false'
         run: |
           set -euo pipefail
           # Splice's SV-validator can lose a startup race on slower runners
@@ -86,12 +91,30 @@ jobs:
             echo "::warning::canton-localnet up failed on first attempt — capturing diagnostics, tearing down with volumes, and retrying once"
             docker ps -a > docker-ps-attempt1.txt 2>&1 || true
             timeout 60 make logs > logs-attempt1.txt 2>&1 || true
-            "${GITHUB_WORKSPACE}/canton-localnet" down --volumes || true
+            "${GITHUB_WORKSPACE}/canton-localnet" down --volumes || echo "::warning::pre-retry teardown failed; second up may fail with leaked state"
             sleep 30
             "${GITHUB_WORKSPACE}/canton-localnet" up
           fi
 
-      - name: Wait for expected validators
+      - name: Bring up LocalNet via make (one retry on splice bootstrap race)
+        if: env.IS_OBS == 'true'
+        run: |
+          set -euo pipefail
+          # Splice's SV-validator can lose a startup race on slower runners
+          # — "Ensuring decentralized synchronizer registered failed:
+          # UNAVAILABLE: No active synchronizer serial found". The initial
+          # bring-up is treated as setup, so one retry is allowed.
+          if ! make up; then
+            echo "::warning::make up failed on first attempt — capturing diagnostics, tearing down with volumes, and retrying once"
+            docker ps -a > docker-ps-attempt1.txt 2>&1 || true
+            timeout 60 make logs > logs-attempt1.txt 2>&1 || true
+            make clean || echo "::warning::pre-retry teardown failed; second up may fail with leaked state"
+            sleep 30
+            make up
+          fi
+
+      - name: Wait for expected validators (CLI scenarios)
+        if: env.IS_OBS == 'false'
         env:
           PER_VALIDATOR_TIMEOUT: 600
           POLL_INTERVAL: 5
@@ -124,6 +147,29 @@ jobs:
               --interval "${POLL_INTERVAL}s"
             echo "::endgroup::"
           done
+
+      - name: Wait for JSON Ledger API readiness (observability scenarios)
+        if: env.IS_OBS == 'true'
+        env:
+          ATTEMPTS: "120"
+          SLEEP_SECONDS: "5"
+        run: |
+          set -euo pipefail
+          make wait-ready
+
+      - name: Wait for Grafana (observability-on)
+        if: matrix.scenario == 'observability-on'
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:3030/api/health > /dev/null; then
+              echo "Grafana healthy"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Grafana failed to come up within 5 minutes" >&2
+          exit 1
 
       - name: Assert disabled slots are absent
         if: matrix.scenario == '3-healthy-validators'
@@ -179,11 +225,19 @@ jobs:
           path: |
             docker-ps.txt
             logs.txt
+            docker-ps-attempt1.txt
+            logs-attempt1.txt
             canton-localnet.yaml
           if-no-files-found: warn
 
-      - name: Tear down
-        if: always()
+      - name: Tear down (CLI scenarios)
+        if: always() && env.IS_OBS == 'false'
         run: |
           set -euo pipefail
-          "${GITHUB_WORKSPACE}/canton-localnet" down --volumes || true
+          "${GITHUB_WORKSPACE}/canton-localnet" down --volumes || echo "::warning::teardown failed (non-fatal in CI; runner is ephemeral)"
+
+      - name: Tear down (observability scenarios)
+        if: always() && env.IS_OBS == 'true'
+        run: |
+          set -euo pipefail
+          make clean || echo "::warning::teardown failed (non-fatal in CI; runner is ephemeral)"
