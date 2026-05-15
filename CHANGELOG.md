@@ -65,6 +65,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `.github/workflows/integration-tests.yaml` (#45) — end-to-end CI
+  integration test for the 5-slot topology. Three scenarios run in
+  parallel on `ubuntu-latest`: `5-healthy-validators` brings up the
+  default stack and polls `/readyz` on every validator's JSON Ledger API
+  (`sv`/`a`/`b`/`c`/`d` at port prefixes 10/11/12/13/14);
+  `3-healthy-validators` writes a `canton-localnet.yaml` setting
+  `c-validator-1.enabled: false` and `d-validator-1.enabled: false`,
+  runs `canton-localnet up`, then asserts no `c-validator-1` /
+  `d-validator-1` container is running while `sv` / `a` / `b` reach
+  `/readyz`; `warm-restart` runs `canton-localnet down` (preserving
+  volumes) followed by `canton-localnet up` to re-attach to existing
+  state — the regression test for the splice restart-loop diagnostic.
+  The initial bring-up is wrapped in one retry to absorb the splice
+  SV-validator bootstrap race on slow runners (capturing diagnostics
+  before the retry); the warm-restart step itself is single-shot
+  because it IS the test signal. Each scenario tears down with
+  `--volumes` on completion and uploads `docker ps` + compose logs as
+  an artifact on failure.
 - Multi-validator fixture API (#44). `LocalnetFixture.Validator(slot)`
   (C#) and `Fixture.Validator(role)` (Go) return a per-slot view
   exposing the same deep modules (admin client, DAR uploader, party
@@ -96,8 +114,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+### Known issues
+
+- `LocalnetFixture.Validator(slot)` (C#, added in #44/#50) returns the
+  root fixture's clients for every slot instead of routing to the
+  slot's own endpoints — `Validator("a-validator-1").GetParticipantIdAsync()`
+  and `Validator("b-validator-1").GetParticipantIdAsync()` return the
+  same participant id. Tracked in #52; the `returns_distinct_participant_ids_per_validator_slot`
+  smoke test is marked `[Fact(Skip = ...)]` until that issue is fixed.
+  Go fixture likely has the same bug and is in #52's scope.
+
 ### Fixed
 
+- `.github/workflows/csharp.yml` now references the
+  `peacefulstudio/github-actions` reusable CSharp CI workflow at
+  `@v1` instead of an unreachable 40-char SHA pin. The pinned commit
+  was no longer reachable from a branch in the action repo, so
+  GitHub Actions failed every csharp run with "workflow was not
+  found" before any job dispatched. Matches the repo convention
+  already used by `go-ci.yaml` and `claude.yaml` (mutable major tag
+  for first-party actions; SHA pinning is retained for third-party
+  step actions where supply-chain risk is real).
+- `canton-localnet up` now honours the YAML config's per-slot
+  `enabled` flag (#45). The CLI's compose pipeline previously
+  hardcoded the `sv`/`a`/`b`/`d` profile list and gated `c` on a
+  `C_VALIDATOR_1_PROFILE=on` env var, so `canton-localnet.yaml`
+  disabling `c-validator-1` or `d-validator-1` had no effect on which
+  containers came up. `compose.Options` now carries an
+  `EnabledSlots []string` that the CLI populates from
+  `yamlconfig.Config.EnabledSlots()`; `compose.Build` emits one
+  `--profile <slot>` per enabled slot (sv is always added). The
+  `pqs-c-validator-1` profile follows c's enablement uniformly — no
+  more env-var indirection.
+- Top-level `Makefile` `PROFILES` list now includes
+  `--profile c-validator-1` (#45). PR #48 introduced the
+  `c-validator-1` compose profile but did not update the Makefile's
+  hardcoded profile list, so `make up` silently omitted the
+  c-validator stack. Surfaced by the new 5-validator integration test.
 - `cli/internal/health.WaitReady` now preserves the last observed HTTP
   status in its timeout error even when a later probe ends in a
   transport error (e.g. context-deadline-exceeded as the overall

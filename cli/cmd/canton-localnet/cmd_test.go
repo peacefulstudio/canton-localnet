@@ -202,6 +202,37 @@ func TestUpExplicitConfigFileWins(t *testing.T) {
 	if !containsString(env, "A_VALIDATOR_1_PROFILE=on") {
 		t.Errorf("expected A_VALIDATOR_1_PROFILE=on in env, got %v", env)
 	}
+	args := runner.calls[0].plan.Args
+	if containsPair(args, "--profile", "c-validator-1") {
+		t.Errorf("yaml disables c — expected no --profile c-validator-1, got %v", args)
+	}
+	if containsPair(args, "--profile", "d-validator-1") {
+		t.Errorf("yaml disables d — expected no --profile d-validator-1, got %v", args)
+	}
+	if !containsPair(args, "--profile", "sv-validator-1") {
+		t.Errorf("expected --profile sv-validator-1 in args, got %v", args)
+	}
+	if !containsPair(args, "--profile", "a-validator-1") {
+		t.Errorf("expected --profile a-validator-1 in args, got %v", args)
+	}
+	if !containsPair(args, "--profile", "b-validator-1") {
+		t.Errorf("expected --profile b-validator-1 in args, got %v", args)
+	}
+}
+
+func TestUpDefaultYamlEnablesAllFiveSlots(t *testing.T) {
+	t.Parallel()
+	root := newTestRepoRoot(t)
+	runner, _, err := runRoot(t, "up", "--repo-root", root)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	args := runner.calls[0].plan.Args
+	for _, slot := range []string{"sv-validator-1", "a-validator-1", "b-validator-1", "c-validator-1", "d-validator-1"} {
+		if !containsPair(args, "--profile", slot) {
+			t.Errorf("expected --profile %s with default yaml config, got %v", slot, args)
+		}
+	}
 }
 
 func TestUpRejectsUnknownSlotInConfig(t *testing.T) {

@@ -21,6 +21,8 @@ func newTestRepoRoot(t *testing.T) string {
 func TestBuild(t *testing.T) {
 	t.Parallel()
 
+	allFiveSlots := []string{"sv-validator-1", "a-validator-1", "b-validator-1", "c-validator-1", "d-validator-1"}
+
 	cases := []struct {
 		name           string
 		opts           Options
@@ -32,7 +34,7 @@ func TestBuild(t *testing.T) {
 	}{
 		{
 			name: "default oauth2 with resource limits",
-			opts: Options{AuthMode: AuthOAuth2},
+			opts: Options{AuthMode: AuthOAuth2, EnabledSlots: allFiveSlots},
 			wantFiles: []string{
 				"compose/modules/localnet/compose.yaml",
 				"compose/modules/splice-onboarding/compose.yaml",
@@ -50,12 +52,12 @@ func TestBuild(t *testing.T) {
 				"compose/modules/localnet/compose.env",
 				"compose/modules/keycloak/compose.env",
 			},
-			wantProfiles:   []string{"a-validator-1", "b-validator-1", "sv-validator-1", "d-validator-1", "keycloak"},
-			wantNotProfile: []string{"c-validator-1", "pqs-a-validator-1", "observability"},
+			wantProfiles:   []string{"sv-validator-1", "a-validator-1", "b-validator-1", "c-validator-1", "d-validator-1", "keycloak"},
+			wantNotProfile: []string{"pqs-a-validator-1", "observability"},
 		},
 		{
 			name: "pqs and obs enabled on linux",
-			opts: Options{AuthMode: AuthOAuth2, Pqs: true, Obs: true, HostOS: "linux"},
+			opts: Options{AuthMode: AuthOAuth2, Pqs: true, Obs: true, HostOS: "linux", EnabledSlots: allFiveSlots},
 			wantFiles: []string{
 				"compose/modules/pqs/compose.yaml",
 				"compose/modules/pqs/resource-constraints.yaml",
@@ -67,11 +69,11 @@ func TestBuild(t *testing.T) {
 			wantNotFiles: []string{
 				"compose/modules/observability/cadvisor-darwin.yaml",
 			},
-			wantProfiles: []string{"a-validator-1", "b-validator-1", "sv-validator-1", "d-validator-1", "keycloak", "pqs-a-validator-1", "observability"},
+			wantProfiles: []string{"sv-validator-1", "a-validator-1", "b-validator-1", "c-validator-1", "d-validator-1", "keycloak", "pqs-a-validator-1", "pqs-c-validator-1", "observability"},
 		},
 		{
 			name: "obs enabled on darwin selects darwin cadvisor",
-			opts: Options{AuthMode: AuthOAuth2, Obs: true, HostOS: "darwin"},
+			opts: Options{AuthMode: AuthOAuth2, Obs: true, HostOS: "darwin", EnabledSlots: allFiveSlots},
 			wantFiles: []string{
 				"compose/modules/observability/cadvisor-darwin.yaml",
 			},
@@ -82,7 +84,7 @@ func TestBuild(t *testing.T) {
 		},
 		{
 			name: "no resource limits",
-			opts: Options{AuthMode: AuthOAuth2, NoResource: true},
+			opts: Options{AuthMode: AuthOAuth2, NoResource: true, EnabledSlots: allFiveSlots},
 			wantFiles: []string{
 				"compose/modules/localnet/compose.yaml",
 				"compose/modules/keycloak/compose.yaml",
@@ -94,7 +96,7 @@ func TestBuild(t *testing.T) {
 		},
 		{
 			name: "secret auth skips keycloak",
-			opts: Options{AuthMode: AuthSecret},
+			opts: Options{AuthMode: AuthSecret, EnabledSlots: allFiveSlots},
 			wantFiles: []string{
 				"compose/modules/localnet/compose.yaml",
 			},
@@ -103,6 +105,24 @@ func TestBuild(t *testing.T) {
 				"compose/modules/keycloak/resource-constraints.yaml",
 			},
 			wantNotProfile: []string{"keycloak"},
+		},
+		{
+			name:           "yaml-driven slot subset disables c and d",
+			opts:           Options{AuthMode: AuthOAuth2, EnabledSlots: []string{"sv-validator-1", "a-validator-1", "b-validator-1"}},
+			wantProfiles:   []string{"sv-validator-1", "a-validator-1", "b-validator-1"},
+			wantNotProfile: []string{"c-validator-1", "d-validator-1"},
+		},
+		{
+			name:           "pqs without c slot does not add pqs-c-validator-1",
+			opts:           Options{AuthMode: AuthOAuth2, Pqs: true, EnabledSlots: []string{"sv-validator-1", "a-validator-1", "b-validator-1", "d-validator-1"}},
+			wantProfiles:   []string{"pqs-a-validator-1"},
+			wantNotProfile: []string{"pqs-c-validator-1", "c-validator-1"},
+		},
+		{
+			name:           "empty EnabledSlots still emits sv",
+			opts:           Options{AuthMode: AuthOAuth2, EnabledSlots: nil},
+			wantProfiles:   []string{"sv-validator-1"},
+			wantNotProfile: []string{"a-validator-1", "b-validator-1", "c-validator-1", "d-validator-1"},
 		},
 	}
 
@@ -152,7 +172,7 @@ func TestBuild(t *testing.T) {
 func TestBuildResourceConstraintsFollowBase(t *testing.T) {
 	t.Parallel()
 	root := newTestRepoRoot(t)
-	plan, err := Build(Options{RepoRoot: root, AuthMode: AuthOAuth2})
+	plan, err := Build(Options{RepoRoot: root, AuthMode: AuthOAuth2, EnabledSlots: []string{"sv-validator-1", "a-validator-1"}})
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -168,40 +188,85 @@ func TestBuildResourceConstraintsFollowBase(t *testing.T) {
 	}
 }
 
-func TestBuildAddsCValidator1ProfileWhenEnvOn(t *testing.T) {
+func TestBuildAddsCValidator1ProfileWhenEnabled(t *testing.T) {
+	t.Parallel()
 	root := newTestRepoRoot(t)
-	t.Setenv("C_VALIDATOR_1_PROFILE", "on")
-	plan, err := Build(Options{RepoRoot: root, AuthMode: AuthOAuth2})
+	plan, err := Build(Options{
+		RepoRoot:     root,
+		AuthMode:     AuthOAuth2,
+		EnabledSlots: []string{"sv-validator-1", "a-validator-1", "b-validator-1", "c-validator-1", "d-validator-1"},
+	})
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
 	if !containsPair(plan.Args, "--profile", "c-validator-1") {
-		t.Errorf("expected --profile c-validator-1 when C_VALIDATOR_1_PROFILE=on, full args: %v", plan.Args)
+		t.Errorf("expected --profile c-validator-1 when c slot is enabled, full args: %v", plan.Args)
 	}
 }
 
-func TestBuildOmitsCValidator1ProfileWhenEnvOff(t *testing.T) {
+func TestBuildOmitsCValidator1ProfileWhenDisabled(t *testing.T) {
+	t.Parallel()
 	root := newTestRepoRoot(t)
-	t.Setenv("C_VALIDATOR_1_PROFILE", "off")
-	plan, err := Build(Options{RepoRoot: root, AuthMode: AuthOAuth2})
+	plan, err := Build(Options{
+		RepoRoot:     root,
+		AuthMode:     AuthOAuth2,
+		EnabledSlots: []string{"sv-validator-1", "a-validator-1", "b-validator-1", "d-validator-1"},
+	})
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
 	if containsPair(plan.Args, "--profile", "c-validator-1") {
-		t.Errorf("did not expect --profile c-validator-1 when C_VALIDATOR_1_PROFILE=off, full args: %v", plan.Args)
+		t.Errorf("did not expect --profile c-validator-1 when c slot is absent from EnabledSlots, full args: %v", plan.Args)
 	}
 }
 
-func TestBuildAddsPqsCValidator1ProfileWhenBothEnvOn(t *testing.T) {
+func TestBuildAddsPqsCValidator1ProfileWhenCEnabledAndPqsOn(t *testing.T) {
+	t.Parallel()
 	root := newTestRepoRoot(t)
-	t.Setenv("C_VALIDATOR_1_PROFILE", "on")
-	t.Setenv("PQS_C_VALIDATOR_1_PROFILE", "on")
-	plan, err := Build(Options{RepoRoot: root, AuthMode: AuthOAuth2, Pqs: true})
+	plan, err := Build(Options{
+		RepoRoot:     root,
+		AuthMode:     AuthOAuth2,
+		Pqs:          true,
+		EnabledSlots: []string{"sv-validator-1", "c-validator-1"},
+	})
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
 	if !containsPair(plan.Args, "--profile", "pqs-c-validator-1") {
-		t.Errorf("expected --profile pqs-c-validator-1, full args: %v", plan.Args)
+		t.Errorf("expected --profile pqs-c-validator-1 when c is enabled and Pqs is on, full args: %v", plan.Args)
+	}
+}
+
+func TestBuildOmitsPqsCValidator1ProfileWhenCDisabled(t *testing.T) {
+	t.Parallel()
+	root := newTestRepoRoot(t)
+	plan, err := Build(Options{
+		RepoRoot:     root,
+		AuthMode:     AuthOAuth2,
+		Pqs:          true,
+		EnabledSlots: []string{"sv-validator-1", "a-validator-1"},
+	})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if containsPair(plan.Args, "--profile", "pqs-c-validator-1") {
+		t.Errorf("did not expect --profile pqs-c-validator-1 when c is disabled, full args: %v", plan.Args)
+	}
+}
+
+func TestBuildAlwaysEmitsSvProfile(t *testing.T) {
+	t.Parallel()
+	root := newTestRepoRoot(t)
+	plan, err := Build(Options{
+		RepoRoot:     root,
+		AuthMode:     AuthOAuth2,
+		EnabledSlots: []string{"a-validator-1"},
+	})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if !containsPair(plan.Args, "--profile", "sv-validator-1") {
+		t.Errorf("expected --profile sv-validator-1 even when caller forgets to include it, full args: %v", plan.Args)
 	}
 }
 

@@ -47,6 +47,7 @@ func (f *composeFlags) options(cmd *cobra.Command) (compose.Options, error) {
 	opts.Pqs = cfg.Modules.Pqs || f.pqs
 	opts.NoResource = f.noLimit
 	opts.ExtraEnv = cfg.Env()
+	opts.EnabledSlots = cfg.EnabledSlots()
 	return opts, nil
 }
 

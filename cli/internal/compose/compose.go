@@ -18,6 +18,11 @@ import (
 	"strings"
 )
 
+// SlotSV is the non-toggleable Super Validator slot. It is always
+// activated in the assembled compose plan regardless of the contents
+// of Options.EnabledSlots.
+const SlotSV = "sv-validator-1"
+
 // AuthMode selects the authentication profile applied to the stack.
 type AuthMode string
 
@@ -45,23 +50,30 @@ func ParseAuthMode(s string) (AuthMode, error) {
 // Options captures every toggle that influences the assembled docker
 // compose command. Use DefaultOptions for Makefile-equivalent defaults.
 type Options struct {
-	RepoRoot   string
-	AuthMode   AuthMode
-	NoResource bool
-	Obs        bool
-	Pqs        bool
-	HostOS     string
-	ExtraEnv   []string
+	RepoRoot     string
+	AuthMode     AuthMode
+	NoResource   bool
+	Obs          bool
+	Pqs          bool
+	HostOS       string
+	ExtraEnv     []string
+	EnabledSlots []string
 }
 
 // DefaultOptions returns the Makefile-equivalent defaults rooted at
-// repoRoot.
+// repoRoot. EnabledSlots defaults to the full five-slot topology
+// matching the Makefile's PROFILES list.
 func DefaultOptions(repoRoot string) Options {
 	return Options{
-		RepoRoot: repoRoot,
-		AuthMode: AuthOAuth2,
-		HostOS:   runtime.GOOS,
+		RepoRoot:     repoRoot,
+		AuthMode:     AuthOAuth2,
+		HostOS:       runtime.GOOS,
+		EnabledSlots: defaultEnabledSlots(),
 	}
+}
+
+func defaultEnabledSlots() []string {
+	return []string{SlotSV, "a-validator-1", "b-validator-1", "c-validator-1", "d-validator-1"}
 }
 
 // Plan is a resolved set of docker compose arguments and environment
@@ -154,19 +166,16 @@ func Build(opts Options) (Plan, error) {
 		args = append(args, "--env-file", filepath.Join(obsDir, "compose.env"))
 	}
 
-	args = append(args, "--profile", "a-validator-1")
-	args = append(args, "--profile", "b-validator-1")
-	args = append(args, "--profile", "sv-validator-1")
-	args = append(args, "--profile", "d-validator-1")
-	if os.Getenv("C_VALIDATOR_1_PROFILE") == "on" {
-		args = append(args, "--profile", "c-validator-1")
+	enabledSlots := normalizeEnabledSlots(opts.EnabledSlots)
+	for _, slot := range enabledSlots {
+		args = append(args, "--profile", slot)
 	}
 	if opts.AuthMode == AuthOAuth2 {
 		args = append(args, "--profile", "keycloak")
 	}
 	if opts.Pqs {
 		args = append(args, "--profile", "pqs-a-validator-1")
-		if os.Getenv("PQS_C_VALIDATOR_1_PROFILE") == "on" {
+		if containsSlot(enabledSlots, "c-validator-1") {
 			args = append(args, "--profile", "pqs-c-validator-1")
 		}
 	}
@@ -182,6 +191,38 @@ func Build(opts Options) (Plan, error) {
 	env = append(env, opts.ExtraEnv...)
 
 	return Plan{Args: args, Env: env}, nil
+}
+
+func normalizeEnabledSlots(slots []string) []string {
+	out := make([]string, 0, len(slots)+1)
+	seen := map[string]bool{}
+	sawSV := false
+	for _, slot := range slots {
+		if slot == "" {
+			continue
+		}
+		if seen[slot] {
+			continue
+		}
+		seen[slot] = true
+		if slot == SlotSV {
+			sawSV = true
+		}
+		out = append(out, slot)
+	}
+	if !sawSV {
+		out = append([]string{SlotSV}, out...)
+	}
+	return out
+}
+
+func containsSlot(slots []string, target string) bool {
+	for _, s := range slots {
+		if s == target {
+			return true
+		}
+	}
+	return false
 }
 
 // Runner executes a Plan against the docker CLI.

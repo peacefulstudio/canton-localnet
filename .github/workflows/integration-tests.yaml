@@ -1,0 +1,189 @@
+# Copyright (c) 2026 Peaceful Studio OÜ
+# SPDX-License-Identifier: Apache-2.0
+
+name: integration-tests
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'compose/**'
+      - 'Makefile'
+      - 'cli/**'
+      - '.github/workflows/integration-tests.yaml'
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'compose/**'
+      - 'Makefile'
+      - 'cli/**'
+      - '.github/workflows/integration-tests.yaml'
+
+permissions:
+  contents: read
+
+jobs:
+  scenario:
+    name: ${{ matrix.scenario }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario:
+          - 5-healthy-validators
+          - 3-healthy-validators
+          - warm-restart
+    env:
+      AUTH_MODE: oauth2
+      SCENARIO: ${{ matrix.scenario }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.26'
+          cache-dependency-path: cli/go.sum
+
+      - name: Show docker / compose versions
+        run: |
+          set -euo pipefail
+          docker version
+          docker compose version
+
+      - name: Build canton-localnet binary
+        working-directory: cli
+        run: |
+          set -euo pipefail
+          go build -o "${GITHUB_WORKSPACE}/canton-localnet" ./cmd/canton-localnet
+
+      - name: Write canton-localnet.yaml (3-healthy-validators)
+        if: matrix.scenario == '3-healthy-validators'
+        run: |
+          set -euo pipefail
+          cat > canton-localnet.yaml <<'EOF'
+          schemaVersion: preview-1
+          validators:
+            c-validator-1:
+              enabled: false
+            d-validator-1:
+              enabled: false
+          EOF
+          cat canton-localnet.yaml
+
+      - name: Bring up LocalNet (one retry on splice bootstrap race)
+        run: |
+          set -euo pipefail
+          # Splice's SV-validator can lose a startup race on slower runners
+          # — "Ensuring decentralized synchronizer registered failed:
+          # UNAVAILABLE: No active synchronizer serial found". The initial
+          # bring-up is treated as setup, so one retry is allowed; the
+          # warm-restart step below stays single-shot because that IS the
+          # regression-test signal.
+          if ! "${GITHUB_WORKSPACE}/canton-localnet" up; then
+            echo "::warning::canton-localnet up failed on first attempt — capturing diagnostics, tearing down with volumes, and retrying once"
+            docker ps -a > docker-ps-attempt1.txt 2>&1 || true
+            timeout 60 make logs > logs-attempt1.txt 2>&1 || true
+            "${GITHUB_WORKSPACE}/canton-localnet" down --volumes || true
+            sleep 30
+            "${GITHUB_WORKSPACE}/canton-localnet" up
+          fi
+
+      - name: Wait for expected validators
+        env:
+          PER_VALIDATOR_TIMEOUT: 600
+          POLL_INTERVAL: 5
+        run: |
+          set -euo pipefail
+
+          case "${SCENARIO}" in
+            3-healthy-validators)
+              SLOTS="sv-validator-1 a-validator-1 b-validator-1"
+              ;;
+            *)
+              SLOTS="sv-validator-1 a-validator-1 b-validator-1 c-validator-1 d-validator-1"
+              ;;
+          esac
+
+          declare -A PREFIX
+          PREFIX[sv-validator-1]=10
+          PREFIX[a-validator-1]=11
+          PREFIX[b-validator-1]=12
+          PREFIX[c-validator-1]=13
+          PREFIX[d-validator-1]=14
+
+          for slot in $SLOTS; do
+            prefix="${PREFIX[$slot]}"
+            url="http://localhost:${prefix}975/readyz"
+            echo "::group::Wait for ${slot} (${url})"
+            "${GITHUB_WORKSPACE}/canton-localnet" wait-ready \
+              --url "${url}" \
+              --timeout "${PER_VALIDATOR_TIMEOUT}s" \
+              --interval "${POLL_INTERVAL}s"
+            echo "::endgroup::"
+          done
+
+      - name: Assert disabled slots are absent
+        if: matrix.scenario == '3-healthy-validators'
+        run: |
+          set -euo pipefail
+          containers="$(docker ps --format '{{.Names}}')"
+          echo "Running containers:"
+          echo "${containers}"
+          for forbidden in c-validator-1 d-validator-1; do
+            if echo "${containers}" | grep -E "(^|[^a-zA-Z0-9-])${forbidden}([^a-zA-Z0-9-]|$)"; then
+              echo "::error::container matching '${forbidden}' is running but the yaml disables it"
+              exit 1
+            fi
+          done
+
+      - name: Warm-restart cycle (down preserves volumes, then up reuses them)
+        if: matrix.scenario == 'warm-restart'
+        env:
+          PER_VALIDATOR_TIMEOUT: 600
+          POLL_INTERVAL: 5
+        run: |
+          set -euo pipefail
+          echo "::group::canton-localnet down (preserve volumes)"
+          "${GITHUB_WORKSPACE}/canton-localnet" down
+          echo "::endgroup::"
+
+          echo "::group::canton-localnet up (warm volumes)"
+          "${GITHUB_WORKSPACE}/canton-localnet" up
+          echo "::endgroup::"
+
+          for prefix in 10 11 12 13 14; do
+            url="http://localhost:${prefix}975/readyz"
+            echo "::group::Re-wait for ${url}"
+            "${GITHUB_WORKSPACE}/canton-localnet" wait-ready \
+              --url "${url}" \
+              --timeout "${PER_VALIDATOR_TIMEOUT}s" \
+              --interval "${POLL_INTERVAL}s"
+            echo "::endgroup::"
+          done
+
+      - name: Capture compose state on failure
+        if: failure()
+        run: |
+          set -euo pipefail
+          docker ps -a > docker-ps.txt 2>&1 || true
+          timeout 60 make logs > logs.txt 2>&1 || true
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: integration-tests-${{ matrix.scenario }}
+          path: |
+            docker-ps.txt
+            logs.txt
+            canton-localnet.yaml
+          if-no-files-found: warn
+
+      - name: Tear down
+        if: always()
+        run: |
+          set -euo pipefail
+          "${GITHUB_WORKSPACE}/canton-localnet" down --volumes || true
