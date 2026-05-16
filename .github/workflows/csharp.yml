@@ -4,9 +4,8 @@
 # Thin caller for the reusable .NET CI workflow in peacefulstudio/github-actions.
 # Build/test logic lives there so ~10 Peaceful Studio repos can consume the same
 # shape; matrix + integration filter + nupkg pack are passed in via inputs.
-# The sibling `integration` job below boots the compose stack and runs the
-# `Category=Integration` smoke against it, mirroring the Go workflow at
-# .github/workflows/go-fixture.yaml.
+# The `Category=Integration` smoke that used to live alongside this job now
+# runs in the consolidated .github/workflows/compose-integration.yaml workflow.
 
 name: csharp
 
@@ -15,16 +14,16 @@ on:
     branches: [dev]
     paths:
       - 'csharp/**'
-      - 'compose/**'
-      - 'Makefile'
       - '.github/workflows/csharp.yml'
   pull_request:
     branches: [dev]
     paths:
       - 'csharp/**'
-      - 'compose/**'
-      - 'Makefile'
       - '.github/workflows/csharp.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -36,107 +35,10 @@ jobs:
     uses: peacefulstudio/github-actions/.github/workflows/csharp-ci.yaml@v1
     with:
       working-directory: csharp
-      os-list: '["ubuntu-latest","macos-latest","windows-latest"]'
+      os-list: ${{ github.event_name == 'push' && '["ubuntu-latest","macos-latest","windows-latest"]' || '["ubuntu-latest"]' }}
       test-project: tests/Peaceful.Canton.Localnet.Testing.Tests/Peaceful.Canton.Localnet.Testing.Tests.csproj
       test-filter: 'Category!=Integration'
       coverage-pr-comment-header: csharp-coverage
       pack: true
       pack-project: src/Peaceful.Canton.Localnet.Testing/Peaceful.Canton.Localnet.Testing.csproj
     secrets: inherit
-
-  integration:
-    name: integration (compose smoke)
-    runs-on: ubuntu-latest
-    needs: ci
-    env:
-      AUTH_MODE: oauth2
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5.2.0
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Show docker / compose versions
-        run: |
-          set -euo pipefail
-          docker version
-          docker compose version
-
-      - name: Bring up LocalNet
-        run: |
-          set -euo pipefail
-          make up
-
-      - name: Wait for JSON Ledger API readiness
-        env:
-          ATTEMPTS: "120"
-          SLEEP_SECONDS: "5"
-        run: |
-          set -euo pipefail
-          make wait-ready
-
-      - name: Extract a tiny DAR from the splice onboarding container
-        id: extract-dar
-        run: |
-          set -euo pipefail
-          mkdir -p /tmp/testdata
-          container=$(docker ps --filter "name=splice-onboarding" --format '{{.Names}}' | head -n1 || true)
-          if [ -z "$container" ]; then
-            container=$(docker ps --filter "ancestor=digitalasset/decentralized-canton-sync-onboarding" --format '{{.Names}}' | head -n1 || true)
-          fi
-          if [ -z "$container" ]; then
-            echo "no splice onboarding container found — DAR upload portion of the smoke test will skip" >&2
-            exit 0
-          fi
-          dar=$(docker exec "$container" sh -c 'find /canton/dars -type f -name "*.dar" 2>/dev/null | head -n1' || true)
-          if [ -z "$dar" ]; then
-            echo "no DAR files inside container $container — DAR upload portion of the smoke test will skip" >&2
-            exit 0
-          fi
-          docker cp "$container:$dar" /tmp/testdata/test.dar
-          echo "extracted $dar"
-          ls -lh /tmp/testdata/test.dar
-          echo "dar_path=/tmp/testdata/test.dar" >> "$GITHUB_OUTPUT"
-
-      - name: Run integration smoke test
-        env:
-          CANTON_LOCALNET_TEST_DAR_PATH: ${{ steps.extract-dar.outputs.dar_path }}
-          CANTON_LOCALNET_JSON_API_URL: http://localhost:11975
-          CANTON_LOCALNET_TOKEN_URL: http://localhost:8082/realms/AValidator1/protocol/openid-connect/token
-          CANTON_LOCALNET_CLIENT_ID: a-validator-1-validator
-          CANTON_LOCALNET_CLIENT_SECRET: AL8648b9SfdTFImq7FV56Vd0KHifHBuC
-          CANTON_LOCALNET_B_VALIDATOR_1_JSON_API_URL: http://localhost:12975
-          CANTON_LOCALNET_B_VALIDATOR_1_TOKEN_URL: http://localhost:8082/realms/BValidator1/protocol/openid-connect/token
-          CANTON_LOCALNET_B_VALIDATOR_1_CLIENT_ID: b-validator-1-validator
-          CANTON_LOCALNET_B_VALIDATOR_1_CLIENT_SECRET: 6m12QyyGl81d9nABWQXMycZdXho6ejEX
-        run: |
-          set -euo pipefail
-          dotnet test csharp/tests/Peaceful.Canton.Localnet.Testing.Tests/Peaceful.Canton.Localnet.Testing.Tests.csproj \
-            --configuration Release \
-            --filter "Category=Integration" \
-            --logger 'console;verbosity=detailed'
-
-      - name: Capture compose state on failure
-        if: failure()
-        run: |
-          set -euo pipefail
-          make status > /tmp/compose-status.txt 2>&1 || true
-          timeout 30 make logs > /tmp/compose-logs.txt 2>&1 || true
-
-      - name: Upload compose diagnostics on failure
-        if: failure()
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
-        with:
-          name: compose-diagnostics-csharp
-          path: |
-            /tmp/compose-status.txt
-            /tmp/compose-logs.txt
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Tear down
-        if: always()
-        run: make down

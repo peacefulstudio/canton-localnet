@@ -10,32 +10,91 @@ on:
       - 'compose/**'
       - 'Makefile'
       - 'cli/**'
+      - '!**/*.md'
       - '.github/workflows/integration-tests.yaml'
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
     branches: [dev]
     paths:
       - 'compose/**'
       - 'Makefile'
       - 'cli/**'
+      - '!**/*.md'
       - '.github/workflows/integration-tests.yaml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action != 'labeled' && github.event.action != 'unlabeled' }}
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
+  setup:
+    name: select scenarios
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.action != 'labeled' && github.event.action != 'unlabeled') ||
+      github.event.label.name == 'ci:full'
+    outputs:
+      scenarios: ${{ steps.select.outputs.scenarios }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Detect changed paths
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3.0.3
+        with:
+          filters: |
+            observability:
+              - 'compose/modules/observability/**'
+            cli-config:
+              - 'cli/**'
+              - 'compose/**'
+              - '!compose/modules/observability/**'
+              - 'Makefile'
+
+      - name: Select scenarios
+        id: select
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HAS_FULL_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'ci:full') }}
+          OBSERVABILITY_CHANGED: ${{ steps.filter.outputs.observability }}
+          CLI_CONFIG_CHANGED: ${{ steps.filter.outputs.cli-config }}
+        run: |
+          set -euo pipefail
+          scenarios=()
+          if [ "${EVENT_NAME}" != "pull_request" ] || [ "${HAS_FULL_LABEL}" = "true" ]; then
+            scenarios=(5-healthy-validators 3-healthy-validators warm-restart observability-on observability-off)
+          else
+            scenarios+=(5-healthy-validators)
+            if [ "${CLI_CONFIG_CHANGED}" = "true" ]; then
+              scenarios+=(3-healthy-validators warm-restart)
+            fi
+            if [ "${OBSERVABILITY_CHANGED}" = "true" ]; then
+              scenarios+=(observability-on observability-off)
+            fi
+          fi
+          json=$(printf '%s\n' "${scenarios[@]}" | jq -R . | jq -cs .)
+          echo "scenarios=${json}" >> "${GITHUB_OUTPUT}"
+          echo "Selected scenarios: ${json}"
+          echo "Selected scenarios: ${json}" >> "${GITHUB_STEP_SUMMARY}"
+
   scenario:
     name: ${{ matrix.scenario }}
+    needs: setup
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        scenario:
-          - 5-healthy-validators
-          - 3-healthy-validators
-          - warm-restart
-          - observability-on
-          - observability-off
+        scenario: ${{ fromJSON(needs.setup.outputs.scenarios) }}
     env:
       AUTH_MODE: oauth2
       SCENARIO: ${{ matrix.scenario }}

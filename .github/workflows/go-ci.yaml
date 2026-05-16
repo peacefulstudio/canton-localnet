@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Peaceful Studio OÜ
+# SPDX-License-Identifier: Apache-2.0
+
 name: Go CI
 
 on:
@@ -13,6 +16,10 @@ on:
       - 'go/**'
       - 'cli/**'
       - '.github/workflows/go-ci.yaml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   go-ci:

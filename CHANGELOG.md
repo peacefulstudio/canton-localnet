@@ -114,6 +114,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- CI cost-reduction batch (this PR). Seven changes shipped together to
+  cut GitHub Actions consumption ~50% without changing CI infrastructure:
+  (1) every PR workflow (`integration-tests.yaml`, `cli.yml`,
+  `go-fixture.yaml`, `csharp.yml`, `go-ci.yaml`, `terraform-ci.yaml`)
+  now declares
+  `concurrency.group: ${{ github.workflow }}-${{ github.ref }}` with
+  `cancel-in-progress: true`, so superseded push/PR runs cancel
+  immediately instead of finishing in parallel. (2) `go-fixture.yaml`'s
+  unit job drops macOS on PRs via a `fromJSON(github.event_name ==
+  'push' && '["ubuntu-latest","macos-latest"]' || '["ubuntu-latest"]')`
+  matrix expression. (3) `cli.yml`'s `build` job applies the same
+  conditional matrix. (4) `csharp.yml` passes the same conditional
+  expression for `os-list` to the reusable
+  `peacefulstudio/github-actions` csharp-ci workflow, so PRs run only
+  ubuntu while `push` to dev still exercises ubuntu/macos/windows.
+  (5) New consolidated `.github/workflows/compose-integration.yaml`
+  boots LocalNet once and runs the CLI `wait-ready` probe, the Go
+  `-tags integration` tests, and the C# `Category=Integration` xUnit
+  run sequentially against the same stack, replacing three duplicate
+  "boot + smoke" jobs in `cli.yml` (`integration-up-wait-ready`),
+  `go-fixture.yaml` (`integration`), and `csharp.yml` (`integration`).
+  Path filters in those three workflows now scope to their own
+  source — `cli/**`, `go/fixture/**`, `csharp/**` — so `compose/**`
+  changes no longer fan out to every per-language workflow.
+  (6) `integration-tests.yaml` gains a `setup` job that emits a JSON
+  scenario list consumed by the `scenario` job's matrix via
+  `fromJSON(needs.setup.outputs.scenarios)`. On `push` to dev or PRs
+  carrying the `ci:full` label all 5 scenarios run; PRs without the
+  label default to just `5-healthy-validators`. (7) The same `setup`
+  job uses `dorny/paths-filter@v3` (SHA-pinned) to layer in extra
+  scenarios on PRs: `observability-on` / `observability-off` when
+  `compose/modules/observability/**` changes; `3-healthy-validators`
+  and `warm-restart` when `cli/**` / `compose/**` / `Makefile`
+  changes. The basic `5-healthy-validators` still runs on every
+  triggering event.
 - Docs refresh for the 5-validator topology and YAML config layer
   (this PR). `README.md`'s JSON Ledger API port table now lists all
   five slots (`sv`, `a`, `b`, `c`, `d`); the `vm tunnel` line spells
