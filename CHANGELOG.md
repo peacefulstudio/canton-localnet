@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+## [0.6.2-4] - 2026-05-16
+
 ### Breaking
 
 - **Slot rename — `sv` → `sv-validator-1`, `app-provider` → `a-validator-1`,
@@ -264,13 +270,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by a deadline-exceeded would report only the deadline. Also
   de-flaked `TestWaitReadyTimeout` on macOS-arm64, where this race
   was reliably reproducible.
-- Removed unused `xunit.v3` PackageReference from
-  `Peaceful.Canton.Localnet.Testing.csproj` (it was unused in the
-  library source and leaked as a transitive runtime dependency on
-  the published nupkg, causing
-  `CS0433 The type 'Assert' exists in both 'xunit.assert' and 'xunit.v3.assert'`
-  in consumer projects pinned to xunit v2). Discovered while wiring
-  the package into the `murmures` test suite, which uses xunit 2.
 
 ### Notes
 
@@ -279,6 +278,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [ADR-0001](docs/adr/0001-yaml-config-without-codegen.md)). Breaking
   schema changes are allowed in this window and will be called out
   in subsequent CHANGELOG entries.
+
+## [0.6.2-3] - 2026-05-14
+
+### Fixed
+
+- Removed unused `xunit.v3` PackageReference from
+  `Peaceful.Canton.Localnet.Testing.csproj` (it was unused in the
+  library source and leaked as a transitive runtime dependency on
+  the published nupkg, causing
+  `CS0433 The type 'Assert' exists in both 'xunit.assert' and 'xunit.v3.assert'`
+  in consumer projects pinned to xunit v2). Discovered while wiring
+  the package into the `murmures` test suite, which uses xunit 2.
+  (This section is reconstructed retroactively in v0.6.2-4 — the
+  promotion step was skipped at `v0.6.2-3` tag time, so the bullet
+  sat in `[Unreleased]` and was extracted into the GitHub Release
+  body for `v0.6.2-3` as-is.)
 
 ## [0.6.2-2] - 2026-05-14
 
