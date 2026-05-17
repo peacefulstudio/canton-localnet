@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+### Fixed
+
+- Scribe (PQS) image pin bumped from `0.6.11` to `0.6.13` in
+  `compose/modules/pqs/compose.env`. Scribe `0.6.11` crash-loops on
+  any participant carrying a Daml LF 2.2 package with
+  `java.util.NoSuchElementException: key not found: LanguageMinorVersion(2)`,
+  which surfaced as `pqs-a-validator-1` failing to start once Splice's
+  own onboarding wrote LF 2.2 events into the ledger stream. The
+  override is still honoured (`SCRIBE_VERSION=… canton-localnet up`),
+  so downstream consumers can pin back if needed.
+
 ## [0.6.2-4] - 2026-05-16
 
 ### Breaking
