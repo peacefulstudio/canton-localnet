@@ -128,3 +128,12 @@ vendor: ## Re-fetch splice modules pinned in compose/links.csv
 .PHONY: config
 config: ## Print the resolved compose configuration (debugging)
 	$(DOCKER_COMPOSE) config
+
+.PHONY: test-restart-survival
+test-restart-survival: ## Onboarding-client restart-survival acceptance test (drives a full down/up cycle; ~5 min). Assumes the stack is already up.
+	@command -v jq > /dev/null || { echo "::error::jq is required for this target" >&2; exit 2; }
+	tests/acceptance/restart-survival.sh create
+	$(MAKE) down
+	$(MAKE) up
+	$(COMPOSE_DIR)/scripts/wait-ready.sh
+	tests/acceptance/restart-survival.sh verify

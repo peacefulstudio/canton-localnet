@@ -10,6 +10,7 @@ on:
       - 'compose/**'
       - 'Makefile'
       - 'cli/**'
+      - 'tests/acceptance/**'
       - '!**/*.md'
       - '.github/workflows/integration-tests.yaml'
   pull_request:
@@ -19,11 +20,10 @@ on:
       - 'compose/**'
       - 'Makefile'
       - 'cli/**'
+      - 'tests/acceptance/**'
       - '!**/*.md'
       - '.github/workflows/integration-tests.yaml'
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action != 'labeled' && github.event.action != 'unlabeled' }}
@@ -244,6 +244,14 @@ jobs:
             fi
           done
 
+      - name: Seed onboarding sentinel users (warm-restart, pre-restart)
+        if: matrix.scenario == 'warm-restart'
+        env:
+          SLOTS: a b c d
+        run: |
+          set -euo pipefail
+          tests/acceptance/restart-survival.sh create
+
       - name: Warm-restart cycle (down preserves volumes, then up reuses them)
         if: matrix.scenario == 'warm-restart'
         env:
@@ -268,6 +276,14 @@ jobs:
               --interval "${POLL_INTERVAL}s"
             echo "::endgroup::"
           done
+
+      - name: Verify onboarding clients + sentinel users survived restart (issue 65 step 5)
+        if: matrix.scenario == 'warm-restart'
+        env:
+          SLOTS: a b c d
+        run: |
+          set -euo pipefail
+          tests/acceptance/restart-survival.sh verify
 
       - name: Capture compose state on failure
         if: failure()

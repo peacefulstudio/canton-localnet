@@ -5,6 +5,9 @@ compose/.env.local
 
 .DS_Store
 
+# Acceptance-test state files (sentinel usernames etc.)
+tests/acceptance/.*-state
+
 # IDE
 .idea/
 .vscode/

@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Per-realm onboarding service-account client (`{slot}-onboarding`) on
+  each user-facing validator realm (`AValidator1`, `BValidator1`,
+  `CValidator1`, `DValidator1`), with `realm-management` client roles
+  `manage-users`, `view-users`, `query-users` scoped to its realm only
+  (#65). Removes the need for master-realm `admin/admin` admin in
+  downstream user-creation flows (sign-up UI, integration test
+  seeders). Dev secrets are surfaced via
+  `AUTH_{SLOT}_ONBOARDING_CLIENT_ID` and
+  `AUTH_{SLOT}_ONBOARDING_CLIENT_SECRET` in
+  `compose/modules/keycloak/env/{slot}/on/oauth2.env` and
+  `compose/modules/localnet/env/{slot}-auth-on.env`.
+- Restart-survival acceptance test for the onboarding clients
+  (`tests/acceptance/restart-survival.sh` + `make test-restart-survival`)
+  that seeds a sentinel user via each slot's `{slot}-onboarding`
+  client, drives a `canton-localnet down && canton-localnet up` cycle
+  (volumes preserved), and re-verifies the sentinel survives — wired
+  into the `warm-restart` CI scenario in
+  `.github/workflows/integration-tests.yaml`.
+
 ### Changed
 
 ### Fixed

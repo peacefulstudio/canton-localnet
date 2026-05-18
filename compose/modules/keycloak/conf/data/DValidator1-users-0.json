@@ -74,5 +74,22 @@
     "realmRoles" : [ "default-roles-appuser" ],
     "notBefore" : 0,
     "groups" : [ ]
+  }, {
+    "id" : "a44a8ef2-9275-4699-9950-282be75610c6",
+    "username" : "service-account-d-validator-1-onboarding",
+    "emailVerified" : false,
+    "createdTimestamp" : 1738821248220,
+    "enabled" : true,
+    "totp" : false,
+    "serviceAccountClientId" : "d-validator-1-onboarding",
+    "credentials" : [ ],
+    "disableableCredentialTypes" : [ ],
+    "requiredActions" : [ ],
+    "realmRoles" : [ "default-roles-appuser" ],
+    "clientRoles" : {
+      "realm-management" : [ "manage-users", "view-users", "query-users" ]
+    },
+    "notBefore" : 0,
+    "groups" : [ ]
   } ]
 }
