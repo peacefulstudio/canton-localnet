@@ -32,5 +32,7 @@ func newRootCommandWithVM(makeRunner runnerFactory, vm vmDeps) *cobra.Command {
 	cmd.AddCommand(newDownCommand(makeRunner))
 	cmd.AddCommand(newWaitReadyCommand())
 	cmd.AddCommand(newVMCommand(vm))
+	cmd.AddCommand(newAuthCommand())
+	cmd.AddCommand(newInfoCommand())
 	return cmd
 }

@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `canton-localnet auth token --slot {sv|a|b|c|d}` and
+  `canton-localnet info --slot X [--json] [--offline]` CLI commands
+  (#64). The `auth token` command mints a participant-admin bearer —
+  OAuth2 `client_credentials` against Keycloak for a/b/c/d, self-signed
+  HS256 against the LocalNet shared secret for sv. The `info` command
+  prints the slot's ports, Keycloak realm, audience, token URLs (host
+  and internal), and — when LocalNet is reachable — `participant_id`,
+  `participant_namespace`, and `validator_primary_party`. Together the
+  two commands let downstream scripts (e.g. Murmures'
+  `allocate-parties-localnet.sh`) stop hardcoding realm names, client
+  ids, client secrets, or the `<prefix>975` port scheme. Secrets are
+  resolved from `compose/modules/keycloak/env/<slot>/on/oauth2.env` by
+  default so rotations in this repo flow to consumers automatically;
+  per-slot env-var overrides (ADR-0003 names) win when set.
 - Per-realm onboarding service-account client (`{slot}-onboarding`) on
   each user-facing validator realm (`AValidator1`, `BValidator1`,
   `CValidator1`, `DValidator1`), with `realm-management` client roles
