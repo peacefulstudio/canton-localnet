@@ -91,33 +91,44 @@ jobs:
           set -euo pipefail
           "${GITHUB_WORKSPACE}/canton-localnet" wait-ready --timeout 10m --interval 5s
 
-      - name: Extract a tiny DAR from the splice onboarding container
-        id: extract-dar
+      - name: Cache Daml SDK
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ~/.daml
+          key: daml-sdk-3.4.11-${{ runner.os }}
+
+      - name: Build noop test DAR
+        id: build-dar
+        # DAR extraction from a running container isn't viable in this
+        # stack: neither the splice-onboarding container (alpine +
+        # jwt-cli, no DARs) nor the canton container (DARs embedded in
+        # canton.jar, not on disk under /canton/dars at IMAGE_TAG 0.6.2)
+        # ships a file we can docker-cp. A vendored binary doesn't work
+        # either because Canton 0.6.2 strictly enforces Daml-LF 2.1..2.2.
+        # Build a 5-line Noop.daml in-tree with the matching SDK so the
+        # DAR upload integration tests can actually run (which they
+        # hadn't been able to since #26). (#60)
         run: |
           set -euo pipefail
-          mkdir -p /tmp/testdata
-          container=$(docker ps --filter "name=splice-onboarding" --format '{{.Names}}' | head -n1 || true)
-          if [ -z "$container" ]; then
-            container=$(docker ps --filter "ancestor=digitalasset/decentralized-canton-sync-onboarding" --format '{{.Names}}' | head -n1 || true)
+          export PATH="$HOME/.daml/bin:$PATH"
+          if ! command -v daml >/dev/null 2>&1; then
+            curl -sSf https://get.daml.com/ | sh -s 3.4.11
           fi
-          if [ -z "$container" ]; then
-            echo "::warning::no splice onboarding container found — DAR upload portion of the integration tests will skip"
-            exit 0
+          daml build --project-root testdata/noop
+          shopt -s nullglob
+          dars=(testdata/noop/.daml/dist/*.dar)
+          if [ ${#dars[@]} -eq 0 ]; then
+            echo "::error::daml build produced no DAR in testdata/noop/.daml/dist/"
+            exit 1
           fi
-          dar=$(docker exec "$container" sh -c 'find /canton/dars -type f -name "*.dar" 2>/dev/null | head -n1' || true)
-          if [ -z "$dar" ]; then
-            echo "::warning::no DAR files inside container $container — DAR upload portion of the integration tests will skip"
-            exit 0
-          fi
-          docker cp "$container:$dar" /tmp/testdata/test.dar
-          echo "extracted $dar"
-          ls -lh /tmp/testdata/test.dar
-          echo "dar_path=/tmp/testdata/test.dar" >> "$GITHUB_OUTPUT"
+          abs_dar="$GITHUB_WORKSPACE/${dars[0]}"
+          ls -lh "$abs_dar"
+          echo "dar_path=$abs_dar" >> "$GITHUB_OUTPUT"
 
       - name: Go fixture integration tests
         working-directory: go/fixture
         env:
-          CANTON_LOCALNET_TEST_DAR_PATH: ${{ steps.extract-dar.outputs.dar_path }}
+          CANTON_LOCALNET_TEST_DAR_PATH: ${{ steps.build-dar.outputs.dar_path }}
         run: |
           set -euo pipefail
           go test -tags integration -count=1 -v ./...
@@ -125,7 +136,7 @@ jobs:
       - name: C# fixture integration tests
         if: success() || failure()
         env:
-          CANTON_LOCALNET_TEST_DAR_PATH: ${{ steps.extract-dar.outputs.dar_path }}
+          CANTON_LOCALNET_TEST_DAR_PATH: ${{ steps.build-dar.outputs.dar_path }}
           CANTON_LOCALNET_JSON_API_URL: http://localhost:11975
           CANTON_LOCALNET_TOKEN_URL: http://localhost:8082/realms/AValidator1/protocol/openid-connect/token
           CANTON_LOCALNET_CLIENT_ID: a-validator-1-validator

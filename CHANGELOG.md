@@ -44,6 +44,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- DAR-upload integration tests run for the first time in CI (#60).
+  Both Go and C# fixtures self-skip the DAR-upload portion on empty
+  `CANTON_LOCALNET_TEST_DAR_PATH` for local-dev ergonomics, and the
+  workflow previously tried to extract a DAR at CI time via
+  `docker cp` from the splice-onboarding container — but that
+  container has never carried DARs in this stack (built from
+  `alpine + jwt-cli + jq + curl + bash`; see
+  `compose/modules/splice-onboarding/docker/Dockerfile`), and neither
+  does the `canton` container at our current `IMAGE_TAG=0.6.2`
+  (`/canton/dars` does not exist on its filesystem; the bundled DARs
+  appear to be embedded inside the Canton jar). The extract step
+  therefore always hit a `::warning::no DAR files inside container …`
+  branch and `exit 0`'d, keeping CI green on a permanent silent skip
+  ever since #26 introduced the step. Replace the extraction with a
+  CI-time `daml build` of a 5-line `Noop.daml` under `testdata/noop/`
+  using the same Daml SDK (3.4.11) the rest of the Peaceful Studio
+  stack uses, so the produced DAR is guaranteed to be within Canton
+  0.6.2's accepted Daml-LF range (2.1..2.2). The SDK install is
+  cached under `~/.daml` so subsequent runs incur only the build cost
+  (~1s). The Go and C# integration steps now read the freshly built
+  DAR via `${{ steps.build-dar.outputs.dar_path }}`, exercising
+  `UploadDar` / `UploadDarAsync` end-to-end. No binary DAR is
+  vendored in-tree.
+
 ### Fixed
 
 - Scribe (PQS) image pin bumped from `0.6.11` to `0.6.13` in

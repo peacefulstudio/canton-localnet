@@ -1,0 +1,11 @@
+# Copyright (c) 2026 Peaceful Studio OÜ
+# SPDX-License-Identifier: Apache-2.0
+sdk-version: 3.4.11
+name: canton-localnet-noop
+source: .
+version: 0.0.1
+dependencies:
+  - daml-prim
+  - daml-stdlib
+build-options:
+  - --target=2.1
