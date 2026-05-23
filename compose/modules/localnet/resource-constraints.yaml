@@ -1,19 +1,50 @@
 ## This file is used to set and control resource constraints for all essential services defined
 ## in the splice localnet template, These values should be adjusted carefully as it will impact the
 ## baseline resource requirements for the project.
+##
+## Heap sizing — per-slot math
+## ---------------------------
+## The `canton` and `splice` services each run a single JVM hosting ALL enabled
+## validator slots' participants / validator apps. Heap pressure scales linearly
+## with the number of enabled slots, so the caps below must be revisited every
+## time a slot is added or removed.
+##
+## Rule of thumb (steady-state idle, no test workload):
+##   - Heap (-Xmx) grows ~+500 MB per added validator for splice across the
+##     full range, and for canton up to 3 slots. Above 3 slots canton needs
+##     ~+750 MB per validator — splice stays at +500 MB.
+##   - mem_limit headroom above -Xmx is +1 GB for canton at every topology
+##     and for splice at 5 slots. Splice 1v/3v get away with +500 MB; the
+##     extra GB is what canton's metaspace / direct-buffer / JIT-code-cache
+##     / GC overhead needs to avoid OOM at high slot counts.
+##
+## When changing slot count, prefer the table below over the rule of thumb —
+## the rule is a sanity-check, the table is the source of truth.
+##
+## Current values (5 validators: sv + a + b + c + d):
+##   - canton:  -Xmx4g / mem_limit 5g
+##   - splice:  -Xmx3g / mem_limit 4g
+##
+## Reference points for smaller topologies:
+##   - 3 validators (sv + a + b): canton -Xmx2.5g / mem_limit 3.5g,
+##                                splice -Xmx2g / mem_limit 2.5g
+##   - 1 validator  (sv only):    canton -Xmx1.5g / mem_limit 2.5g,
+##                                splice -Xmx1g / mem_limit 1.5g
+##
+## See also: CONTEXT.md "Resource sizing" section for the Docker Desktop allocation table (per-topology recommended / headroom figures, flagged as estimates pending live bring-up).
 services:
   nginx:
     mem_limit: 32mb
   postgres:
     mem_limit: 2g
   canton:
+    mem_limit: 5g
+    environment:
+      _JAVA_OPTIONS: "-XX:-UseCompressedOops -Xms1g -Xmx4g"
+  splice:
     mem_limit: 4g
     environment:
-      _JAVA_OPTIONS: "-XX:-UseCompressedOops -Xms512m -Xmx2560m"
-  splice:
-    mem_limit: 3g
-    environment:
-      _JAVA_OPTIONS: "-XX:-UseCompressedOops -Xms512m -Xmx2560m"
+      _JAVA_OPTIONS: "-XX:-UseCompressedOops -Xms1g -Xmx3g"
   console:
     mem_limit: 2g
     environment:

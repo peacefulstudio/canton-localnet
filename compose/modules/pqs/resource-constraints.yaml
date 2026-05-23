@@ -1,3 +1,11 @@
+## Per-slot PQS (Scribe) JVMs run uncapped without a block here. Keep one
+## entry per slot that has a corresponding service in compose.yaml.
+##
+## Note: there is intentionally NO `pqs-d-validator-1` block — the `pqs`
+## module's compose.yaml does not define a `pqs-d-validator-1` service
+## (only a/b/c/sv). The Keycloak realm carries a forward-looking
+## `d-validator-1-pqs` client, but no PQS container consumes it today.
+## Add a block here when (and only when) the service lands in compose.yaml.
 services:
   pqs-a-validator-1:
     mem_limit: 1g
@@ -10,6 +18,11 @@ services:
       _JAVA_OPTIONS: "-XX:-UseCompressedOops -Xms512m -Xmx768m"
 
   pqs-c-validator-1:
+    mem_limit: 1g
+    environment:
+      _JAVA_OPTIONS: "-XX:-UseCompressedOops -Xms512m -Xmx768m"
+
+  pqs-sv-validator-1:
     mem_limit: 1g
     environment:
       _JAVA_OPTIONS: "-XX:-UseCompressedOops -Xms512m -Xmx768m"

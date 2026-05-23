@@ -70,6 +70,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Right-sized canton / splice JVM heaps and missing PQS caps for the
+  full 5-validator topology (#72). The `canton` and `splice` JVMs each
+  host every enabled slot's participant / validator app, so heap
+  pressure scales linearly with slot count. Previous values (canton
+  `-Xmx2560m` / `mem_limit 4g`, splice `-Xmx2560m` / `mem_limit 3g`)
+  predated the c-/d-validator additions and OOM-killed the splice
+  container on cold start (exit 137) and accumulated `RestartCount`
+  on the canton container at idle on a 5-slot stack. New values
+  (canton `-Xmx4g` / `mem_limit 5g`, splice `-Xmx3g` / `mem_limit 4g`)
+  follow the rule of thumb "~+500 MB/validator for splice across the
+  range and for canton up to 3 slots, ~+750 MB/validator for canton
+  above 3 slots" now documented inline in
+  `compose/modules/localnet/resource-constraints.yaml` and in the new
+  "Resource sizing" section of `CONTEXT.md` (with a Docker Desktop
+  allocation table per topology, flagged as estimates pending a
+  live-bring-up validation). Also adds the missing `pqs-sv-validator-1`
+  cap to `compose/modules/pqs/resource-constraints.yaml` (a/b/c had
+  blocks, sv ran uncapped) — `pqs-d-validator-1` is intentionally
+  skipped because no PQS service for slot `d` exists in
+  `compose/modules/pqs/compose.yaml` today. Bumps `postgres-metrics`
+  `mem_limit` from `32mb` to `96mb` in
+  `compose/modules/observability/compose.yaml` (idle was ~65% of
+  32 MiB; would OOM under load). The CLI stale-observability-container
+  guard from the same investigation is deferred to a follow-up issue.
 - Scribe (PQS) image pin bumped from `0.6.11` to `0.6.13` in
   `compose/modules/pqs/compose.env`. Scribe `0.6.11` crash-loops on
   any participant carrying a Daml LF 2.2 package with

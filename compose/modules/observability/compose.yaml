@@ -130,7 +130,7 @@ services:
     image: ${POSTGRES_EXPORTER_IMAGE}:${POSTGRES_EXPORTER_VERSION}
     container_name: postgres-metrics
     hostname: postgres-metrics
-    mem_limit: 32mb
+    mem_limit: 96mb
     command:
       - --web.listen-address=:${POSTGRES_EXPORTER_METRICS_PORT}
     env_file:
