@@ -36,6 +36,71 @@ public class EndpointDiscoveryTests
     }
 
     [Fact]
+    public void Resolve_defaults_validator_user_id_for_a_validator_1()
+    {
+        var endpoints = EndpointDiscovery.Resolve(
+            LocalnetProfile.AValidator1,
+            new Dictionary<string, string?>(StringComparer.Ordinal));
+
+        Assert.Equal("c87743ab-80e0-4b83-935a-4c0582226691", endpoints.ValidatorUserId);
+    }
+
+    [Fact]
+    public void Resolve_namespaced_env_overrides_validator_user_id()
+    {
+        var env = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["CANTON_LOCALNET_A_VALIDATOR_1_VALIDATOR_USER_ID"] = "custom-user-id",
+        };
+
+        var endpoints = EndpointDiscovery.Resolve(LocalnetProfile.AValidator1, env);
+
+        Assert.Equal("custom-user-id", endpoints.ValidatorUserId);
+    }
+
+    [Fact]
+    public void Resolve_legacy_validator_user_id_env_applies_to_default_profile()
+    {
+        var env = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [EndpointDiscovery.ProfileEnv] = "a-validator-1",
+            [EndpointDiscovery.ValidatorUserIdEnv] = "legacy-user-id",
+        };
+
+        var endpoints = EndpointDiscovery.Resolve(LocalnetProfile.AValidator1, env);
+
+        Assert.Equal("legacy-user-id", endpoints.ValidatorUserId);
+    }
+
+    [Fact]
+    public void Resolve_namespaced_validator_user_id_wins_over_legacy_global()
+    {
+        var env = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [EndpointDiscovery.ValidatorUserIdEnv] = "legacy-user-id",
+            ["CANTON_LOCALNET_A_VALIDATOR_1_VALIDATOR_USER_ID"] = "per-slot-user-id",
+        };
+
+        var endpoints = EndpointDiscovery.Resolve(LocalnetProfile.AValidator1, env);
+
+        Assert.Equal("per-slot-user-id", endpoints.ValidatorUserId);
+    }
+
+    [Fact]
+    public void Resolve_legacy_validator_user_id_env_does_not_apply_to_non_default_slot()
+    {
+        var env = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [EndpointDiscovery.ProfileEnv] = "a-validator-1",
+            [EndpointDiscovery.ValidatorUserIdEnv] = "legacy-user-id",
+        };
+
+        var bEndpoints = EndpointDiscovery.Resolve(LocalnetProfile.BValidator1, env);
+
+        Assert.Equal(string.Empty, bEndpoints.ValidatorUserId);
+    }
+
+    [Fact]
     public void Resolve_sv_validator_requires_explicit_client_secret()
     {
         var env = new Dictionary<string, string?>(StringComparer.Ordinal);

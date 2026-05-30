@@ -59,6 +59,14 @@ public sealed class ValidatorFixture : IAsyncDisposable
     /// </summary>
     public LocalnetEndpoints Endpoints { get; }
 
+    /// <summary>
+    /// The ledger user id this slot's <c>client_credentials</c> token
+    /// authenticates as. Grant this user <c>CanActAs</c> (via
+    /// <see cref="GrantUserRightsAsync"/>) before submitting commands as an
+    /// allocated party. See <see cref="LocalnetEndpoints.ValidatorUserId"/>.
+    /// </summary>
+    public string ValidatorUserId => Endpoints.ValidatorUserId;
+
     /// <summary>JSON Ledger Admin client scoped to this slot.</summary>
     public JsonLedgerAdminClient AdminClient { get; }
 
@@ -103,6 +111,20 @@ public sealed class ValidatorFixture : IAsyncDisposable
         IEnumerable<string>? readAs = null,
         CancellationToken cancellationToken = default)
         => UserBuilder.CreateAsync(userId, primaryParty, actAs, readAs, cancellationToken);
+
+    /// <summary>
+    /// Convenience pass-through to <see cref="UserBuilder.GrantRightsAsync"/>.
+    /// Grants <c>CanActAs</c> (and optionally <c>CanReadAs</c>) for the given
+    /// parties to an already-existing ledger user — e.g. this slot's validator
+    /// service-account token user (<see cref="ValidatorUserId"/>) — so that
+    /// <c>client_credentials</c>-authenticated command submission is authorized.
+    /// </summary>
+    public Task GrantUserRightsAsync(
+        string userId,
+        IEnumerable<string>? actAs = null,
+        IEnumerable<string>? readAs = null,
+        CancellationToken cancellationToken = default)
+        => UserBuilder.GrantRightsAsync(userId, actAs, readAs, cancellationToken);
 
     /// <summary>
     /// Disposes the scoped service container (if any) created for this

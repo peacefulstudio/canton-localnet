@@ -122,6 +122,120 @@ public class UserBuilderTests
     }
 
     [Fact]
+    public async Task GrantRightsAsync_posts_can_act_as_rights_without_creating_user()
+    {
+        var requests = new List<(Uri Uri, string Body)>();
+        var handler = new RecordingHandler(async (req, ct) =>
+        {
+            var body = req.Content is null ? string.Empty : await req.Content.ReadAsStringAsync(ct);
+            requests.Add((req.RequestUri!, body));
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{}", Encoding.UTF8, "application/json"),
+            };
+        });
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var builder = new UserBuilder(http, StaticTokenProvider("tok"));
+
+        await builder.GrantRightsAsync(
+            "c87743ab-80e0-4b83-935a-4c0582226691",
+            actAs: new[] { "alice::p" });
+
+        var recorded = Assert.Single(requests);
+        Assert.Equal(
+            new Uri(JsonApiBase, "v2/users/c87743ab-80e0-4b83-935a-4c0582226691/rights"),
+            recorded.Uri);
+
+        using var rightsBody = JsonDocument.Parse(recorded.Body);
+        Assert.Equal(
+            "c87743ab-80e0-4b83-935a-4c0582226691",
+            rightsBody.RootElement.GetProperty("userId").GetString());
+        var rights = rightsBody.RootElement.GetProperty("rights");
+        Assert.Equal(1, rights.GetArrayLength());
+        var canActAs = rights[0].GetProperty("kind").GetProperty("CanActAs");
+        Assert.Equal("alice::p", canActAs.GetProperty("value").GetProperty("party").GetString());
+    }
+
+    [Fact]
+    public async Task GrantRightsAsync_grants_can_read_as_rights_when_readAs_supplied()
+    {
+        var requests = new List<(Uri Uri, string Body)>();
+        var handler = new RecordingHandler(async (req, ct) =>
+        {
+            var body = req.Content is null ? string.Empty : await req.Content.ReadAsStringAsync(ct);
+            requests.Add((req.RequestUri!, body));
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{}", Encoding.UTF8, "application/json"),
+            };
+        });
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var builder = new UserBuilder(http, StaticTokenProvider("tok"));
+
+        await builder.GrantRightsAsync(
+            "some-user",
+            actAs: new[] { "alice::p" },
+            readAs: new[] { "observer::p" });
+
+        var recorded = Assert.Single(requests);
+        using var rightsBody = JsonDocument.Parse(recorded.Body);
+        var rights = rightsBody.RootElement.GetProperty("rights");
+        Assert.Equal(2, rights.GetArrayLength());
+        Assert.Equal(
+            "alice::p",
+            rights[0].GetProperty("kind").GetProperty("CanActAs").GetProperty("value").GetProperty("party").GetString());
+        Assert.Equal(
+            "observer::p",
+            rights[1].GetProperty("kind").GetProperty("CanReadAs").GetProperty("value").GetProperty("party").GetString());
+    }
+
+    [Fact]
+    public async Task GrantRightsAsync_issues_no_request_when_actAs_and_readAs_empty()
+    {
+        var calls = 0;
+        var handler = new RecordingHandler((_, _) =>
+        {
+            calls++;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{}", Encoding.UTF8, "application/json"),
+            });
+        });
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var builder = new UserBuilder(http, StaticTokenProvider("tok"));
+
+        await builder.GrantRightsAsync("some-user", actAs: Array.Empty<string>());
+
+        Assert.Equal(0, calls);
+    }
+
+    [Fact]
+    public async Task GrantRightsAsync_throws_when_rights_request_fails()
+    {
+        var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent("""{"cause":"INVALID_RIGHT"}""", Encoding.UTF8, "application/json"),
+        }));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var builder = new UserBuilder(http, StaticTokenProvider("tok"));
+
+        var exception = await Assert.ThrowsAsync<JsonLedgerApiException>(
+            () => builder.GrantRightsAsync("some-user", new[] { "alice::p" }));
+        Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
+    }
+
+    [Fact]
+    public async Task GrantRightsAsync_rejects_empty_user_id()
+    {
+        using var http = new HttpClient(new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK))))
+        {
+            BaseAddress = JsonApiBase,
+        };
+        var builder = new UserBuilder(http, StaticTokenProvider("tok"));
+        await Assert.ThrowsAsync<ArgumentException>(() => builder.GrantRightsAsync("", new[] { "alice::p" }));
+    }
+
+    [Fact]
     public async Task CreateAsync_throws_when_create_request_fails()
     {
         var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Conflict)

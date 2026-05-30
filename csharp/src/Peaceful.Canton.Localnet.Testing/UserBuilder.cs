@@ -72,6 +72,38 @@ public sealed class UserBuilder
         return created;
     }
 
+    /// <summary>
+    /// Grants <c>CanActAs</c> (and optionally <c>CanReadAs</c>) rights to an
+    /// already-existing ledger user via <c>POST /v2/users/{id}/rights</c>,
+    /// without creating the user first. Use this to authorize the validator's
+    /// service-account token user (see
+    /// <see cref="LocalnetEndpoints.ValidatorUserId"/>) to act as an allocated
+    /// party so that <c>client_credentials</c>-authenticated command submission
+    /// passes Canton's Authorizer check. No request is issued when both
+    /// <paramref name="actAs"/> and <paramref name="readAs"/> are empty.
+    /// </summary>
+    public async Task GrantRightsAsync(
+        string userId,
+        IEnumerable<string>? actAs = null,
+        IEnumerable<string>? readAs = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new ArgumentException("User id must be non-empty.", nameof(userId));
+        }
+
+        var actAsList = (actAs ?? Array.Empty<string>()).ToArray();
+        var readAsList = (readAs ?? Array.Empty<string>()).ToArray();
+        if (actAsList.Length == 0 && readAsList.Length == 0)
+        {
+            return;
+        }
+
+        var token = await _tokenProvider.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
+        await PostGrantRightsAsync(token, userId, actAsList, readAsList, cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task<string> PostCreateUserAsync(
         string token,
         string userId,

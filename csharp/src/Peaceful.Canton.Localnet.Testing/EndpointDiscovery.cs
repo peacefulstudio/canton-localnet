@@ -21,8 +21,23 @@ public enum LocalnetProfile
 
 /// <summary>
 /// Holds the resolved endpoints a fixture needs: the JSON Ledger API base URL,
-/// the OAuth2 token endpoint, the expected token audience, and the
-/// client_credentials client id/secret.
+/// the OAuth2 token endpoint, the expected token audience, the
+/// client_credentials client id/secret, and the validator's service-account
+/// ledger <see cref="ValidatorUserId"/> that <c>client_credentials</c> tokens
+/// authenticate as.
+///
+/// <para>
+/// <see cref="ValidatorUserId"/> is the ledger user id the slot's
+/// <c>client_credentials</c> token authenticates as. Canton's Authorizer
+/// requires a submission's <c>userId</c> to equal the token's userId, so
+/// granting <c>CanActAs</c> to this user is what lets the fixture submit
+/// commands as an allocated party. Defaults to the a-validator-1 service
+/// account (the splice-quickstart LocalNet a-validator-1 validator user id);
+/// for other slots it is empty unless overridden via env. If splice rotates
+/// that id, override it with
+/// <c>CANTON_LOCALNET_A_VALIDATOR_1_VALIDATOR_USER_ID</c> to avoid a
+/// <c>PERMISSION_DENIED</c> against the wrong user.
+/// </para>
 /// </summary>
 public sealed record LocalnetEndpoints(
     Uri JsonLedgerApi,
@@ -30,7 +45,8 @@ public sealed record LocalnetEndpoints(
     string Audience,
     string ClientId,
     string ClientSecret,
-    string? Scope);
+    string? Scope,
+    string ValidatorUserId);
 
 /// <summary>
 /// Resolves the URLs and credentials a <see cref="LocalnetFixture"/> needs from
@@ -47,7 +63,8 @@ public sealed record LocalnetEndpoints(
 /// The legacy un-namespaced globals
 /// (<see cref="JsonApiUrlEnv"/>, <see cref="ClientIdEnv"/>,
 /// <see cref="ClientSecretEnv"/>, <see cref="TokenUrlEnv"/>,
-/// <see cref="AudienceEnv"/>, <see cref="ScopeEnv"/>) are honoured for
+/// <see cref="AudienceEnv"/>, <see cref="ScopeEnv"/>,
+/// <see cref="ValidatorUserIdEnv"/>) are honoured for
 /// the selected fixture profile only — they never leak into other slots'
 /// resolution paths, so <see cref="LocalnetFixture.Validator(string)"/>
 /// always routes to the slot's own endpoints. Per-slot variables win
@@ -70,6 +87,7 @@ public static class EndpointDiscovery
     public const string ClientIdEnv = "CANTON_LOCALNET_CLIENT_ID";
     public const string ClientSecretEnv = "CANTON_LOCALNET_CLIENT_SECRET";
     public const string ScopeEnv = "CANTON_LOCALNET_SCOPE";
+    public const string ValidatorUserIdEnv = "CANTON_LOCALNET_VALIDATOR_USER_ID";
     public const string ProfileEnv = "CANTON_LOCALNET_PROFILE";
 
     private const string DefaultAudience = "https://canton.network.global";
@@ -78,6 +96,8 @@ public static class EndpointDiscovery
 
     private const string AValidator1DemoClientSecret = "AL8648b9SfdTFImq7FV56Vd0KHifHBuC";
     private const string BcdValidator1DemoClientSecret = "6m12QyyGl81d9nABWQXMycZdXho6ejEX";
+
+    private const string AValidator1ValidatorUserId = "c87743ab-80e0-4b83-935a-4c0582226691";
 
     /// <summary>
     /// Returns true when enough environment variables are set to drive a real
@@ -197,13 +217,18 @@ public static class EndpointDiscovery
             ?? DefaultClientSecret(profile)
             ?? throw MissingCredential(profile, "CLIENT_SECRET");
 
+        var validatorUserId = GetValue(env, $"CANTON_LOCALNET_{slot}_VALIDATOR_USER_ID")
+            ?? (honourLegacyGlobals ? GetValue(env, ValidatorUserIdEnv) : null)
+            ?? DefaultValidatorUserId(profile);
+
         return new LocalnetEndpoints(
             JsonLedgerApi: new Uri(jsonApi, UriKind.Absolute),
             TokenEndpoint: new Uri(tokenUrl, UriKind.Absolute),
             Audience: audience,
             ClientId: clientId,
             ClientSecret: clientSecret,
-            Scope: scope);
+            Scope: scope,
+            ValidatorUserId: validatorUserId);
     }
 
     /// <summary>
@@ -273,6 +298,12 @@ public static class EndpointDiscovery
         LocalnetProfile.DValidator1 => BcdValidator1DemoClientSecret,
         LocalnetProfile.SvValidator1 => null,
         _ => null,
+    };
+
+    private static string DefaultValidatorUserId(LocalnetProfile profile) => profile switch
+    {
+        LocalnetProfile.AValidator1 => AValidator1ValidatorUserId,
+        _ => string.Empty,
     };
 
     private static string SlotEnvPrefix(LocalnetProfile profile) => profile switch
