@@ -1,0 +1,115 @@
+#cloud-config
+# Copyright (c) 2026 Peaceful Studio OÜ
+# SPDX-License-Identifier: Apache-2.0
+package_update: true
+package_upgrade: false
+packages:
+  - ca-certificates
+  - curl
+  - git
+  - make
+write_files:
+  - path: /opt/canton-localnet/provision.sh
+    permissions: "0700"
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      # Copyright (c) 2026 Peaceful Studio OÜ
+      # SPDX-License-Identifier: Apache-2.0
+      set -euo pipefail
+
+      LOG=/var/log/canton-localnet-bootstrap.log
+      DONE_FLAG=/var/lib/canton-localnet-provisioned
+      exec > >(tee -a "$LOG") 2>&1
+
+      DEVICE="/dev/disk/by-id/scsi-0HC_Volume_${volume_id}"
+      MOUNT="/mnt/canton-localnet-data"
+      mkdir -p "$MOUNT"
+
+      for _ in $(seq 1 60); do
+        [ -b "$DEVICE" ] && break
+        sleep 2
+      done
+
+      if [ ! -b "$DEVICE" ]; then
+        echo "FATAL: volume device $DEVICE never appeared after 120s — aborting before mkfs/mount" >&2
+        exit 1
+      fi
+
+      if ! blkid "$DEVICE" >/dev/null 2>&1; then
+        mkfs.ext4 -F "$DEVICE"
+      fi
+      if ! grep -qE "[[:space:]]$MOUNT[[:space:]]" /etc/fstab; then
+        echo "$DEVICE $MOUNT ext4 discard,nofail,defaults 0 0" >> /etc/fstab
+      fi
+      findmnt "$MOUNT" >/dev/null || mount "$DEVICE" "$MOUNT"
+
+      mkdir -p "$MOUNT/docker" /etc/docker
+      cat > /etc/docker/daemon.json <<JSON
+      {"data-root": "$MOUNT/docker"}
+      JSON
+
+      install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+        -o /etc/apt/keyrings/docker.asc
+      chmod a+r /etc/apt/keyrings/docker.asc
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+        > /etc/apt/sources.list.d/docker.list
+      apt-get update -o Acquire::Retries=3
+      apt-get install -y -o Acquire::Retries=3 docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+      apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+      SRC="$MOUNT/canton-localnet"
+      AUTH_HEADER=""
+      REPO_TOKEN="${repo_token}"
+      if [ -n "$REPO_TOKEN" ]; then
+        AUTH_HEADER="Authorization: Basic $(printf 'x-access-token:%s' "$REPO_TOKEN" | base64 -w0)"
+      else
+        echo "WARN: repo_token empty — cloning unauthenticated (only works for a public repo)" >&2
+      fi
+      unset REPO_TOKEN
+
+      run_git() {
+        if [ -n "$AUTH_HEADER" ]; then
+          GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader GIT_CONFIG_VALUE_0="$AUTH_HEADER" git "$@"
+        else
+          git "$@"
+        fi
+      }
+
+      if [ ! -d "$SRC/.git" ]; then
+        run_git clone "${repo_url}" "$SRC"
+      fi
+      run_git -C "$SRC" fetch --all --prune
+      run_git -C "$SRC" checkout "${repo_ref}"
+      if run_git -C "$SRC" symbolic-ref -q HEAD >/dev/null; then
+        run_git -C "$SRC" pull --ff-only || { echo "FATAL: ff-only pull failed — branch diverged, refusing to deploy stale checkout" >&2; exit 1; }
+      fi
+      unset AUTH_HEADER
+
+      cd "$SRC"
+
+      # The scheduled Terraform `down` apply (server_enabled=false destroys the
+      # server resource) on a prior lifecycle event abruptly killed dockerd.
+      # Docker's persisted engine state is then left inconsistent in several ways:
+      # stale containers with nil RW layers, a corrupt BuildKit cache, and
+      # locally-built images referencing missing content-store blobs. Reset that
+      # mutable engine state via the `make down` below so `make up` recreates
+      # containers and rebuilds images from the (intact, crash-consistent) pulled
+      # base layers. Pulled images and the data volumes on the persistent disk are
+      # untouched, so ledger state carries over. There is no upstream issue
+      # reference; the inconsistent-engine-state was observed empirically.
+      docker info >/dev/null 2>&1 || { echo "FATAL: docker daemon not responding after install — aborting" >&2; exit 1; }
+      make down || echo "WARN: make down failed (likely nothing to tear down) — continuing" >&2
+      docker buildx prune -af || echo "WARN: buildx prune failed — make up may reuse stale cache" >&2
+      BUILT_IMAGES="$(docker images --format '{{.Repository}}:{{.Tag}}' | grep '^localnet-' || true)"
+      if [ -n "$BUILT_IMAGES" ]; then
+        docker rmi -f $BUILT_IMAGES || echo "WARN: failed to remove $BUILT_IMAGES — make up may reuse corrupt images" >&2
+      fi
+
+      make up
+
+      mkdir -p "$(dirname "$DONE_FLAG")"
+      touch "$DONE_FLAG"
+runcmd:
+  - /opt/canton-localnet/provision.sh

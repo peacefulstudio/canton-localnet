@@ -2,8 +2,15 @@
 compose/.tmp/
 compose/.env.local
 .env.local
+.env
 
 .DS_Store
+
+# Built CLI binary
+/canton-localnet
+
+# Local agent tooling
+.claude/
 
 # Acceptance-test state files (sentinel usernames etc.)
 tests/acceptance/.*-state

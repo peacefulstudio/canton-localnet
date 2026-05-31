@@ -40,6 +40,11 @@ func TestBuildArgsDefaultPorts(t *testing.T) {
 		"11901:localhost:11901",
 		"7575:localhost:7575",
 		"8082:localhost:8082",
+		"10975:localhost:10975",
+		"11975:localhost:11975",
+		"12975:localhost:12975",
+		"13975:localhost:13975",
+		"14975:localhost:14975",
 	} {
 		if !containsAdjacent(args, "-L", want) {
 			t.Errorf("expected -L %s in args, got %v", want, args)
@@ -218,7 +223,7 @@ func TestOpenPropagatesContextCancel(t *testing.T) {
 
 func TestDefaultPortsMatchHistoricalSet(t *testing.T) {
 	t.Parallel()
-	want := []int{11901, 7575, 8082}
+	want := []int{10975, 11975, 12975, 13975, 14975, 11901, 7575, 8082}
 	if len(DefaultPorts) != len(want) {
 		t.Fatalf("expected %d default ports, got %d (%v)", len(want), len(DefaultPorts), DefaultPorts)
 	}

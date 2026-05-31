@@ -20,18 +20,18 @@ import (
 	"strings"
 )
 
-// DefaultPorts is the port set murmures' historical tunnel.sh and
-// terraform-provider-canton's bash tunnel scripts both forward:
+// DefaultPorts is the port set forwarded by the LocalNet tunnel:
 //
-//   - 11901: Canton public API (gRPC) on the a-validator-1 participant
-//   - 7575: in-container Splice JSON Ledger API on the a-validator-1
-//     participant. Note this is the in-container port; the host-side
-//     port under ADR-0002's 5-digit renumbering is 11975 — kept here
+//   - 10975–14975: host-side JSON Ledger API per ADR-0002's two-digit
+//     prefix scheme (10=sv, 11=a, 12=b, 13=c, 14=d) — what remote Go/C#
+//     fixtures resolve as CANTON_LOCALNET_<slot>_JSON_PORT.
+//   - 11901: Canton public API (gRPC) on the a-validator-1 participant.
+//   - 7575: in-container Splice JSON Ledger API on a-validator-1, kept
 //     for legacy tunnel-script compatibility.
-//   - 8082: Keycloak (nginx-keycloak), shared across all validators
+//   - 8082: Keycloak (nginx-keycloak), shared across all validators.
 //
 // Changing this set is a breaking change for downstream consumers.
-var DefaultPorts = []int{11901, 7575, 8082}
+var DefaultPorts = []int{10975, 11975, 12975, 13975, 14975, 11901, 7575, 8082}
 
 // Runner abstracts process execution so unit tests can assert the ssh
 // argument vector without forking real ssh.

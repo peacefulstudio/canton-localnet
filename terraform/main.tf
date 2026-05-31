@@ -91,9 +91,9 @@ resource "aws_instance" "localnet" {
   vpc_security_group_ids = [aws_security_group.localnet.id]
 
   user_data = templatefile("${path.module}/templates/user_data.sh.tftpl", {
-    github_token    = var.github_token
-    localnet_branch = var.localnet_branch
-    consumer_repo   = var.consumer_repo
+    repo_url   = var.repo_url
+    repo_ref   = var.repo_ref
+    repo_token = var.repo_token
   })
   user_data_replace_on_change = true
 

@@ -20,35 +20,36 @@ variable "volume_size" {
 }
 
 variable "project_name" {
-  description = "Name prefix for AWS resources (key pair, security group, Name tag). Defaults to the murmures-era prefix so state import lines up byte-for-byte."
+  description = "Name prefix for AWS resources (key pair, security group, Name tag)."
   type        = string
-  default     = "murmures-localnet"
+  default     = "canton-localnet"
 }
 
-variable "consumer_repo" {
-  description = "GitHub repo (owner/name) the VM clones on first boot. The clone URL is derived as https://github.com/<consumer_repo>.git and the clone destination is $HOME/<basename(consumer_repo)>; the repo must expose infra/provision/install.sh and infra/provision/deploy.sh."
+variable "repo_url" {
+  description = "Clone URL of the repo whose docker-compose LocalNet stack the box runs. Override with a public mirror to clone without a token."
   type        = string
-  default     = "peacefulstudio/murmures"
-}
-
-variable "github_token" {
-  description = "GitHub PAT used by the VM bootstrap to clone the consumer repo. Source via TF_VAR_github_token."
-  type        = string
-  sensitive   = true
+  default     = "https://github.com/peacefulstudio/canton-localnet-internal.git"
 
   validation {
-    condition     = length(trimspace(var.github_token)) > 0
-    error_message = "github_token must be a non-empty string. Source it via TF_VAR_github_token."
+    condition     = can(regex("^https://[A-Za-z0-9._/-]+$", var.repo_url))
+    error_message = "repo_url must be an https:// URL containing only [A-Za-z0-9._/-] (it is inlined into a shell script at boot)."
   }
 }
 
-variable "localnet_branch" {
-  description = "Git branch the VM clones and deploys on first boot."
+variable "repo_ref" {
+  description = "Git ref (branch or tag) of repo_url to check out on the box."
   type        = string
   default     = "dev"
 
   validation {
-    condition     = can(regex("^[A-Za-z0-9._][A-Za-z0-9._/-]*$", var.localnet_branch))
-    error_message = "localnet_branch must contain only [A-Za-z0-9._/-] and cannot start with '-' or '/' (the value is inlined into shell + git commands)."
+    condition     = can(regex("^[A-Za-z0-9._][A-Za-z0-9._/-]*$", var.repo_ref))
+    error_message = "repo_ref must contain only [A-Za-z0-9._/-] and cannot start with '-' or '/' (the value is inlined into shell + git commands)."
   }
+}
+
+variable "repo_token" {
+  description = "Optional read-only token for cloning a private repo_url. Leave empty when repo_url is a public mirror."
+  type        = string
+  default     = ""
+  sensitive   = true
 }

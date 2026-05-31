@@ -41,8 +41,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (volumes preserved), and re-verifies the sentinel survives — wired
   into the `warm-restart` CI scenario in
   `.github/workflows/integration-tests.yaml`.
+- Hetzner Cloud LocalNet VM Terraform module (`terraform/hetzner/`)
+  (#80): a part-time CCX33 server gated by `server_enabled`, brought up
+  on weekday mornings and deleted each evening (delete-not-poweroff) by
+  `.github/workflows/hetzner-localnet-schedule.yaml`. Ledger state
+  persists on a retained ext4 volume (Docker `data-root` relocated onto
+  it) behind a retained primary IP across the nightly recreate. A
+  `LOCALNET_PAUSED` repo variable forces the VM down for holds.
+- Keyless CI Terraform-state access via AWS OIDC
+  (`terraform/github-oidc/`) (#80): an IAM role whose trust policy is
+  scoped to this repo's `dev` branch and `localnet-infra` GitHub
+  environment, replacing long-lived AWS keys in CI.
 
 ### Changed
+
+- **BREAKING (AWS Terraform root module):** the `terraform/` AWS stack
+  is now self-contained — it clones `canton-localnet` and runs `make up`
+  directly instead of invoking a consumer repo's `install.sh`/`deploy.sh`
+  (#80). The `consumer_repo` / `github_token` / `localnet_branch`
+  variables are replaced by `repo_url` / `repo_ref` / `repo_token`;
+  update any `.tfvars` accordingly.
 
 - DAR-upload integration tests run for the first time in CI (#60).
   Both Go and C# fixtures self-skip the DAR-upload portion on empty
@@ -102,6 +120,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   own onboarding wrote LF 2.2 events into the ledger stream. The
   override is still honoured (`SCRIBE_VERSION=… canton-localnet up`),
   so downstream consumers can pin back if needed.
+
+### Security
+
+- Scope the CI Terraform-state OIDC role to a single branch and
+  environment (#80): the trust policy now requires the `aud`, `sub`
+  (`…:environment:localnet-infra`), and `ref` (`refs/heads/dev`) claims
+  together, replacing a `repo:…:*` wildcard, and the state-access policy
+  is scoped to the Hetzner key prefix rather than the whole bucket.
+- Pass the repo clone token via a per-invocation
+  `git -c http.extraHeader=…` on both the AWS and Hetzner provisioners
+  instead of embedding it in the clone URL (#80); the token is never
+  written to `.git/config` or the boot log.
 
 ## [0.6.2-4] - 2026-05-16
 

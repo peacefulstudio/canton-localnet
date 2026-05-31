@@ -13,59 +13,61 @@ if [ -f "$DONE_FLAG" ]; then
   exit 0
 fi
 
-CONSUMER_REPO="${consumer_repo}"
-REPO_NAME="$${CONSUMER_REPO##*/}"
+apt-get update -o Acquire::Retries=3
+apt-get install -y -o Acquire::Retries=3 git ca-certificates curl make
+
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+chmod a+r /etc/apt/keyrings/docker.asc
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+  > /etc/apt/sources.list.d/docker.list
+apt-get update -o Acquire::Retries=3
+apt-get install -y -o Acquire::Retries=3 docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+REPO_URL="${repo_url}"
+REPO_NAME="$${REPO_URL##*/}"
+REPO_NAME="$${REPO_NAME%.git}"
 HOME_DIR=/home/ubuntu
 REPO_DIR="$HOME_DIR/$REPO_NAME"
 
-# Write secrets without `set -x` so the GITHUB_TOKEN never lands in $LOG.
-set +x
-umask 077
-cat > "$HOME_DIR/.env" <<EOF
-GITHUB_TOKEN=${github_token}
-LOCALNET_BRANCH=${localnet_branch}
-EOF
-chown ubuntu:ubuntu "$HOME_DIR/.env"
-chmod 600 "$HOME_DIR/.env"
-umask 022
-
-apt-get update -o Acquire::Retries=3
-apt-get install -y -o Acquire::Retries=3 git ca-certificates curl
-
-# Drop a partial clone so a transient git failure on a previous boot is retried.
 if [ -d "$REPO_DIR" ] && [ ! -d "$REPO_DIR/.git" ]; then
   rm -rf "$REPO_DIR"
 fi
 
-if [ ! -d "$REPO_DIR/.git" ]; then
-  AUTH_HEADER="Authorization: Basic $(printf 'x-access-token:%s' "${github_token}" | base64 -w0)"
-  sudo -u ubuntu git -c http.extraHeader="$AUTH_HEADER" clone \
-    -b "${localnet_branch}" \
-    "https://github.com/$${CONSUMER_REPO}.git" \
-    "$REPO_DIR"
-  unset AUTH_HEADER
+AUTH_HEADER=""
+REPO_TOKEN="${repo_token}"
+if [ -n "$REPO_TOKEN" ]; then
+  AUTH_HEADER="Authorization: Basic $(printf 'x-access-token:%s' "$REPO_TOKEN" | base64 -w0)"
+else
+  echo "WARN: repo_token empty — cloning unauthenticated (only works for a public repo)" >&2
 fi
-set -x
+unset REPO_TOKEN
 
-sudo -u ubuntu bash "$REPO_DIR/infra/provision/install.sh"
+run_git() {
+  if [ -n "$AUTH_HEADER" ]; then
+    GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader GIT_CONFIG_VALUE_0="$AUTH_HEADER" sudo -u ubuntu --preserve-env=GIT_CONFIG_COUNT,GIT_CONFIG_KEY_0,GIT_CONFIG_VALUE_0 git "$@"
+  else
+    sudo -u ubuntu git "$@"
+  fi
+}
 
-# install.sh adds the docker group; verify before invoking sg(1).
+if [ ! -d "$REPO_DIR/.git" ]; then
+  run_git clone "$REPO_URL" "$REPO_DIR"
+fi
+
+run_git -C "$REPO_DIR" fetch --all --prune
+run_git -C "$REPO_DIR" checkout "${repo_ref}"
+if run_git -C "$REPO_DIR" symbolic-ref -q HEAD >/dev/null; then
+  run_git -C "$REPO_DIR" pull --ff-only || { echo "FATAL: ff-only pull failed — branch diverged, refusing to deploy stale checkout" >&2; exit 1; }
+fi
+unset AUTH_HEADER
+
 if ! getent group docker >/dev/null; then
-  echo "Error: docker group missing after install.sh — aborting bootstrap" >&2
+  echo "Error: docker group missing after docker install — aborting bootstrap" >&2
   exit 1
 fi
 
-cat > /usr/local/bin/canton-localnet-bootstrap-deploy <<WRAPPER
-#!/usr/bin/env bash
-set -euo pipefail
-[ -f /etc/profile.d/nix.sh ] && . /etc/profile.d/nix.sh
-[ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ] && . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
-export PATH="\$HOME/.dpm/bin:\$HOME/.daml/bin:\$PATH"
-exec "\$HOME/$REPO_NAME/infra/provision/deploy.sh"
-WRAPPER
-chmod +x /usr/local/bin/canton-localnet-bootstrap-deploy
-
-sudo -u ubuntu sg docker -c /usr/local/bin/canton-localnet-bootstrap-deploy
+sudo -u ubuntu sg docker -c "cd '$REPO_DIR' && make up"
 
 mkdir -p "$(dirname "$DONE_FLAG")"
 date -u +%FT%TZ > "$DONE_FLAG"

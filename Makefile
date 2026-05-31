@@ -137,3 +137,13 @@ test-restart-survival: ## Onboarding-client restart-survival acceptance test (dr
 	$(MAKE) up
 	$(COMPOSE_DIR)/scripts/wait-ready.sh
 	tests/acceptance/restart-survival.sh verify
+
+HETZNER_DIR := terraform/hetzner
+
+.PHONY: hetzner-up
+hetzner-up: ## Create the Hetzner LocalNet server (re-attaches the persistent volume)
+	terraform -chdir=$(HETZNER_DIR) apply
+
+.PHONY: hetzner-down
+hetzner-down: ## Delete only the Hetzner server; keep volume, primary IP, SSH key, firewall
+	terraform -chdir=$(HETZNER_DIR) apply -var server_enabled=false
