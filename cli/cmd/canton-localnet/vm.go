@@ -34,9 +34,10 @@ type terraformFactory func(dir string, stdout, stderr io.Writer) terraformClient
 type tunnelFactory func(stdout, stderr io.Writer) tunnelClient
 
 type vmDeps struct {
-	makeTerraform terraformFactory
-	makeTunnel    tunnelFactory
-	isTerminal    func(fd uintptr) bool
+	makeTerraform    terraformFactory
+	makeTunnel       tunnelFactory
+	isTerminal       func(fd uintptr) bool
+	identityFallback func() string
 }
 
 func defaultVMDeps() vmDeps {
@@ -54,6 +55,14 @@ func defaultVMDeps() vmDeps {
 			return c
 		},
 		isTerminal: func(_ uintptr) bool { return stdinIsTerminal() },
+		identityFallback: func() string {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "vm tunnel: warning: could not determine home directory: %v\n", err)
+				return ""
+			}
+			return filepath.Join(home, ".ssh", "canton-localnet")
+		},
 	}
 }
 
@@ -151,7 +160,7 @@ func newVMTunnelCommand(deps vmDeps) *cobra.Command {
 				return err
 			}
 			tfDir := filepath.Join(repoRoot, "terraform")
-			resolved, err := resolveTunnelTarget(cmd.Context(), tfDir, deps, cmd.ErrOrStderr(), host, user, identity)
+			resolved, err := resolveTunnelTarget(cmd.Context(), tfDir, deps, cmd.ErrOrStderr(), host, user, identity, deps.identityFallback)
 			if err != nil {
 				return err
 			}
@@ -178,7 +187,7 @@ type tunnelTarget struct {
 	IdentityFile string
 }
 
-func resolveTunnelTarget(ctx context.Context, tfDir string, deps vmDeps, errOut io.Writer, host, user, identity string) (tunnelTarget, error) {
+func resolveTunnelTarget(ctx context.Context, tfDir string, deps vmDeps, errOut io.Writer, host, user, identity string, identityFallback func() string) (tunnelTarget, error) {
 	target := tunnelTarget{Host: host, User: user, IdentityFile: identity}
 	if target.Host != "" && target.IdentityFile != "" && target.User != "" {
 		return target, nil
@@ -191,17 +200,20 @@ func resolveTunnelTarget(ctx context.Context, tfDir string, deps vmDeps, errOut 
 	if target.Host == "" {
 		target.Host = outs.ElasticIP
 	}
-	if target.IdentityFile == "" {
-		target.IdentityFile = outs.SSHKeyPath
+	if target.IdentityFile == "" && identityFallback != nil {
+		if p := identityFallback(); p != "" {
+			if _, err := os.Stat(p); err == nil {
+				target.IdentityFile = p
+			} else if !errors.Is(err, os.ErrNotExist) {
+				fmt.Fprintf(errOut, "vm tunnel: warning: could not stat %s: %v (proceeding without it)\n", p, err)
+			}
+		}
 	}
 	if target.User == "" {
 		target.User = userFromSSHCommand(outs.SSHCommand)
 	}
 	if target.Host == "" {
 		return tunnelTarget{}, errors.New("vm tunnel: could not resolve remote host (terraform output elastic_ip is empty, use --host)")
-	}
-	if target.IdentityFile == "" {
-		return tunnelTarget{}, errors.New("vm tunnel: could not resolve ssh identity (terraform output ssh_key_path is empty, use --identity)")
 	}
 	if target.User == "" {
 		target.User = "ubuntu"
@@ -237,16 +249,9 @@ func printProvisionResult(out io.Writer, outs terraform.Outputs) error {
 	if outs.InstanceID == "" {
 		return errors.New("vm provision: terraform apply succeeded but instance_id output is empty")
 	}
-	if outs.SSHKeyPath == "" {
-		return errors.New("vm provision: terraform apply succeeded but ssh_key_path output is empty")
-	}
 	fmt.Fprintln(out, "VM provisioned.")
 	fmt.Fprintf(out, "  Instance ID:  %s\n", outs.InstanceID)
 	fmt.Fprintf(out, "  Public IP:    %s\n", outs.ElasticIP)
-	fmt.Fprintf(out, "  SSH key:      %s\n", outs.SSHKeyPath)
-	if outs.SSHCommand != "" {
-		fmt.Fprintf(out, "  SSH command:  %s\n", outs.SSHCommand)
-	}
 	return nil
 }
 

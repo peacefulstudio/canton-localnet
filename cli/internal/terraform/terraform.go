@@ -65,7 +65,6 @@ type Outputs struct {
 	InstanceID string `json:"instance_id"`
 	ElasticIP  string `json:"elastic_ip"`
 	SSHCommand string `json:"ssh_command"`
-	SSHKeyPath string `json:"ssh_key_path"`
 	Region     string `json:"region"`
 }
 
@@ -170,9 +169,6 @@ func parseOutputs(data []byte) (Outputs, error) {
 		return Outputs{}, err
 	}
 	if err := assignString(raw, "ssh_command", &out.SSHCommand); err != nil {
-		return Outputs{}, err
-	}
-	if err := assignString(raw, "ssh_key_path", &out.SSHKeyPath); err != nil {
 		return Outputs{}, err
 	}
 	if err := assignString(raw, "region", &out.Region); err != nil {

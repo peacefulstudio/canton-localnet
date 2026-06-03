@@ -72,3 +72,9 @@ variable "repo_token" {
   sensitive   = true
   description = "Optional read-only token for cloning a private repo_url. Leave empty when repo_url is a public mirror."
 }
+
+variable "developer_ssh_public_keys" {
+  type        = map(string)
+  default     = {}
+  description = "Map of name → OpenSSH public key to register on the server's authorized_keys. Defaults to empty (no developer SSH access). Pass via TF_VAR_developer_ssh_public_keys or a .tfvars file kept outside the repo."
+}

@@ -85,7 +85,8 @@ func runVM(t *testing.T, tf *fakeTerraform, tn *fakeTunnel, isTTY bool, stdin io
 		makeTunnel: func(_ io.Writer, _ io.Writer) tunnelClient {
 			return tn
 		},
-		isTerminal: func(_ uintptr) bool { return isTTY },
+		isTerminal:       func(_ uintptr) bool { return isTTY },
+		identityFallback: func() string { return "" },
 	}
 	root := newRootCommandWithVM(nil, deps)
 	stdout := &bytes.Buffer{}
@@ -120,8 +121,6 @@ func TestVMProvisionRunsInitApplyOutputs(t *testing.T) {
 		outputs: terraform.Outputs{
 			InstanceID: "i-abc",
 			ElasticIP:  "203.0.113.10",
-			SSHKeyPath: "/tmp/key",
-			SSHCommand: "ssh -i /tmp/key ubuntu@203.0.113.10",
 			Region:     "eu-north-1",
 		},
 	}
@@ -137,7 +136,7 @@ func TestVMProvisionRunsInitApplyOutputs(t *testing.T) {
 		t.Errorf("expected terraform dir %s, got %s", filepath.Join(root, "terraform"), tf.dir)
 	}
 	out := stdout.String()
-	for _, want := range []string{"203.0.113.10", "i-abc", "/tmp/key", "ssh -i /tmp/key ubuntu@203.0.113.10"} {
+	for _, want := range []string{"203.0.113.10", "i-abc"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("expected %q in provision output, got:\n%s", want, out)
 		}
@@ -160,7 +159,7 @@ func TestVMProvisionPropagatesApplyError(t *testing.T) {
 func TestVMProvisionFailsOnEmptyElasticIP(t *testing.T) {
 	t.Parallel()
 	root := newVMTestRepo(t)
-	tf := &fakeTerraform{outputs: terraform.Outputs{InstanceID: "i-1", SSHKeyPath: "/tmp/key"}}
+	tf := &fakeTerraform{outputs: terraform.Outputs{InstanceID: "i-1"}}
 	_, _, err := runVM(t, tf, nil, true, nil, "vm", "provision", "--repo-root", root)
 	if err == nil {
 		t.Fatal("expected error when elastic_ip is empty, got nil")
@@ -170,20 +169,10 @@ func TestVMProvisionFailsOnEmptyElasticIP(t *testing.T) {
 func TestVMProvisionFailsOnEmptyInstanceID(t *testing.T) {
 	t.Parallel()
 	root := newVMTestRepo(t)
-	tf := &fakeTerraform{outputs: terraform.Outputs{ElasticIP: "203.0.113.10", SSHKeyPath: "/tmp/key"}}
+	tf := &fakeTerraform{outputs: terraform.Outputs{ElasticIP: "203.0.113.10"}}
 	_, _, err := runVM(t, tf, nil, true, nil, "vm", "provision", "--repo-root", root)
 	if err == nil {
 		t.Fatal("expected error when instance_id is empty, got nil")
-	}
-}
-
-func TestVMProvisionFailsOnEmptySSHKeyPath(t *testing.T) {
-	t.Parallel()
-	root := newVMTestRepo(t)
-	tf := &fakeTerraform{outputs: terraform.Outputs{ElasticIP: "203.0.113.10", InstanceID: "i-1"}}
-	_, _, err := runVM(t, tf, nil, true, nil, "vm", "provision", "--repo-root", root)
-	if err == nil {
-		t.Fatal("expected error when ssh_key_path is empty, got nil")
 	}
 }
 
@@ -247,13 +236,27 @@ func TestVMTunnelReadsTerraformOutputs(t *testing.T) {
 	tf := &fakeTerraform{
 		outputs: terraform.Outputs{
 			ElasticIP:  "203.0.113.10",
-			SSHKeyPath: "/tmp/key",
-			SSHCommand: "ssh -i /tmp/key ubuntu@203.0.113.10",
+			SSHCommand: "ssh ubuntu@203.0.113.10",
 		},
 	}
+	keyFile := filepath.Join(t.TempDir(), "canton-localnet")
+	if err := os.WriteFile(keyFile, []byte("fake-key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	deps := defaultVMDeps()
+	deps.identityFallback = func() string { return keyFile }
+	deps.makeTerraform = func(dir string, _, _ io.Writer) terraformClient {
+		tf.dir = dir
+		return tf
+	}
+	deps.isTerminal = func(_ uintptr) bool { return true }
+
 	tn := &fakeTunnel{}
-	_, _, err := runVM(t, tf, tn, true, nil, "vm", "tunnel", "--repo-root", root)
-	if err != nil {
+	deps.makeTunnel = func(_, _ io.Writer) tunnelClient { return tn }
+
+	root2 := newRootCommandWithVM(nil, deps)
+	root2.SetArgs([]string{"vm", "tunnel", "--repo-root", root})
+	if err := root2.Execute(); err != nil {
 		t.Fatalf("vm tunnel: %v", err)
 	}
 	if len(tn.calls) != 1 {
@@ -263,18 +266,71 @@ func TestVMTunnelReadsTerraformOutputs(t *testing.T) {
 	if got.Host != "203.0.113.10" {
 		t.Errorf("expected host 203.0.113.10, got %q", got.Host)
 	}
+	if got.IdentityFile != keyFile {
+		t.Errorf("expected identity %q, got %q", keyFile, got.IdentityFile)
+	}
 	if got.User != "ubuntu" {
 		t.Errorf("expected user ubuntu, got %q", got.User)
 	}
-	if got.IdentityFile != "/tmp/key" {
-		t.Errorf("expected identity /tmp/key, got %q", got.IdentityFile)
+}
+
+func TestVMTunnelNoIdentityWhenFallbackAbsent(t *testing.T) {
+	t.Parallel()
+	root := newVMTestRepo(t)
+	tf := &fakeTerraform{outputs: terraform.Outputs{ElasticIP: "203.0.113.10"}}
+	tn := &fakeTunnel{}
+	deps := defaultVMDeps()
+	deps.identityFallback = func() string { return "/nonexistent/canton-localnet" }
+	deps.makeTerraform = func(dir string, _, _ io.Writer) terraformClient {
+		tf.dir = dir
+		return tf
+	}
+	deps.makeTunnel = func(_, _ io.Writer) tunnelClient { return tn }
+	deps.isTerminal = func(_ uintptr) bool { return true }
+
+	root2 := newRootCommandWithVM(nil, deps)
+	root2.SetArgs([]string{"vm", "tunnel", "--repo-root", root})
+	if err := root2.Execute(); err != nil {
+		t.Fatalf("vm tunnel: %v", err)
+	}
+	got := tn.calls[0].opts
+	if got.IdentityFile != "" {
+		t.Errorf("expected empty identity when fallback absent, got %q", got.IdentityFile)
+	}
+	if got.User != "ubuntu" {
+		t.Errorf("expected user ubuntu, got %q", got.User)
+	}
+}
+
+func TestVMTunnelNoIdentityWhenFallbackReturnsEmpty(t *testing.T) {
+	t.Parallel()
+	root := newVMTestRepo(t)
+	tf := &fakeTerraform{outputs: terraform.Outputs{ElasticIP: "203.0.113.10"}}
+	tn := &fakeTunnel{}
+	deps := defaultVMDeps()
+	deps.identityFallback = func() string { return "" }
+	deps.makeTerraform = func(dir string, _, _ io.Writer) terraformClient {
+		tf.dir = dir
+		return tf
+	}
+	deps.makeTunnel = func(_, _ io.Writer) tunnelClient { return tn }
+	deps.isTerminal = func(_ uintptr) bool { return true }
+
+	root2 := newRootCommandWithVM(nil, deps)
+	root2.SetArgs([]string{"vm", "tunnel", "--repo-root", root})
+	if err := root2.Execute(); err != nil {
+		t.Fatalf("vm tunnel: %v", err)
+	}
+	got := tn.calls[0].opts
+	if got.IdentityFile != "" {
+		t.Errorf("expected empty identity when fallback returns empty, got %q", got.IdentityFile)
 	}
 }
 
 func TestVMTunnelFlagsOverrideTerraformOutputs(t *testing.T) {
 	t.Parallel()
 	root := newVMTestRepo(t)
-	tf := &fakeTerraform{outputs: terraform.Outputs{ElasticIP: "203.0.113.10", SSHKeyPath: "/tmp/old"}}
+	tf := &fakeTerraform{outputs: terraform.Outputs{ElasticIP: "203.0.113.10"}}
 	tn := &fakeTunnel{}
 	_, _, err := runVM(t, tf, tn, true, nil,
 		"vm", "tunnel",
@@ -295,7 +351,7 @@ func TestVMTunnelFlagsOverrideTerraformOutputs(t *testing.T) {
 func TestVMTunnelErrorsWhenHostMissing(t *testing.T) {
 	t.Parallel()
 	root := newVMTestRepo(t)
-	tf := &fakeTerraform{outputs: terraform.Outputs{SSHKeyPath: "/tmp/key"}}
+	tf := &fakeTerraform{outputs: terraform.Outputs{}}
 	tn := &fakeTunnel{}
 	_, _, err := runVM(t, tf, tn, true, nil, "vm", "tunnel", "--repo-root", root)
 	if err == nil {
@@ -309,7 +365,7 @@ func TestVMTunnelErrorsWhenHostMissing(t *testing.T) {
 func TestVMTunnelPropagatesTunnelError(t *testing.T) {
 	t.Parallel()
 	root := newVMTestRepo(t)
-	tf := &fakeTerraform{outputs: terraform.Outputs{ElasticIP: "h", SSHKeyPath: "/k", SSHCommand: "ssh -i /k ubuntu@h"}}
+	tf := &fakeTerraform{outputs: terraform.Outputs{ElasticIP: "h"}}
 	tn := &fakeTunnel{err: errors.New("ssh exited 255")}
 	_, _, err := runVM(t, tf, tn, true, nil, "vm", "tunnel", "--repo-root", root)
 	if err == nil {

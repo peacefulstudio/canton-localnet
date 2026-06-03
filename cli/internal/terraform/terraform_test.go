@@ -126,7 +126,6 @@ func TestOutputsParsesJSON(t *testing.T) {
 		"instance_id":  {"value": "i-0123"},
 		"elastic_ip":   {"value": "203.0.113.10"},
 		"ssh_command":  {"value": "ssh -i /tmp/key ubuntu@203.0.113.10"},
-		"ssh_key_path": {"value": "/tmp/key"},
 		"region":       {"value": "eu-north-1"}
 	}`
 	runner := &fakeRunner{stdout: payload}
@@ -140,9 +139,6 @@ func TestOutputsParsesJSON(t *testing.T) {
 	}
 	if out.ElasticIP != "203.0.113.10" {
 		t.Errorf("ElasticIP = %q", out.ElasticIP)
-	}
-	if out.SSHKeyPath != "/tmp/key" {
-		t.Errorf("SSHKeyPath = %q", out.SSHKeyPath)
 	}
 	if out.SSHCommand != "ssh -i /tmp/key ubuntu@203.0.113.10" {
 		t.Errorf("SSHCommand = %q", out.SSHCommand)

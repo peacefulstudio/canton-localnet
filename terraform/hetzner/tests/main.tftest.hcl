@@ -22,7 +22,8 @@ mock_provider "hcloud" {
 
   mock_resource "hcloud_primary_ip" {
     defaults = {
-      id = "3"
+      id         = "3"
+      ip_address = "203.0.113.10"
     }
   }
 
@@ -78,25 +79,6 @@ run "volume_shape" {
   assert {
     condition     = hcloud_volume.localnet.format == "ext4"
     error_message = "volume must be formatted ext4"
-  }
-}
-
-run "ssh_key_shape" {
-  command = plan
-
-  assert {
-    condition     = tls_private_key.localnet.algorithm == "ED25519"
-    error_message = "ssh key must be ED25519"
-  }
-
-  assert {
-    condition     = local_sensitive_file.private_key.file_permission == "0600"
-    error_message = "private key file must be mode 0600"
-  }
-
-  assert {
-    condition     = endswith(local_sensitive_file.private_key.filename, "/.localnet-key.pem")
-    error_message = "private key must be written to .localnet-key.pem"
   }
 }
 
@@ -276,21 +258,37 @@ run "cloud_init_renders_mount_and_compose" {
 run "outputs_present" {
   command = plan
 
-  override_resource {
-    target          = hcloud_primary_ip.localnet
-    override_during = plan
-    values = {
-      ip_address = "203.0.113.10"
+  assert {
+    condition     = output.elastic_ip == "203.0.113.10"
+    error_message = "elastic_ip output must equal the primary IP address"
+  }
+}
+
+run "developer_keys_empty_by_default" {
+  command = plan
+
+  assert {
+    condition     = length(hcloud_ssh_key.developer) == 0
+    error_message = "no developer SSH keys must be registered when developer_ssh_public_keys is empty"
+  }
+}
+
+run "developer_keys_present" {
+  command = plan
+
+  variables {
+    developer_ssh_public_keys = {
+      alice = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyForPlanValidationOnlyNotARealKey0000"
     }
   }
 
   assert {
-    condition     = endswith(output.ssh_key_path, "/.localnet-key.pem")
-    error_message = "ssh_key_path must point at the local key file"
+    condition     = length(hcloud_ssh_key.developer) == 1
+    error_message = "one developer SSH key must be registered when developer_ssh_public_keys has one entry"
   }
 
   assert {
-    condition     = strcontains(output.ssh_command, "root@")
-    error_message = "ssh_command must connect as root"
+    condition     = hcloud_ssh_key.developer["alice"].name == "canton-localnet-alice"
+    error_message = "developer SSH key must be named canton-localnet-<map-key>"
   }
 }

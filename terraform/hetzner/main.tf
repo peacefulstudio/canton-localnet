@@ -13,19 +13,10 @@ resource "hcloud_volume" "localnet" {
   }
 }
 
-resource "tls_private_key" "localnet" {
-  algorithm = "ED25519"
-}
-
-resource "local_sensitive_file" "private_key" {
-  content         = tls_private_key.localnet.private_key_openssh
-  filename        = "${path.module}/.localnet-key.pem"
-  file_permission = "0600"
-}
-
-resource "hcloud_ssh_key" "localnet" {
-  name       = "canton-localnet-key"
-  public_key = tls_private_key.localnet.public_key_openssh
+resource "hcloud_ssh_key" "developer" {
+  for_each   = var.developer_ssh_public_keys
+  name       = "canton-localnet-${each.key}"
+  public_key = each.value
 }
 
 resource "hcloud_primary_ip" "localnet" {
@@ -57,7 +48,7 @@ resource "hcloud_server" "localnet" {
   server_type  = var.server_type
   image        = var.image
   location     = var.location
-  ssh_keys     = [hcloud_ssh_key.localnet.id]
+  ssh_keys     = [for k in hcloud_ssh_key.developer : k.id]
   firewall_ids = [hcloud_firewall.localnet.id]
 
   public_net {

@@ -37,13 +37,13 @@ Remote state lives in S3 (configured in `versions.tf`):
 | encryption | enabled |
 | locking | `use_lockfile` (S3-native lockfile) |
 
-## SSH key
+## SSH access
 
-There is **no `ssh_public_keys` input variable**. The module generates an
-ED25519 keypair with `tls_private_key` and writes the private key to
-`terraform/hetzner/.localnet-key.pem` (mode `0600`). The public half is
-registered as an `hcloud_ssh_key`. Use the generated private key to connect; the
-`ssh_command` output prints the exact command.
+There is no generated SSH key. Access is controlled via the
+`developer_ssh_public_keys` variable: supply a map of name → public-key string
+and each entry is registered as an `hcloud_ssh_key` named
+`canton-localnet-<key>`. An empty map (the default) means no developer keys are
+registered.
 
 ## Variables
 
@@ -59,14 +59,13 @@ registered as an `hcloud_ssh_key`. Use the generated private key to connect; the
 | `repo_url` | `…/canton-localnet-internal.git` | Git repository cloned on the server for LocalNet compose assets. |
 | `repo_ref` | `dev` | Git ref (branch, tag, or SHA) to check out. |
 | `repo_token` | — (sensitive) | Optional token for cloning a private repository. |
+| `developer_ssh_public_keys` | `{}` | Map of name → SSH public-key string. Each entry is registered as an `hcloud_ssh_key` named `canton-localnet-<key>`. |
 
 ## Outputs
 
 | Output | Description |
 |--------|-------------|
-| `ssh_command` | Ready-to-use SSH command (or a notice when `server_enabled=false`). |
-| `primary_ip` | Persistent public IPv4 address, stable across down/up cycles. |
-| `ssh_key_path` | Path to the generated private SSH key. |
+| `elastic_ip` | Persistent public IPv4 address, stable across down/up cycles. |
 
 ## Lifecycle
 
