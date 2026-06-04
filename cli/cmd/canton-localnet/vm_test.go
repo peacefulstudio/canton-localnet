@@ -348,6 +348,47 @@ func TestVMTunnelFlagsOverrideTerraformOutputs(t *testing.T) {
 	}
 }
 
+func TestVMTunnelWithHostFlagSkipsTerraform(t *testing.T) {
+	t.Parallel()
+	root := newVMTestRepo(t)
+	keyFile := filepath.Join(t.TempDir(), "canton-localnet")
+	if err := os.WriteFile(keyFile, []byte("fake-key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tf := &fakeTerraform{outputsErr: errors.New("no AWS credentials")}
+	tn := &fakeTunnel{}
+	deps := vmDeps{
+		makeTerraform: func(dir string, _, _ io.Writer) terraformClient {
+			tf.dir = dir
+			return tf
+		},
+		makeTunnel:       func(_, _ io.Writer) tunnelClient { return tn },
+		isTerminal:       func(_ uintptr) bool { return true },
+		identityFallback: func() string { return keyFile },
+	}
+	root2 := newRootCommandWithVM(nil, deps)
+	root2.SetArgs([]string{"vm", "tunnel", "--repo-root", root, "--host", "62.238.38.71"})
+	if err := root2.Execute(); err != nil {
+		t.Fatalf("vm tunnel: %v", err)
+	}
+	if len(tn.calls) != 1 {
+		t.Fatalf("expected one tunnel call, got %d", len(tn.calls))
+	}
+	got := tn.calls[0].opts
+	if got.Host != "62.238.38.71" {
+		t.Errorf("expected host 62.238.38.71, got %q", got.Host)
+	}
+	if got.IdentityFile != keyFile {
+		t.Errorf("expected identity %q, got %q", keyFile, got.IdentityFile)
+	}
+	if got.User != "ubuntu" {
+		t.Errorf("expected user ubuntu, got %q", got.User)
+	}
+	if len(tf.calls) != 0 {
+		t.Errorf("expected terraform not called when --host provided, got calls %v", tf.calls)
+	}
+}
+
 func TestVMTunnelErrorsWhenHostMissing(t *testing.T) {
 	t.Parallel()
 	root := newVMTestRepo(t)

@@ -189,17 +189,19 @@ type tunnelTarget struct {
 
 func resolveTunnelTarget(ctx context.Context, tfDir string, deps vmDeps, errOut io.Writer, host, user, identity string, identityFallback func() string) (tunnelTarget, error) {
 	target := tunnelTarget{Host: host, User: user, IdentityFile: identity}
-	if target.Host != "" && target.IdentityFile != "" && target.User != "" {
-		return target, nil
-	}
-	tf := deps.makeTerraform(tfDir, errOut, errOut)
-	outs, err := tf.Outputs(ctx)
-	if err != nil {
-		return tunnelTarget{}, fmt.Errorf("vm tunnel: read terraform outputs: %w", err)
-	}
+
 	if target.Host == "" {
+		tf := deps.makeTerraform(tfDir, errOut, errOut)
+		outs, err := tf.Outputs(ctx)
+		if err != nil {
+			return tunnelTarget{}, fmt.Errorf("vm tunnel: read terraform outputs: %w", err)
+		}
 		target.Host = outs.ElasticIP
+		if target.User == "" {
+			target.User = userFromSSHCommand(outs.SSHCommand)
+		}
 	}
+
 	if target.IdentityFile == "" && identityFallback != nil {
 		if p := identityFallback(); p != "" {
 			if _, err := os.Stat(p); err == nil {
@@ -209,9 +211,7 @@ func resolveTunnelTarget(ctx context.Context, tfDir string, deps vmDeps, errOut 
 			}
 		}
 	}
-	if target.User == "" {
-		target.User = userFromSSHCommand(outs.SSHCommand)
-	}
+
 	if target.Host == "" {
 		return tunnelTarget{}, errors.New("vm tunnel: could not resolve remote host (terraform output elastic_ip is empty, use --host)")
 	}
