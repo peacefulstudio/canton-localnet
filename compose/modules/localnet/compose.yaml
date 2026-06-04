@@ -191,7 +191,7 @@ services:
       start_interval: 5s
       timeout: 40s
       retries: 1000
-      start_period: 30s
+      start_period: 600s
     ports:
       - "${TEST_PORT-10$VALIDATOR_ADMIN_API_PORT_SUFFIX:}10${VALIDATOR_ADMIN_API_PORT_SUFFIX}"
       - "${TEST_PORT-11$VALIDATOR_ADMIN_API_PORT_SUFFIX:}11${VALIDATOR_ADMIN_API_PORT_SUFFIX}"

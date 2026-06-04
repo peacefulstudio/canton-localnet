@@ -88,6 +88,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `canton-localnet up` no longer aborts with `dependency failed to
+  start: container splice is unhealthy` when splice is merely slow to
+  pass its `readyz` healthcheck on a loaded runner. Bumped the splice
+  healthcheck `start_period` from `30s` to `600s` in
+  `compose/modules/localnet/compose.yaml`. While a container's health
+  status is `starting`, Compose's `up` dependency-waiter keeps waiting;
+  once `start_period` elapses, the first failing probe flips the status
+  to `unhealthy` and the waiter aborts the dependents (`nginx`,
+  `splice-onboarding`), exiting 1 before the generous `wait-ready`
+  step ever runs. The previous `30s` window was far shorter than
+  splice's real readiness time (CI budgets 600s per validator), so the
+  gate tripped intermittently. The high `retries: 1000` is unchanged;
+  a genuine container crash still surfaces immediately because the
+  waiter errors on an exited container. This removes the need for the
+  consumer-side bring-up retry that papered over the race.
 - Right-sized canton / splice JVM heaps and missing PQS caps for the
   full 5-validator topology (#72). The `canton` and `splice` JVMs each
   host every enabled slot's participant / validator app, so heap
