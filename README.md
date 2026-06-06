@@ -6,7 +6,7 @@ Shared, reusable Canton LocalNet artifact (compose + xUnit/Go fixtures + CLI + A
 
 ## Quickstart
 
-Boot a complete Canton LocalNet (Splice 0.6.2) on your machine:
+Boot a complete Canton LocalNet (Splice 0.6.5) on your machine:
 
 ```bash
 make up           # docker compose up -d, OAuth2 mode by default
