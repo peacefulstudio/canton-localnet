@@ -8,14 +8,14 @@ namespace Peaceful.Canton.Localnet.Testing.Tests;
 public class EndpointDiscoveryTests
 {
     [Theory]
-    [InlineData(LocalnetProfile.BValidator1, "http://localhost:12975")]
-    [InlineData(LocalnetProfile.AValidator1, "http://localhost:11975")]
-    [InlineData(LocalnetProfile.CValidator1, "http://localhost:13975")]
     [InlineData(LocalnetProfile.SvValidator1, "http://localhost:10975")]
+    [InlineData(LocalnetProfile.AValidator1, "http://localhost:11975")]
+    [InlineData(LocalnetProfile.BValidator1, "http://localhost:12975")]
+    [InlineData(LocalnetProfile.CValidator1, "http://localhost:13975")]
     [InlineData(LocalnetProfile.DValidator1, "http://localhost:14975")]
     public void Resolve_returns_default_json_api_url_per_profile(LocalnetProfile profile, string expected)
     {
-        var env = SvSecretIfNeeded(profile);
+        var env = SvCredentialsIfNeeded(profile);
 
         var endpoints = EndpointDiscovery.Resolve(profile, env);
 
@@ -33,6 +33,18 @@ public class EndpointDiscoveryTests
 
         Assert.Equal(expected, endpoints.ClientId);
         Assert.False(string.IsNullOrEmpty(endpoints.ClientSecret));
+    }
+
+    [Theory]
+    [InlineData(LocalnetProfile.AValidator1, "http://localhost:8082/realms/AValidator1/protocol/openid-connect/token")]
+    [InlineData(LocalnetProfile.BValidator1, "http://localhost:8082/realms/BValidator1/protocol/openid-connect/token")]
+    [InlineData(LocalnetProfile.CValidator1, "http://localhost:8082/realms/CValidator1/protocol/openid-connect/token")]
+    [InlineData(LocalnetProfile.DValidator1, "http://localhost:8082/realms/DValidator1/protocol/openid-connect/token")]
+    public void Resolve_returns_default_token_url_per_profile(LocalnetProfile profile, string expected)
+    {
+        var endpoints = EndpointDiscovery.Resolve(profile, new Dictionary<string, string?>(StringComparer.Ordinal));
+
+        Assert.Equal(new Uri(expected), endpoints.TokenEndpoint);
     }
 
     [Fact]
@@ -101,13 +113,50 @@ public class EndpointDiscoveryTests
     }
 
     [Fact]
-    public void Resolve_sv_validator_requires_explicit_client_secret()
+    public void Resolve_sv_validator_has_no_oauth2_defaults()
     {
         var env = new Dictionary<string, string?>(StringComparer.Ordinal);
 
         var ex = Assert.Throws<InvalidOperationException>(
             () => EndpointDiscovery.Resolve(LocalnetProfile.SvValidator1, env));
-        Assert.Contains("CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET", ex.Message);
+        Assert.Contains("TOKEN_URL", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("CANTON_LOCALNET_SV_VALIDATOR_1_TOKEN_URL")]
+    [InlineData("CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_ID")]
+    [InlineData("CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET")]
+    public void Resolve_sv_validator_requires_each_oauth2_field(string missingKey)
+    {
+        var env = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["CANTON_LOCALNET_SV_VALIDATOR_1_TOKEN_URL"] = "https://sv.example/token",
+            ["CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_ID"] = "sv-client",
+            ["CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET"] = "sv-secret",
+        };
+        env.Remove(missingKey);
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => EndpointDiscovery.Resolve(LocalnetProfile.SvValidator1, env));
+        Assert.Contains(missingKey, ex.Message);
+    }
+
+    [Fact]
+    public void Resolve_sv_validator_succeeds_with_explicit_oauth2_config()
+    {
+        var env = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["CANTON_LOCALNET_SV_VALIDATOR_1_TOKEN_URL"] = "https://sv.example/token",
+            ["CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_ID"] = "sv-client",
+            ["CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET"] = "sv-secret",
+        };
+
+        var endpoints = EndpointDiscovery.Resolve(LocalnetProfile.SvValidator1, env);
+
+        Assert.Equal(new Uri("https://sv.example/token"), endpoints.TokenEndpoint);
+        Assert.Equal("sv-client", endpoints.ClientId);
+        Assert.Equal("sv-secret", endpoints.ClientSecret);
+        Assert.Equal(new Uri("http://localhost:10975"), endpoints.JsonLedgerApi);
     }
 
     [Fact]
@@ -267,13 +316,54 @@ public class EndpointDiscoveryTests
         Assert.False(EndpointDiscovery.IsSlotAvailable(LocalnetProfile.BValidator1, env));
     }
 
+    [Fact]
+    public void IsSlotAvailable_returns_false_for_sv_when_per_slot_trio_set_but_token_url_missing()
+    {
+        var env = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["CANTON_LOCALNET_SV_VALIDATOR_1_JSON_API_URL"] = "http://localhost:10975",
+            ["CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_ID"] = "sv-client",
+            ["CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET"] = "sv-secret",
+        };
+
+        Assert.False(EndpointDiscovery.IsSlotAvailable(LocalnetProfile.SvValidator1, env));
+    }
+
+    [Fact]
+    public void IsSlotAvailable_returns_true_for_sv_when_per_slot_token_url_also_set()
+    {
+        var env = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["CANTON_LOCALNET_SV_VALIDATOR_1_JSON_API_URL"] = "http://localhost:10975",
+            ["CANTON_LOCALNET_SV_VALIDATOR_1_TOKEN_URL"] = "https://sv.example/token",
+            ["CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_ID"] = "sv-client",
+            ["CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET"] = "sv-secret",
+        };
+
+        Assert.True(EndpointDiscovery.IsSlotAvailable(LocalnetProfile.SvValidator1, env));
+    }
+
+    [Fact]
+    public void IsSlotAvailable_returns_false_for_default_sv_when_legacy_token_url_missing()
+    {
+        var env = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [EndpointDiscovery.ProfileEnv] = "sv-validator-1",
+            [EndpointDiscovery.JsonApiUrlEnv] = "http://localhost:10975",
+            [EndpointDiscovery.ClientIdEnv] = "sv-client",
+            [EndpointDiscovery.ClientSecretEnv] = "sv-secret",
+        };
+
+        Assert.False(EndpointDiscovery.IsSlotAvailable(LocalnetProfile.SvValidator1, env));
+    }
+
     [Theory]
-    [InlineData("b-validator-1", LocalnetProfile.BValidator1)]
-    [InlineData("B-VALIDATOR-1", LocalnetProfile.BValidator1)]
-    [InlineData("a-validator-1", LocalnetProfile.AValidator1)]
-    [InlineData("c-validator-1", LocalnetProfile.CValidator1)]
     [InlineData("sv-validator-1", LocalnetProfile.SvValidator1)]
     [InlineData("super-validator", LocalnetProfile.SvValidator1)]
+    [InlineData("a-validator-1", LocalnetProfile.AValidator1)]
+    [InlineData("b-validator-1", LocalnetProfile.BValidator1)]
+    [InlineData("B-VALIDATOR-1", LocalnetProfile.BValidator1)]
+    [InlineData("c-validator-1", LocalnetProfile.CValidator1)]
     [InlineData("d-validator-1", LocalnetProfile.DValidator1)]
     [InlineData("D-VALIDATOR-1", LocalnetProfile.DValidator1)]
     public void ResolveProfile_maps_string_to_enum(string raw, LocalnetProfile expected)
@@ -303,11 +393,13 @@ public class EndpointDiscoveryTests
         Assert.Throws<InvalidOperationException>(() => EndpointDiscovery.ResolveProfile(env));
     }
 
-    private static Dictionary<string, string?> SvSecretIfNeeded(LocalnetProfile profile)
+    private static Dictionary<string, string?> SvCredentialsIfNeeded(LocalnetProfile profile)
     {
         var env = new Dictionary<string, string?>(StringComparer.Ordinal);
         if (profile == LocalnetProfile.SvValidator1)
         {
+            env["CANTON_LOCALNET_SV_VALIDATOR_1_TOKEN_URL"] = "https://sv.example/token";
+            env["CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_ID"] = "sv-test-client";
             env["CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET"] = "sv-test-secret";
         }
         return env;

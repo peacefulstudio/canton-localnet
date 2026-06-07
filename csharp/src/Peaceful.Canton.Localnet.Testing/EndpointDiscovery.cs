@@ -12,10 +12,10 @@ namespace Peaceful.Canton.Localnet.Testing;
 /// </summary>
 public enum LocalnetProfile
 {
-    BValidator1,
-    AValidator1,
-    CValidator1,
     SvValidator1,
+    AValidator1,
+    BValidator1,
+    CValidator1,
     DValidator1,
 }
 
@@ -75,8 +75,12 @@ public sealed record LocalnetEndpoints(
 /// SECURITY: the per-slot <c>CLIENT_SECRET</c> defaults for a, b, c, d are
 /// the public LocalNet demo credentials shipped with the splice quickstart.
 /// They are valid only against an ephemeral local Keycloak realm — never
-/// use them in any non-localhost or production deployment. The
-/// sv-validator-1 secret has no default and must be set explicitly.
+/// use them in any non-localhost or production deployment. The sv-validator-1
+/// slot has no OAuth2 defaults at all — its token URL, client id, and client
+/// secret are all unset, because no Keycloak realm is provisioned for the SV
+/// slot (the keycloak module ships realms for a, b, c, d only), so there is
+/// nothing to derive them from. To drive the SV slot through this OAuth2 flow,
+/// all three must be supplied explicitly via env.
 /// </para>
 /// </summary>
 public static class EndpointDiscovery
@@ -120,10 +124,21 @@ public static class EndpointDiscovery
     /// precedence rules of <see cref="Resolve(LocalnetProfile, IReadOnlyDictionary{string, string?})"/>:
     /// the per-slot trio (<c>CANTON_LOCALNET_&lt;SLOT&gt;_JSON_API_URL</c>,
     /// <c>CLIENT_ID</c>, <c>CLIENT_SECRET</c>) satisfies availability for any
-    /// slot; the legacy un-namespaced globals only satisfy availability for
+    /// a/b/c/d slot (sv-validator-1 additionally requires its token URL, see
+    /// below); the legacy un-namespaced globals only satisfy availability for
     /// the fixture's resolved default profile, so a multi-slot integration
     /// test can gate the non-default side independently and skip cleanly when
     /// only the default slot is reachable.
+    ///
+    /// <para>
+    /// The sv-validator-1 slot additionally requires a token URL — either the
+    /// per-slot <c>CANTON_LOCALNET_SV_VALIDATOR_1_TOKEN_URL</c> or, for the
+    /// default profile, the legacy <see cref="TokenUrlEnv"/> — because, unlike
+    /// a/b/c/d, it has no default token endpoint to fall back on. Without it
+    /// availability would report a slot that <see cref="Resolve(LocalnetProfile, IReadOnlyDictionary{string, string?})"/>
+    /// cannot actually resolve, so a gated integration test would crash instead
+    /// of skipping.
+    /// </para>
     /// </summary>
     public static bool IsSlotAvailable(
         LocalnetProfile profile,
@@ -131,19 +146,26 @@ public static class EndpointDiscovery
     {
         var env = environment ?? Snapshot();
         var slot = SlotEnvPrefix(profile);
+        var isDefaultProfile = profile == ResolveProfile(env);
+        var tokenUrlAvailable = DefaultTokenUrl(profile) is not null
+            || !string.IsNullOrEmpty(GetValue(env, $"CANTON_LOCALNET_{slot}_TOKEN_URL"))
+            || (isDefaultProfile && !string.IsNullOrEmpty(GetValue(env, TokenUrlEnv)));
+
         if (!string.IsNullOrEmpty(GetValue(env, $"CANTON_LOCALNET_{slot}_JSON_API_URL"))
             && !string.IsNullOrEmpty(GetValue(env, $"CANTON_LOCALNET_{slot}_CLIENT_ID"))
-            && !string.IsNullOrEmpty(GetValue(env, $"CANTON_LOCALNET_{slot}_CLIENT_SECRET")))
+            && !string.IsNullOrEmpty(GetValue(env, $"CANTON_LOCALNET_{slot}_CLIENT_SECRET"))
+            && tokenUrlAvailable)
         {
             return true;
         }
-        if (profile != ResolveProfile(env))
+        if (!isDefaultProfile)
         {
             return false;
         }
         return !string.IsNullOrEmpty(GetValue(env, JsonApiUrlEnv))
             && !string.IsNullOrEmpty(GetValue(env, ClientIdEnv))
-            && !string.IsNullOrEmpty(GetValue(env, ClientSecretEnv));
+            && !string.IsNullOrEmpty(GetValue(env, ClientSecretEnv))
+            && tokenUrlAvailable;
     }
 
     /// <summary>
@@ -153,11 +175,14 @@ public static class EndpointDiscovery
     /// <paramref name="profile"/> is the fixture's selected default, so
     /// each per-slot view resolves its own credentials independently.
     /// Both credential paths can fall back to the public LocalNet demo
-    /// secrets shipped with the compose stack; the sv-validator-1 secret
-    /// has no default and must be set via env (<see cref="ClientSecretEnv"/>
-    /// for the default-profile case, or
-    /// <c>CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET</c> for the per-slot
-    /// case).
+    /// secrets shipped with the compose stack; the sv-validator-1 slot has no
+    /// defaults for its token URL, client id, or client secret and must have
+    /// each set via env (the legacy <see cref="TokenUrlEnv"/>,
+    /// <see cref="ClientIdEnv"/>, <see cref="ClientSecretEnv"/> for the
+    /// default-profile case, or the matching
+    /// <c>CANTON_LOCALNET_SV_VALIDATOR_1_*</c> vars for the per-slot case),
+    /// otherwise <see cref="Resolve(LocalnetProfile, IReadOnlyDictionary{string, string?})"/>
+    /// throws.
     /// </summary>
     public static LocalnetEndpoints Resolve(
         LocalnetProfile profile = LocalnetProfile.AValidator1,
@@ -197,7 +222,8 @@ public static class EndpointDiscovery
 
         var tokenUrl = GetValue(env, $"CANTON_LOCALNET_{slot}_TOKEN_URL")
             ?? (honourLegacyGlobals ? GetValue(env, TokenUrlEnv) : null)
-            ?? DefaultTokenUrl(profile);
+            ?? DefaultTokenUrl(profile)
+            ?? throw MissingCredential(profile, "TOKEN_URL");
 
         var audience = GetValue(env, $"CANTON_LOCALNET_{slot}_AUDIENCE")
             ?? (honourLegacyGlobals ? GetValue(env, AudienceEnv) : null)
@@ -246,10 +272,10 @@ public static class EndpointDiscovery
 
         return raw.Trim().ToLowerInvariant() switch
         {
-            "b-validator-1" => LocalnetProfile.BValidator1,
-            "a-validator-1" => LocalnetProfile.AValidator1,
-            "c-validator-1" => LocalnetProfile.CValidator1,
             "sv-validator-1" or "super-validator" or "supervalidator" => LocalnetProfile.SvValidator1,
+            "a-validator-1" => LocalnetProfile.AValidator1,
+            "b-validator-1" => LocalnetProfile.BValidator1,
+            "c-validator-1" => LocalnetProfile.CValidator1,
             "d-validator-1" => LocalnetProfile.DValidator1,
             _ => throw new InvalidOperationException(
                 $"Unknown profile '{raw}' in {ProfileEnv}; expected one of: a-validator-1, b-validator-1, c-validator-1, sv-validator-1, d-validator-1."),
@@ -258,45 +284,47 @@ public static class EndpointDiscovery
 
     private static string DefaultJsonApiUrl(LocalnetProfile profile) => profile switch
     {
-        LocalnetProfile.BValidator1 => "http://localhost:12975",
-        LocalnetProfile.AValidator1 => "http://localhost:11975",
-        LocalnetProfile.CValidator1 => "http://localhost:13975",
         LocalnetProfile.SvValidator1 => "http://localhost:10975",
+        LocalnetProfile.AValidator1 => "http://localhost:11975",
+        LocalnetProfile.BValidator1 => "http://localhost:12975",
+        LocalnetProfile.CValidator1 => "http://localhost:13975",
         LocalnetProfile.DValidator1 => "http://localhost:14975",
         _ => throw new ArgumentOutOfRangeException(nameof(profile), profile, null),
     };
 
-    private static string DefaultTokenUrl(LocalnetProfile profile)
+    private static string? DefaultTokenUrl(LocalnetProfile profile)
     {
         var realm = profile switch
         {
-            LocalnetProfile.BValidator1 => "BValidator1",
+            LocalnetProfile.SvValidator1 => null,
             LocalnetProfile.AValidator1 => "AValidator1",
+            LocalnetProfile.BValidator1 => "BValidator1",
             LocalnetProfile.CValidator1 => "CValidator1",
-            LocalnetProfile.SvValidator1 => "sv-validator-1",
             LocalnetProfile.DValidator1 => "DValidator1",
             _ => throw new ArgumentOutOfRangeException(nameof(profile), profile, null),
         };
-        return $"{DefaultKeycloakHost}/realms/{realm}/protocol/openid-connect/token";
+        return realm is null
+            ? null
+            : $"{DefaultKeycloakHost}/realms/{realm}/protocol/openid-connect/token";
     }
 
     private static string? DefaultClientId(LocalnetProfile profile) => profile switch
     {
+        LocalnetProfile.SvValidator1 => null,
         LocalnetProfile.AValidator1 => "a-validator-1-validator",
         LocalnetProfile.BValidator1 => "b-validator-1-validator",
         LocalnetProfile.CValidator1 => "c-validator-1-validator",
         LocalnetProfile.DValidator1 => "d-validator-1-validator",
-        LocalnetProfile.SvValidator1 => "sv-validator",
         _ => null,
     };
 
     private static string? DefaultClientSecret(LocalnetProfile profile) => profile switch
     {
+        LocalnetProfile.SvValidator1 => null,
         LocalnetProfile.AValidator1 => AValidator1DemoClientSecret,
         LocalnetProfile.BValidator1 => BcdValidator1DemoClientSecret,
         LocalnetProfile.CValidator1 => BcdValidator1DemoClientSecret,
         LocalnetProfile.DValidator1 => BcdValidator1DemoClientSecret,
-        LocalnetProfile.SvValidator1 => null,
         _ => null,
     };
 
@@ -308,11 +336,11 @@ public static class EndpointDiscovery
 
     private static string SlotEnvPrefix(LocalnetProfile profile) => profile switch
     {
+        LocalnetProfile.SvValidator1 => "SV_VALIDATOR_1",
         LocalnetProfile.AValidator1 => "A_VALIDATOR_1",
         LocalnetProfile.BValidator1 => "B_VALIDATOR_1",
         LocalnetProfile.CValidator1 => "C_VALIDATOR_1",
         LocalnetProfile.DValidator1 => "D_VALIDATOR_1",
-        LocalnetProfile.SvValidator1 => "SV_VALIDATOR_1",
         _ => throw new ArgumentOutOfRangeException(nameof(profile), profile, null),
     };
 
@@ -320,7 +348,7 @@ public static class EndpointDiscovery
     {
         var slot = SlotEnvPrefix(profile);
         return new InvalidOperationException(
-            $"Environment variable 'CANTON_LOCALNET_{slot}_{what}' is required to talk to the LocalNet token endpoint for {profile}.");
+            $"Environment variable 'CANTON_LOCALNET_{slot}_{what}' is required to resolve OAuth2 endpoints for {profile}.");
     }
 
     private static string? GetValue(IReadOnlyDictionary<string, string?> env, string key)

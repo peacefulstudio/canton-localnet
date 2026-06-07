@@ -49,7 +49,7 @@ The fixture reads these env vars (matching the compose stack ports in `compose/m
 |----------|----------|---------|---------|
 | `CANTON_LOCALNET_PROFILE` | no | `a-validator-1` | One of `sv-validator-1`, `a-validator-1`, `b-validator-1`, `c-validator-1`, `d-validator-1`. |
 | `CANTON_LOCALNET_JSON_API_URL` | no | `http://localhost:{10,11,12,13,14}975` per profile | Base URL of the JSON Ledger API. |
-| `CANTON_LOCALNET_TOKEN_URL` | no | `http://localhost:8082/realms/{AValidator1,BValidator1,CValidator1,DValidator1}/protocol/openid-connect/token` per profile. The `SvValidator1` profile derives a `realms/sv-validator-1` URL, but no SV realm is imported into Keycloak today (`compose/modules/keycloak/conf/data/` ships A/B/C/D only) — override `CANTON_LOCALNET_TOKEN_URL` to point at a custom realm if you've added one. | Keycloak token endpoint. |
+| `CANTON_LOCALNET_TOKEN_URL` | no for a/b/c/d, **yes** for sv | `http://localhost:8082/realms/{AValidator1,BValidator1,CValidator1,DValidator1}/protocol/openid-connect/token` per profile. The `SvValidator1` profile has **no default** — no SV realm is imported into Keycloak today (`compose/modules/keycloak/conf/data/` ships A/B/C/D only), so the SV slot's token URL (along with its client id and client secret) must be set explicitly, e.g. pointing at a custom realm you've added. | Keycloak token endpoint. |
 | `CANTON_LOCALNET_AUDIENCE` | no | `https://canton.network.global` | Expected `aud` claim. |
 | `CANTON_LOCALNET_CLIENT_ID` | **yes** | — | OAuth2 `client_id`. |
 | `CANTON_LOCALNET_CLIENT_SECRET` | **yes** | — | OAuth2 `client_secret`. |

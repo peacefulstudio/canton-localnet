@@ -11,27 +11,21 @@ public class ValidatorFixtureTests : IDisposable
     private const string FakeClientId = "test-client";
     private const string FakeClientSecret = "test-secret";
 
-    private const string SvSecretEnv = "CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET";
-
     private readonly string? _savedClientId;
     private readonly string? _savedClientSecret;
-    private readonly string? _savedSvSecret;
 
     public ValidatorFixtureTests()
     {
         _savedClientId = Environment.GetEnvironmentVariable(EndpointDiscovery.ClientIdEnv);
         _savedClientSecret = Environment.GetEnvironmentVariable(EndpointDiscovery.ClientSecretEnv);
-        _savedSvSecret = Environment.GetEnvironmentVariable(SvSecretEnv);
         Environment.SetEnvironmentVariable(EndpointDiscovery.ClientIdEnv, FakeClientId);
         Environment.SetEnvironmentVariable(EndpointDiscovery.ClientSecretEnv, FakeClientSecret);
-        Environment.SetEnvironmentVariable(SvSecretEnv, "sv-test-secret");
     }
 
     public void Dispose()
     {
         Environment.SetEnvironmentVariable(EndpointDiscovery.ClientIdEnv, _savedClientId);
         Environment.SetEnvironmentVariable(EndpointDiscovery.ClientSecretEnv, _savedClientSecret);
-        Environment.SetEnvironmentVariable(SvSecretEnv, _savedSvSecret);
     }
 
     private static LocalnetFixture NewFixture(LocalnetProfile profile = LocalnetProfile.AValidator1)
@@ -41,7 +35,6 @@ public class ValidatorFixtureTests : IDisposable
     }
 
     [Theory]
-    [InlineData("sv-validator-1", LocalnetProfile.SvValidator1)]
     [InlineData("a-validator-1", LocalnetProfile.AValidator1)]
     [InlineData("b-validator-1", LocalnetProfile.BValidator1)]
     [InlineData("c-validator-1", LocalnetProfile.CValidator1)]
@@ -54,6 +47,47 @@ public class ValidatorFixtureTests : IDisposable
 
         Assert.Equal(expected, view.Profile);
         Assert.Equal(slot, view.Slot);
+    }
+
+    [Fact]
+    public async Task Validator_sv_slot_throws_without_explicit_oauth2_config()
+    {
+        await using var fixture = NewFixture();
+
+        Assert.Throws<InvalidOperationException>(() => fixture.Validator("sv-validator-1"));
+    }
+
+    [Fact]
+    public async Task Validator_sv_slot_returns_view_when_oauth2_config_present()
+    {
+        var keys = new[]
+        {
+            "CANTON_LOCALNET_SV_VALIDATOR_1_TOKEN_URL",
+            "CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_ID",
+            "CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET",
+        };
+        var saved = keys.ToDictionary(k => k, Environment.GetEnvironmentVariable);
+        Environment.SetEnvironmentVariable(keys[0], "https://sv.example/token");
+        Environment.SetEnvironmentVariable(keys[1], "sv-client");
+        Environment.SetEnvironmentVariable(keys[2], "sv-secret");
+        try
+        {
+            await using var fixture = NewFixture();
+
+            var view = fixture.Validator("sv-validator-1");
+
+            Assert.Equal(LocalnetProfile.SvValidator1, view.Profile);
+            Assert.Equal("sv-validator-1", view.Slot);
+            Assert.Equal(new Uri("https://sv.example/token"), view.Endpoints.TokenEndpoint);
+            Assert.Equal("sv-client", view.Endpoints.ClientId);
+        }
+        finally
+        {
+            foreach (var (key, value) in saved)
+            {
+                Environment.SetEnvironmentVariable(key, value);
+            }
+        }
     }
 
     [Fact]

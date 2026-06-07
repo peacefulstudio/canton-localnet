@@ -57,6 +57,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `EndpointDiscovery` now orders `LocalnetProfile` as sv, a, b, c, d
+  across the enum and every `switch`, and the sv-validator-1 slot no
+  longer ships fabricated OAuth2 defaults. Its default token URL and
+  client id join its (already default-less) client secret as required
+  env — no Keycloak realm is provisioned for the SV slot (the keycloak
+  module ships realms for a/b/c/d only), so the previous `sv-validator`
+  client id and `sv-validator-1` realm token URL pointed at endpoints
+  that do not exist. `Resolve`/`ResolveForSlot` for the SV slot now
+  throw a clear "set
+  `CANTON_LOCALNET_SV_VALIDATOR_1_{TOKEN_URL,CLIENT_ID,CLIENT_SECRET}`"
+  error instead of returning unusable defaults that 404 at token time.
+  `IsSlotAvailable`/`IsLocalnetAvailable` now also require the SV token
+  URL before reporting the SV slot available, keeping the availability
+  gate in lock-step with what `Resolve` can resolve so a gated SV
+  integration test skips cleanly instead of throwing. The a/b/c/d
+  defaults are unchanged.
 - **BREAKING (AWS Terraform root module):** the `terraform/` AWS stack
   is now self-contained — it clones `canton-localnet` and runs `make up`
   directly instead of invoking a consumer repo's `install.sh`/`deploy.sh`
