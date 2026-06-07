@@ -33,10 +33,10 @@ await using var fixture = LocalnetFixture.FromEnvironment();
 
 await fixture.UploadDarAsync("./dars/my-workflow-1.0.0.dar");
 
-var party = await fixture.AllocatePartyAsync("cdg");
+var party = await fixture.AllocatePartyAsync("globex");
 
 await fixture.CreateUserAsync(
-    userId: $"cdg-user-{fixture.PartyAllocator.InstanceSuffix}",
+    userId: $"globex-user-{fixture.PartyAllocator.InstanceSuffix}",
     primaryParty: party.PartyId,
     actAs: new[] { party.PartyId });
 ```
@@ -55,7 +55,7 @@ The fixture reads these env vars (matching the compose stack ports in `compose/m
 | `CANTON_LOCALNET_CLIENT_SECRET` | **yes** | — | OAuth2 `client_secret`. |
 | `CANTON_LOCALNET_SCOPE` | no | `openid` | OAuth2 scope. |
 
-The integration smoke test (`LocalnetSmokeTests`) self-skips when `CANTON_LOCALNET_JSON_API_URL` / `CLIENT_ID` / `CLIENT_SECRET` are not set, so unit tests run cleanly on a developer machine without `make up`.
+The integration test (`LocalNetIntegrationTests`) self-skips when `CANTON_LOCALNET_JSON_API_URL` / `CLIENT_ID` / `CLIENT_SECRET` are not set, so unit tests run cleanly on a developer machine without `make up`.
 
 These env vars are the **fixture / test config layer** — distinct from
 `canton-localnet.yaml`, which configures the CLI's stack-boot

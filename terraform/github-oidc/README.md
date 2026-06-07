@@ -32,7 +32,7 @@ terraform -chdir=terraform/github-oidc apply
 Then publish the role ARN to the scheduler workflow:
 
 ```bash
-gh secret set AWS_STATE_ROLE_ARN -R peacefulstudio/canton-localnet-internal \
+gh secret set AWS_STATE_ROLE_ARN -R peacefulstudio/canton-localnet \
   --body "$(terraform -chdir=terraform/github-oidc output -raw role_arn)"
 ```
 
@@ -43,7 +43,7 @@ on the `dev` branch through the `localnet-infra` environment. Three independent
 gates enforce this:
 
 - **IAM `sub` claim** must equal
-  `repo:peacefulstudio/canton-localnet-internal:environment:localnet-infra` —
+  `repo:peacefulstudio/canton-localnet:environment:localnet-infra` —
   the job must run through the `localnet-infra` environment.
 - **IAM `ref` claim** must equal `refs/heads/dev` — the run must be on `dev`.
   (`StringEquals` is fail-closed: a missing/absent claim denies the assume.)

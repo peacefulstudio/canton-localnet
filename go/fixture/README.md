@@ -30,7 +30,7 @@ func TestMyLedgerThing(t *testing.T) {
     if err := f.UploadDar(ctx, "testdata/my-package.dar"); err != nil {
         t.Fatal(err)
     }
-    party, err := f.AllocateParty(ctx, "cdg", "Alice")
+    party, err := f.AllocateParty(ctx, "globex", "Alice")
     if err != nil { t.Fatal(err) }
 
     _, err = f.CreateUser(ctx, fixture.UserOptions{

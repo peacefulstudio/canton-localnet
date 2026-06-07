@@ -61,7 +61,7 @@ run "oidc_security_boundary" {
   }
 
   assert {
-    condition     = jsondecode(data.aws_iam_policy_document.trust.json).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:peacefulstudio/canton-localnet-internal:environment:localnet-infra"
+    condition     = jsondecode(data.aws_iam_policy_document.trust.json).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:peacefulstudio/canton-localnet:environment:localnet-infra"
     error_message = "the sub condition must scope to the localnet-infra environment of this repo"
   }
 
@@ -71,12 +71,12 @@ run "oidc_security_boundary" {
   }
 
   assert {
-    condition     = jsondecode(data.aws_iam_policy_document.state_access.json).Statement[1].Resource == "arn:aws:s3:::cicd-playground-tfstate/canton-localnet/hetzner/*"
+    condition     = jsondecode(data.aws_iam_policy_document.state_access.json).Statement[1].Resource == "arn:aws:s3:::REPLACE_WITH_YOUR_TFSTATE_BUCKET/canton-localnet/hetzner/*"
     error_message = "state object access must be scoped to the Hetzner key prefix, never a bare wildcard"
   }
 
   assert {
-    condition     = jsondecode(data.aws_iam_policy_document.state_access.json).Statement[0].Resource == "arn:aws:s3:::cicd-playground-tfstate"
+    condition     = jsondecode(data.aws_iam_policy_document.state_access.json).Statement[0].Resource == "arn:aws:s3:::REPLACE_WITH_YOUR_TFSTATE_BUCKET"
     error_message = "ListBucket must target the state bucket"
   }
 

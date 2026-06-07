@@ -4,6 +4,7 @@
 bin/
 obj/
 artifacts/
+output/
 coverage/
 *.user
 *.suo

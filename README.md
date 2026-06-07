@@ -24,10 +24,9 @@ JSON Ledger API endpoints once ready (see `compose/modules/localnet/env/common.e
 | `c-validator-1`  | 13975           |
 | `d-validator-1`  | 14975           |
 
-Slot ports follow the 5-digit two-digit-prefix scheme (`<prefix><suffix>`) — see
-[ADR-0002](docs/adr/0002-two-digit-port-prefix.md) for the rationale and the
-full port table (participant ledger / admin / JSON / Splice validator admin
-per slot).
+Slot ports follow the 5-digit two-digit-prefix scheme (`<prefix><suffix>`):
+each slot's participant ledger / admin / JSON / Splice validator admin ports
+share the same two-digit prefix as the JSON Ledger API port shown above.
 
 Optional layers via Make flags (shortcuts — the canonical config layer is
 `canton-localnet.yaml`, see **Configuration** below):
@@ -55,12 +54,12 @@ canton-localnet vm destroy --yes    # terraform destroy (interactive prompt with
 ```
 
 The tunnel forwards the same port set the legacy `tunnel.sh` scripts in
-`murmures` and `terraform-provider-canton` open: `11901` (a-validator-1
+downstream consumers and `terraform-provider-canton` open: `11901` (a-validator-1
 participant gRPC ledger API), `7575` (legacy in-container Splice JSON
 Ledger API), and `8082` (Keycloak). `vm provision` is idempotent —
 re-running on an already-applied state is a no-op refresh.
 
-> The 5-digit port renumbering in ADR-0002 applies to the host-exposed
+> The 5-digit port renumbering applies to the host-exposed
 > port set on the local stack (`10975`/`11975`/… for JSON Ledger API).
 > The `vm tunnel` default port set is unchanged for backwards
 > compatibility with the legacy tunnel scripts and is documented as
@@ -92,7 +91,7 @@ slot's Keycloak realm for a/b/c/d, and mints a self-signed HS256 JWT
 for sv-validator-1 (which doesn't run Keycloak). Resolution layers, from
 highest to lowest priority:
 
-1. `CANTON_LOCALNET_<SLOT>_CLIENT_ID` / `_CLIENT_SECRET` env vars (per [ADR-0003](docs/adr/0003-per-slot-endpoint-discovery.md))
+1. `CANTON_LOCALNET_<SLOT>_CLIENT_ID` / `_CLIENT_SECRET` env vars
 2. `canton-localnet.yaml` `validators.<slot>.auth.clientId` / `clientSecret` (the same fields `up` reads)
 3. `compose/modules/keycloak/env/<slot>/on/oauth2.env` — so secret rotations in this repo land automatically
 4. Built-in default
@@ -155,8 +154,7 @@ validators:
 ```
 
 The schema is **preview / unstable** until compose codegen lands —
-see [ADR-0001](docs/adr/0001-yaml-config-without-codegen.md) for the
-rationale and [`docs/canton-localnet-yaml-schema.md`](docs/canton-localnet-yaml-schema.md)
+see [`docs/public/canton-localnet-yaml-schema.md`](docs/public/canton-localnet-yaml-schema.md)
 for the full reference.
 
 ## Onboarding clients

@@ -28,7 +28,7 @@ variable "project_name" {
 variable "repo_url" {
   description = "Clone URL of the repo whose docker-compose LocalNet stack the box runs. Override with a public mirror to clone without a token."
   type        = string
-  default     = "https://github.com/peacefulstudio/canton-localnet-internal.git"
+  default     = "https://github.com/peacefulstudio/canton-localnet.git"
 
   validation {
     condition     = can(regex("^https://[A-Za-z0-9._/-]+$", var.repo_url))

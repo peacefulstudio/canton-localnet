@@ -10,13 +10,13 @@
         "s3:PutObject",
         "s3:DeleteObject"
       ],
-      "Resource": "arn:aws:s3:::cicd-playground-tfstate/canton-localnet/vm/*"
+      "Resource": "arn:aws:s3:::REPLACE_WITH_YOUR_TFSTATE_BUCKET/canton-localnet/vm/*"
     },
     {
       "Sid": "TerraformStateBucketList",
       "Effect": "Allow",
       "Action": "s3:ListBucket",
-      "Resource": "arn:aws:s3:::cicd-playground-tfstate",
+      "Resource": "arn:aws:s3:::REPLACE_WITH_YOUR_TFSTATE_BUCKET",
       "Condition": {
         "StringLike": {
           "s3:prefix": [

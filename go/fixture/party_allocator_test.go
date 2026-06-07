@@ -38,7 +38,7 @@ func TestPartyAllocator_RequestShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPartyAllocator: %v", err)
 	}
-	got, err := p.Allocate(context.Background(), "cdg", "Alice")
+	got, err := p.Allocate(context.Background(), "globex", "Alice")
 	if err != nil {
 		t.Fatalf("Allocate: %v", err)
 	}
@@ -57,8 +57,8 @@ func TestPartyAllocator_RequestShape(t *testing.T) {
 	if captured.contentType != "application/json" {
 		t.Errorf("Content-Type = %q", captured.contentType)
 	}
-	if captured.body.PartyIDHint != "cdg-abc123" {
-		t.Errorf("partyIdHint = %q, want cdg-abc123", captured.body.PartyIDHint)
+	if captured.body.PartyIDHint != "globex-abc123" {
+		t.Errorf("partyIdHint = %q, want globex-abc123", captured.body.PartyIDHint)
 	}
 	if captured.body.DisplayName != "Alice" {
 		t.Errorf("displayName = %q, want Alice", captured.body.DisplayName)
@@ -70,11 +70,11 @@ func TestPartyAllocator_HintFollowsPrefixSuffixFormat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPartyAllocator: %v", err)
 	}
-	if got := p.Hint("lapi"); got != "lapi-ZZZ" {
-		t.Errorf("Hint(lapi) = %q, want lapi-ZZZ", got)
+	if got := p.Hint("initech"); got != "initech-ZZZ" {
+		t.Errorf("Hint(initech) = %q, want initech-ZZZ", got)
 	}
-	if got := p.Hint("cdg"); got != "cdg-ZZZ" {
-		t.Errorf("Hint(cdg) = %q, want cdg-ZZZ", got)
+	if got := p.Hint("globex"); got != "globex-ZZZ" {
+		t.Errorf("Hint(globex) = %q, want globex-ZZZ", got)
 	}
 	if p.Suffix() != "ZZZ" {
 		t.Errorf("Suffix = %q, want ZZZ", p.Suffix())
@@ -106,10 +106,10 @@ func TestPartyAllocator_SuffixIsStableAcrossCalls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPartyAllocator: %v", err)
 	}
-	first := p.Hint("cdg")
+	first := p.Hint("globex")
 	for i := 0; i < 5; i++ {
-		if p.Hint("cdg") != first {
-			t.Fatalf("hint changed across calls: %q vs %q", first, p.Hint("cdg"))
+		if p.Hint("globex") != first {
+			t.Fatalf("hint changed across calls: %q vs %q", first, p.Hint("globex"))
 		}
 	}
 }
@@ -128,7 +128,7 @@ func TestPartyAllocator_OmitsDisplayNameWhenEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPartyAllocator: %v", err)
 	}
-	if _, err := p.Allocate(context.Background(), "lapi", ""); err != nil {
+	if _, err := p.Allocate(context.Background(), "initech", ""); err != nil {
 		t.Fatalf("Allocate: %v", err)
 	}
 	if strings.Contains(rawBody, "displayName") {
@@ -147,7 +147,7 @@ func TestPartyAllocator_PropagatesNon2xx(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPartyAllocator: %v", err)
 	}
-	_, err = p.Allocate(context.Background(), "lapi", "")
+	_, err = p.Allocate(context.Background(), "initech", "")
 	if err == nil {
 		t.Fatal("expected error on 409")
 	}
@@ -167,7 +167,7 @@ func TestPartyAllocator_RejectsEmptyPartyInResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPartyAllocator: %v", err)
 	}
-	_, err = p.Allocate(context.Background(), "lapi", "")
+	_, err = p.Allocate(context.Background(), "initech", "")
 	if err == nil {
 		t.Fatal("expected error for empty party in response")
 	}
@@ -184,7 +184,7 @@ func TestPartyAllocator_RejectsInvalidJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPartyAllocator: %v", err)
 	}
-	if _, err := p.Allocate(context.Background(), "lapi", ""); err == nil {
+	if _, err := p.Allocate(context.Background(), "initech", ""); err == nil {
 		t.Fatal("expected decode error")
 	}
 }
@@ -194,7 +194,7 @@ func TestPartyAllocator_PropagatesTokenError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPartyAllocator: %v", err)
 	}
-	if _, err := p.Allocate(context.Background(), "lapi", ""); err == nil {
+	if _, err := p.Allocate(context.Background(), "initech", ""); err == nil {
 		t.Fatal("expected token error")
 	}
 }
@@ -206,7 +206,7 @@ func TestPartyAllocator_HonorsContextCancel(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := p.Allocate(ctx, "lapi", ""); !errors.Is(err, context.Canceled) {
+	if _, err := p.Allocate(ctx, "initech", ""); !errors.Is(err, context.Canceled) {
 		t.Fatalf("Allocate(cancelled) = %v, want context.Canceled", err)
 	}
 }

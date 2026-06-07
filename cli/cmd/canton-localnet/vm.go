@@ -70,7 +70,7 @@ func newVMCommand(deps vmDeps) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "vm",
 		Short: "Manage the canton-localnet AWS VM (terraform + ssh tunnel)",
-		Long:  "vm wraps terraform/ and an ssh tunnel so the shared canton-localnet EC2 instance can be provisioned, torn down, and forwarded to localhost with a single binary. Replaces the bespoke tunnel.sh scripts murmures and terraform-provider-canton CI carry today.",
+		Long:  "vm wraps terraform/ and an ssh tunnel so the shared canton-localnet EC2 instance can be provisioned, torn down, and forwarded to localhost with a single binary. Replaces the bespoke tunnel.sh scripts downstream consumers and terraform-provider-canton CI carry today.",
 	}
 	cmd.AddCommand(newVMProvisionCommand(deps))
 	cmd.AddCommand(newVMDestroyCommand(deps))

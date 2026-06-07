@@ -33,7 +33,7 @@ terraform/
 | `instance_type` | `m6i.2xlarge`                                                       | 8 vCPU / 32 GB RAM                                             |
 | `volume_size`   | `35`                                                               | GB, gp3                                                        |
 | `project_name`  | `canton-localnet`                                                   | Used for `Name` tag, SG name, key pair name                   |
-| `repo_url`      | `https://github.com/peacefulstudio/canton-localnet-internal.git`   | Repo the box clones and runs `make up` from. Override with a public mirror to clone tokenless. |
+| `repo_url`      | `https://github.com/peacefulstudio/canton-localnet.git`   | Repo the box clones and runs `make up` from. Override with a public mirror to clone tokenless. |
 | `repo_ref`      | `dev`                                                              | Git ref (branch or tag) checked out on the box                |
 | `repo_token`    | (empty, sensitive)                                                 | Read-only token for cloning a private `repo_url`. Source via `TF_VAR_repo_token`. Leave empty for a public mirror. |
 
@@ -44,14 +44,19 @@ terraform/
 
 ## Backend
 
+The S3 backend uses [partial
+configuration](https://developer.hashicorp.com/terraform/language/backend#partial-configuration):
+`backend.tf` declares an empty `backend "s3" {}` and the bucket is supplied at
+init time. Copy `backend.hcl.example` to `backend.hcl` (gitignored), set your
+own bucket, then run `terraform init -backend-config=backend.hcl`:
+
 ```hcl
-bucket = "cicd-playground-tfstate"
+bucket = "REPLACE_WITH_YOUR_TFSTATE_BUCKET"
 key    = "canton-localnet/vm/terraform.tfstate"
 region = "eu-north-1"
 ```
 
-The bucket is shared across Peaceful Studio repos; this stack writes its
-state at `canton-localnet/vm/terraform.tfstate`.
+This stack writes its state at `canton-localnet/vm/terraform.tfstate`.
 
 ## IAM policy for CI
 

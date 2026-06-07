@@ -27,11 +27,15 @@ power-off.
 
 ## State backend
 
-Remote state lives in S3 (configured in `versions.tf`):
+Remote state lives in S3 via [partial
+configuration](https://developer.hashicorp.com/terraform/language/backend#partial-configuration):
+`versions.tf` declares an empty `backend "s3" {}`. Copy `backend.hcl.example` to
+`backend.hcl` (gitignored), set your own bucket, then run `terraform init
+-backend-config=backend.hcl`:
 
 | Setting | Value |
 |---------|-------|
-| bucket | `cicd-playground-tfstate` |
+| bucket | `REPLACE_WITH_YOUR_TFSTATE_BUCKET` |
 | key | `canton-localnet/hetzner/terraform.tfstate` |
 | region | `eu-north-1` |
 | encryption | enabled |
@@ -56,7 +60,7 @@ registered.
 | `image` | `ubuntu-24.04` | Base OS image. |
 | `hcloud_token` | — (sensitive) | Hetzner Cloud API token. Provide via `TF_VAR_hcloud_token`. |
 | `ssh_allowed_cidrs` | `["0.0.0.0/0"]` | CIDRs allowed to reach SSH (port 22). Narrow this to harden access. |
-| `repo_url` | `…/canton-localnet-internal.git` | Git repository cloned on the server for LocalNet compose assets. |
+| `repo_url` | `…/canton-localnet.git` | Git repository cloned on the server for LocalNet compose assets. |
 | `repo_ref` | `dev` | Git ref (branch, tag, or SHA) to check out. |
 | `repo_token` | — (sensitive) | Optional token for cloning a private repository. |
 | `developer_ssh_public_keys` | `{}` | Map of name → SSH public-key string. Each entry is registered as an `hcloud_ssh_key` named `canton-localnet-<key>`. |

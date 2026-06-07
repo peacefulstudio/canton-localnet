@@ -5,8 +5,8 @@
 // config, merges it over built-in defaults, and translates the result
 // into the env-var pairs the existing compose pipeline already
 // consumes. The YAML schema is documented in
-// docs/canton-localnet-yaml-schema.md and is marked preview/unstable
-// until compose codegen lands (see docs/adr/0001).
+// docs/public/canton-localnet-yaml-schema.md and is marked
+// preview/unstable until compose codegen lands.
 package yamlconfig
 
 import (

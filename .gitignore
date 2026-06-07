@@ -1,3 +1,7 @@
+# LLMs
+/.claude
+/.agents
+
 .tmp/
 compose/.tmp/
 compose/.env.local
@@ -19,7 +23,11 @@ tests/acceptance/.*-state
 .idea/
 .vscode/
 
+# Test artifacts
+csharp/TestResults/
+
 # Terraform — keep .terraform.lock.hcl checked in (provider pinning)
+terraform/**/backend.hcl
 terraform/**/.terraform/
 terraform/**/.terraform.tfstate.lock.info
 terraform/**/terraform.tfstate

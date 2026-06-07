@@ -62,7 +62,7 @@ typical "workflow rewrites history" sharp edge.
 
 | Artifact | Location | Consumed by |
 |---|---|---|
-| **NuGet** `Peaceful.Canton.Localnet.Testing.<version>.nupkg` | GitHub Packages: `https://nuget.pkg.github.com/peacefulstudio/index.json` | .NET / xUnit integration tests in downstream Peaceful Studio repos. Add via `dotnet add package`. |
+| **NuGet** `Peaceful.Canton.Localnet.Testing.<version>.nupkg` | GitHub Packages: `https://nuget.pkg.github.com/peacefulstudio/index.json` (note: the release workflow publishes here, but the public `csharp/NuGet.config` restores only from nuget.org — consumers must add the GitHub Packages source explicitly) | .NET / xUnit integration tests in downstream Peaceful Studio repos. Add via `dotnet add package`. |
 | **Go module** `github.com/peacefulstudio/canton-localnet/go/fixture@v<version>` | The repo tag itself — Go's module proxy fetches it on demand. | Go integration tests via `go get github.com/peacefulstudio/canton-localnet/go/fixture@v0.6.2-1`. |
 | **CLI binary** `canton-localnet-<version>-<os>-<arch>(.exe)` | GitHub Release assets, with `checksums.txt` | Engineers, CI jobs that need the `up`/`down`/`wait-ready`/`vm` commands. SHA-256s are in `checksums.txt`. |
 | **OCI compose artifact** `ghcr.io/peacefulstudio/canton-localnet:<version>` | GHCR (OCI artifact via `oras`, not a Docker image) | Future CLI runtime pull of the vendored Compose stack so it doesn't have to ship in the binary. |

@@ -16,5 +16,6 @@
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.0.1" />
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.0" />
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.300" />
   </ItemGroup>
 </Project>

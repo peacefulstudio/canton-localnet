@@ -19,13 +19,7 @@ terraform {
     }
   }
 
-  backend "s3" {
-    bucket       = "cicd-playground-tfstate"
-    key          = "canton-localnet/github-oidc/terraform.tfstate"
-    region       = "eu-north-1"
-    encrypt      = true
-    use_lockfile = true
-  }
+  backend "s3" {}
 }
 
 provider "aws" {

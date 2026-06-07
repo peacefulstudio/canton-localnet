@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.5-1] - 2026-06-06
+
 ### Added
 
 - `canton-localnet auth token --slot {sv|a|b|c|d}` and
@@ -17,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   prints the slot's ports, Keycloak realm, audience, token URLs (host
   and internal), and — when LocalNet is reachable — `participant_id`,
   `participant_namespace`, and `validator_primary_party`. Together the
-  two commands let downstream scripts (e.g. Murmures'
+  two commands let downstream scripts (e.g. a consumer's
   `allocate-parties-localnet.sh`) stop hardcoding realm names, client
   ids, client secrets, or the `<prefix>975` port scheme. Secrets are
   resolved from `compose/modules/keycloak/env/<slot>/on/oauth2.env` by
@@ -85,6 +87,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   DAR via `${{ steps.build-dar.outputs.dar_path }}`, exercising
   `UploadDar` / `UploadDarAsync` end-to-end. No binary DAR is
   vendored in-tree.
+
+- `Peaceful.Canton.Localnet.Testing` NuGet packaging now conforms with
+  the `peacefulstudio/dotnet-extensions` baseline: the package embeds
+  its README (`PackageReadmeFile`, fixing the missing-readme pack
+  warning), ships a `.snupkg` symbol package with Source Link
+  (`Microsoft.SourceLink.GitHub`, `EmbedUntrackedSources`,
+  `PublishRepositoryUrl`), pins `AssemblyVersion`/`FileVersion`, and
+  packs to `output/nuget`. Prepares the package for publication to
+  nuget.org via the shared `csharp-publish-public.yaml` workflow.
 
 ### Fixed
 
@@ -202,9 +213,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Canton-internal ports (5008 sequencer, 5009 mediator, 5012 scan,
     etc.) are unchanged.
 - New foundational docs ship with this release: `CONTEXT.md` (domain
-  glossary), `docs/adr/0001-yaml-config-without-codegen.md`,
-  `docs/adr/0002-two-digit-port-prefix.md`, and `docs/MIGRATION.md`
-  (terse before/after table for consumer migration).
+  glossary), architecture decision records, and
+  `docs/public/MIGRATION.md` (terse before/after table for consumer
+  migration).
 
 ### Added
 
@@ -253,7 +264,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `<SLOT>_OAUTH_CLIENT_ID`, `<SLOT>_OAUTH_CLIENT_SECRET`,
   `OBS_PROFILE`, `PQS_PROFILE`) that the existing compose pipeline
   already consumes. Schema documented in
-  `docs/canton-localnet-yaml-schema.md`.
+  `docs/public/canton-localnet-yaml-schema.md`.
 
 ### Changed
 
@@ -301,9 +312,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   entries for the `c-validator-1` and `d-validator-1` env vars and
   explicitly frame fixture env vars as the test-config layer distinct
   from `canton-localnet.yaml`. `CONTEXT.md` no longer describes the
-  5-slot topology as "next iteration", and `docs/MIGRATION.md` calls
-  out that `c`/`d` are new slots without a "before" form. The README
-  YAML example and the `docs/canton-localnet-yaml-schema.md` example
+  5-slot topology as "next iteration", and `docs/public/MIGRATION.md`
+  calls out that `c`/`d` are new slots without a "before" form. The
+  README YAML example and the `docs/public/canton-localnet-yaml-schema.md`
+  example
   both have their `clientId` updated from the legacy
   `app-provider-validator` to `a-validator-1-validator` (the latter
   caught in pre-flight review — the schema-doc example would have
@@ -338,7 +350,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the in-container Splice JSON Ledger API port with a cross-reference
   to the host-side `11975` under ADR-0002. The default port set value
   (`[11901, 7575, 8082]`) is unchanged — `vm tunnel`'s defaults still
-  mirror the legacy `tunnel.sh` scripts in `murmures` and
+  mirror the legacy `tunnel.sh` scripts in downstream consumers and
   `terraform-provider-canton`; only the doc-comments describing the
   set were stale.
 - `LocalnetFixture_returns_distinct_participant_ids_per_validator_slot`
@@ -370,7 +382,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per-slot env vars exclusively — but `TestSmoke_MultiValidator_GetParticipantIdPerSlot`
   is upgraded to assert `participantId(a) != participantId(b)` so a
   regression at that layer would also fail CI. Discovery shape decision
-  recorded in [ADR-0003](docs/adr/0003-per-slot-endpoint-discovery.md);
+  recorded in an architecture decision record;
   the previously-skipped
   `LocalnetFixture_returns_distinct_participant_ids_per_validator_slot`
   smoke test is re-enabled.
@@ -411,8 +423,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 
 - The `canton-localnet.yaml` schema (`schemaVersion: preview-1`) is
-  **preview / unstable** until compose codegen lands (per
-  [ADR-0001](docs/adr/0001-yaml-config-without-codegen.md)). Breaking
+  **preview / unstable** until compose codegen lands (per the
+  recorded architecture decision). Breaking
   schema changes are allowed in this window and will be called out
   in subsequent CHANGELOG entries.
 
@@ -426,7 +438,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the published nupkg, causing
   `CS0433 The type 'Assert' exists in both 'xunit.assert' and 'xunit.v3.assert'`
   in consumer projects pinned to xunit v2). Discovered while wiring
-  the package into the `murmures` test suite, which uses xunit 2.
+  the package into a consumer test suite, which uses xunit 2.
   (This section is reconstructed retroactively in v0.6.2-4 — the
   promotion step was skipped at `v0.6.2-3` tag time, so the bullet
   sat in `[Unreleased]` and was extracted into the GitHub Release
@@ -485,7 +497,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   host / user / identity to the terraform outputs `elastic_ip` /
   `ssh_command` / `ssh_key_path` and accepting `--host` / `--user` /
   `--identity` overrides. Replaces the bespoke `tunnel.sh` scripts
-  `murmures` and `terraform-provider-canton` CI carry today.
+  downstream consumers and `terraform-provider-canton` CI carry today.
   Internals: `cli/internal/terraform` wraps the terraform binary
   through an injectable Runner (so tests don't shell out) and
   decodes `terraform output -json` into a typed `Outputs` struct;
@@ -547,17 +559,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   test-discovery bug that ran `dotnet test` against the production
   assembly).
 - `terraform/` — EC2 spot instance + security group + Elastic IP
-  configuration migrated from `peacefulstudio/murmures`
-  `infra/terraform/`. Backend points at the shared
-  `cicd-playground-tfstate` bucket at a new state key
-  `canton-localnet/vm/terraform.tfstate`; the murmures state at
-  `murmures/localnet/terraform.tfstate` is left intact. Resource names
-  / SG name / key-pair name preserve the `murmures-localnet` prefix so
+  configuration migrated from an internal Peaceful Studio
+  terraform module. Backend points at the shared CI state
+  bucket at a new state key
+  `canton-localnet/vm/terraform.tfstate`; the consumer state at
+  the consumer's own state file is left intact. Resource names
+  / SG name / key-pair name preserve the legacy resource prefix so
   `terraform import` produces a clean plan; the `Project` tag is the
-  only intentional value change (`murmures` → `canton-localnet`), used
+  only intentional value change (legacy prefix → `canton-localnet`), used
   to scope the CI IAM policy. Variable names and output names
   (`instance_id`, `elastic_ip`, `ssh_command`, `ssh_key_path`,
-  `region`, `ami_id`) match murmures so consumer tunnel scripts work
+  `region`, `ami_id`) match the consumer so its tunnel scripts work
   unchanged after switching their output source.
 - `terraform/iam-policy.json` — least-privilege IAM policy for the
   canton-localnet GitHub Actions OIDC role: read/write the new S3 state

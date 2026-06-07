@@ -367,7 +367,7 @@ func TestVMTunnelWithHostFlagSkipsTerraform(t *testing.T) {
 		identityFallback: func() string { return keyFile },
 	}
 	root2 := newRootCommandWithVM(nil, deps)
-	root2.SetArgs([]string{"vm", "tunnel", "--repo-root", root, "--host", "62.238.38.71"})
+	root2.SetArgs([]string{"vm", "tunnel", "--repo-root", root, "--host", "203.0.113.10"})
 	if err := root2.Execute(); err != nil {
 		t.Fatalf("vm tunnel: %v", err)
 	}
@@ -375,8 +375,8 @@ func TestVMTunnelWithHostFlagSkipsTerraform(t *testing.T) {
 		t.Fatalf("expected one tunnel call, got %d", len(tn.calls))
 	}
 	got := tn.calls[0].opts
-	if got.Host != "62.238.38.71" {
-		t.Errorf("expected host 62.238.38.71, got %q", got.Host)
+	if got.Host != "203.0.113.10" {
+		t.Errorf("expected host 203.0.113.10, got %q", got.Host)
 	}
 	if got.IdentityFile != keyFile {
 		t.Errorf("expected identity %q, got %q", keyFile, got.IdentityFile)

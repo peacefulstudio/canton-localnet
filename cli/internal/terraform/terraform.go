@@ -105,10 +105,16 @@ func (c *Client) EnsureBinary() error {
 	return nil
 }
 
-// Init runs `terraform init -input=false`. It is safe to call repeatedly
-// — terraform itself is idempotent on init.
+// Init runs `terraform init -input=false`, appending
+// `-backend-config=backend.hcl` when a backend.hcl file is present in the
+// stack directory. It is safe to call repeatedly — terraform itself is
+// idempotent on init.
 func (c *Client) Init(ctx context.Context) error {
-	return c.run(ctx, "init", "-input=false")
+	args := []string{"init", "-input=false"}
+	if _, err := os.Stat(filepath.Join(c.Dir, "backend.hcl")); err == nil {
+		args = append(args, "-backend-config=backend.hcl")
+	}
+	return c.run(ctx, args...)
 }
 
 // Apply runs `terraform apply -auto-approve -input=false`. Re-running

@@ -1,0 +1,7 @@
+# Copyright (c) 2026 Peaceful Studio OÜ
+# SPDX-License-Identifier: Apache-2.0
+bucket       = "REPLACE_WITH_YOUR_TFSTATE_BUCKET"
+key          = "canton-localnet/hetzner/terraform.tfstate"
+region       = "eu-north-1"
+encrypt      = true
+use_lockfile = true

@@ -46,7 +46,7 @@ variable "ssh_allowed_cidrs" {
 
 variable "repo_url" {
   type        = string
-  default     = "https://github.com/peacefulstudio/canton-localnet-internal.git"
+  default     = "https://github.com/peacefulstudio/canton-localnet.git"
   description = "Clone URL of the repo whose docker-compose LocalNet stack the box runs. Override with a public mirror to clone without a token."
 
   validation {

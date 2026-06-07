@@ -14,7 +14,9 @@ You may obtain a copy of the License at
 Third-party content
 
 This repository vendors compose stack content under `compose/modules/`
-from the following upstream projects, each licensed under Apache-2.0:
+from the following upstream projects. The vendored files are licensed
+under Apache-2.0 or 0BSD (BSD Zero Clause), per the SPDX identifier on
+each individual file:
 
   * hyperledger-labs/splice
     https://github.com/hyperledger-labs/splice
@@ -26,5 +28,5 @@ The original Digital Asset copyright headers and SPDX identifiers on
 each vendored file are preserved verbatim. The LocalNet stack itself
 originated in Digital Asset's Canton Network Quickstart effort
 (https://github.com/digital-asset/cn-quickstart) before being
-consolidated upstream into hyperledger-labs/splice; both upstreams
-ship under Apache-2.0.
+consolidated upstream into hyperledger-labs/splice; the vendored files
+from both upstreams ship under Apache-2.0 or 0BSD.

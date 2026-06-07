@@ -50,34 +50,34 @@ public class PartyAllocatorTests
     [Fact]
     public async Task AllocateAsync_posts_party_hint_in_consumer_prefix_dash_instance_suffix_format()
     {
-        var handler = new RecordingHandler((_, _) => Task.FromResult(AllocateResponse("cdg-abcdef::namespace")));
+        var handler = new RecordingHandler((_, _) => Task.FromResult(AllocateResponse("globex-abcdef::namespace")));
         using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
         var allocator = new PartyAllocator(http, StaticTokenProvider("tok"), instanceSuffix: "abcdef");
 
-        var party = await allocator.AllocateAsync("cdg");
+        var party = await allocator.AllocateAsync("globex");
 
-        Assert.Equal("cdg-abcdef::namespace", party.PartyId);
-        Assert.Equal("cdg-abcdef", party.PartyIdHint);
+        Assert.Equal("globex-abcdef::namespace", party.PartyId);
+        Assert.Equal("globex-abcdef", party.PartyIdHint);
         var recorded = Assert.Single(handler.Requests);
         Assert.Equal(HttpMethod.Post, recorded.Method);
         Assert.Equal(new Uri(JsonApiBase, "v2/parties"), recorded.Uri);
         using var bodyDoc = JsonDocument.Parse(recorded.Body);
-        Assert.Equal("cdg-abcdef", bodyDoc.RootElement.GetProperty("partyIdHint").GetString());
-        Assert.Equal("cdg-abcdef", bodyDoc.RootElement.GetProperty("displayName").GetString());
+        Assert.Equal("globex-abcdef", bodyDoc.RootElement.GetProperty("partyIdHint").GetString());
+        Assert.Equal("globex-abcdef", bodyDoc.RootElement.GetProperty("displayName").GetString());
     }
 
     [Fact]
     public async Task AllocateAsync_uses_explicit_display_name_when_provided()
     {
-        var handler = new RecordingHandler((_, _) => Task.FromResult(AllocateResponse("lapi-deadbe::n")));
+        var handler = new RecordingHandler((_, _) => Task.FromResult(AllocateResponse("initech-deadbe::n")));
         using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
         var allocator = new PartyAllocator(http, StaticTokenProvider("tok"), instanceSuffix: "deadbe");
 
-        await allocator.AllocateAsync("lapi", displayName: "Ledger API Party");
+        await allocator.AllocateAsync("initech", displayName: "Ledger API Party");
 
         var recorded = Assert.Single(handler.Requests);
         using var bodyDoc = JsonDocument.Parse(recorded.Body);
-        Assert.Equal("lapi-deadbe", bodyDoc.RootElement.GetProperty("partyIdHint").GetString());
+        Assert.Equal("initech-deadbe", bodyDoc.RootElement.GetProperty("partyIdHint").GetString());
         Assert.Equal("Ledger API Party", bodyDoc.RootElement.GetProperty("displayName").GetString());
     }
 
@@ -89,8 +89,8 @@ public class PartyAllocatorTests
             BaseAddress = JsonApiBase,
         };
         var allocator = new PartyAllocator(http, StaticTokenProvider("tok"), instanceSuffix: "fixed");
-        Assert.Equal("cdg-fixed", allocator.ComposeHint("cdg"));
-        Assert.Equal("lapi-fixed", allocator.ComposeHint("lapi"));
+        Assert.Equal("globex-fixed", allocator.ComposeHint("globex"));
+        Assert.Equal("initech-fixed", allocator.ComposeHint("initech"));
     }
 
     [Fact]
@@ -142,7 +142,7 @@ public class PartyAllocatorTests
         using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
         var allocator = new PartyAllocator(http, StaticTokenProvider("tok"), instanceSuffix: "abc");
 
-        var exception = await Assert.ThrowsAsync<JsonLedgerApiException>(() => allocator.AllocateAsync("cdg"));
+        var exception = await Assert.ThrowsAsync<JsonLedgerApiException>(() => allocator.AllocateAsync("globex"));
         Assert.Equal(HttpStatusCode.Conflict, exception.StatusCode);
         Assert.Contains("PARTY_ALREADY_EXISTS", exception.ResponseBody);
     }
@@ -157,17 +157,17 @@ public class PartyAllocatorTests
         using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
         var allocator = new PartyAllocator(http, StaticTokenProvider("tok"), instanceSuffix: "abc");
 
-        await Assert.ThrowsAsync<JsonLedgerApiException>(() => allocator.AllocateAsync("cdg"));
+        await Assert.ThrowsAsync<JsonLedgerApiException>(() => allocator.AllocateAsync("globex"));
     }
 
     [Fact]
     public async Task AllocateAsync_sends_bearer_token()
     {
-        var handler = new RecordingHandler((_, _) => Task.FromResult(AllocateResponse("cdg-x::n")));
+        var handler = new RecordingHandler((_, _) => Task.FromResult(AllocateResponse("globex-x::n")));
         using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
         var allocator = new PartyAllocator(http, StaticTokenProvider("tok-bearer-x"), instanceSuffix: "x");
 
-        await allocator.AllocateAsync("cdg");
+        await allocator.AllocateAsync("globex");
 
         var recorded = Assert.Single(handler.Requests);
         Assert.Equal("Bearer tok-bearer-x", recorded.Headers["Authorization"]);

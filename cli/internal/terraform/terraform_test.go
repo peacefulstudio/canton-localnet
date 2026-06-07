@@ -8,6 +8,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -43,7 +45,7 @@ func newTestClient(runner *fakeRunner) *Client {
 	}
 }
 
-func TestInitCommandArgs(t *testing.T) {
+func TestInitCommandArgsWithoutBackendConfig(t *testing.T) {
 	t.Parallel()
 	runner := &fakeRunner{}
 	client := newTestClient(runner)
@@ -63,6 +65,27 @@ func TestInitCommandArgs(t *testing.T) {
 	want := []string{"init", "-input=false"}
 	if !equal(call.args, want) {
 		t.Errorf("expected args %v, got %v", want, call.args)
+	}
+}
+
+func TestInitCommandArgsWithBackendConfig(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "backend.hcl"), []byte("bucket = \"x\"\n"), 0o600); err != nil {
+		t.Fatalf("write backend.hcl: %v", err)
+	}
+	runner := &fakeRunner{}
+	client := newTestClient(runner)
+	client.Dir = dir
+	if err := client.Init(context.Background()); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("expected one call, got %d", len(runner.calls))
+	}
+	want := []string{"init", "-input=false", "-backend-config=backend.hcl"}
+	if !equal(runner.calls[0].args, want) {
+		t.Errorf("expected args %v, got %v", want, runner.calls[0].args)
 	}
 }
 

@@ -3,7 +3,7 @@
 
 variable "github_repo" {
   type        = string
-  default     = "peacefulstudio/canton-localnet-internal"
+  default     = "peacefulstudio/canton-localnet"
   description = "owner/repo whose GitHub Actions workflows may assume the CI role via OIDC."
 }
 
@@ -21,7 +21,7 @@ variable "deploy_branch" {
 
 variable "state_bucket" {
   type        = string
-  default     = "cicd-playground-tfstate"
+  default     = "REPLACE_WITH_YOUR_TFSTATE_BUCKET"
   description = "S3 bucket holding Terraform state."
 }
 

@@ -19,7 +19,7 @@ Every validator (SV included) follows the format `<name>-<function>-<index>`:
 - `<index>` is a 1-based integer that disambiguates multiple validators sharing the same `<name>`.
 - `<name>` carries semantic meaning. There are two scopes for `<name>`:
   - **Slot name** — baked into the compose graph and the filesystem. Letter-coded to stay domain-neutral across consumers: `sv`, `a`, `b`, `c`, `d`. So the canton-localnet repo ships `sv-validator-1`, `a-validator-1`, `b-validator-1`, `c-validator-1`, `d-validator-1` as slot identifiers in `compose/modules/localnet/conf/{canton,splice,console}/<slot>/`.
-  - **Party hint** — supplied per-consumer via `canton-localnet.yaml`. Maps each slot to a consumer-meaningful name, e.g. for murmures: `a-validator-1` → party hint `featuredapp-validator-1`, `b-validator-1` → `alice-validator-1`, `c-validator-1` → `bob-validator-1`. Other consumers map differently (terraform-tests: `a-validator-1` → `tf-validator-1`).
+  - **Party hint** — supplied per-consumer via `canton-localnet.yaml`. Maps each slot to a consumer-meaningful name, e.g. for one consumer: `a-validator-1` → party hint `featuredapp-validator-1`, `b-validator-1` → `alice-validator-1`, `c-validator-1` → `bob-validator-1`. Other consumers map differently (terraform-tests: `a-validator-1` → `tf-validator-1`).
 
 The split keeps the shared artifact domain-neutral while letting consumers express their own domain.
 

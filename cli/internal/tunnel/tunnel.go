@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package tunnel wraps an `ssh -L` invocation that mirrors the bespoke
-// tunnel scripts murmures and terraform-provider-canton's CI rely on
+// tunnel scripts downstream consumers and terraform-provider-canton's CI rely on
 // today. It opens the splice LocalNet port set (Canton public 11901,
 // in-container Splice JSON Ledger API 7575, Keycloak 8082) against a
 // remote VM.
