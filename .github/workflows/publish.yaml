@@ -1,5 +1,18 @@
 # Copyright (c) 2026 Peaceful Studio OÜ
 # SPDX-License-Identifier: Apache-2.0
+#
+# Publishes Peaceful.Canton.Localnet.Testing to nuget.org when a maintainer
+# publishes a GitHub Release (release.yml only creates the draft; publishing
+# must be a human action — GITHUB_TOKEN-created events don't trigger
+# workflows).
+#
+# The NuGet version is derived from the release tag, not used verbatim.
+# Git tags must stay Go-compatible SemVer prereleases (Go rejects four-part
+# versions), but NuGet treats X.Y.Z-N as a prerelease that plain
+# `dotnet add package` refuses to install. So:
+#   v0.6.5-1          → NuGet 0.6.5.1 (four-part, STABLE)
+#   v0.6.5-0.preview.1 → NuGet 0.6.5-0.preview.1 (prerelease, opt-in)
+# Any other tag shape fails the run. See RELEASE.md "Version-format rule".
 
 name: Publish NuGet Packages
 
@@ -14,16 +27,55 @@ on:
         type: string
 
 concurrency:
-  group: publish-nuget-${{ github.ref }}
+  group: publish-nuget
   cancel-in-progress: false
 
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      nuget: ${{ steps.map.outputs.nuget }}
+    steps:
+      - name: Map release tag to NuGet version
+        id: map
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          VERSION_OVERRIDE: ${{ inputs.version_override }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "$VERSION_OVERRIDE" ]; then
+            echo "nuget=$VERSION_OVERRIDE" >> "$GITHUB_OUTPUT"
+            echo "Using manual override: $VERSION_OVERRIDE"
+            exit 0
+          fi
+
+          if [ "$EVENT_NAME" != "release" ]; then
+            echo "nuget=" >> "$GITHUB_OUTPUT"
+            echo "Manual dispatch without override: callee auto-calculates a dev version"
+            exit 0
+          fi
+
+          if [[ "$RELEASE_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-([1-9][0-9]*)$ ]]; then
+            NUGET_VERSION="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+            echo "Final release tag $RELEASE_TAG → stable NuGet version $NUGET_VERSION"
+          elif [[ "$RELEASE_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-(0\.[0-9A-Za-z][0-9A-Za-z.]*)$ ]]; then
+            NUGET_VERSION="${BASH_REMATCH[1]}-${BASH_REMATCH[2]}"
+            echo "Preview release tag $RELEASE_TAG → prerelease NuGet version $NUGET_VERSION"
+          else
+            echo "::error::Tag '$RELEASE_TAG' matches neither v<X.Y.Z>-<N> (final) nor v<X.Y.Z>-0.<label> (preview). See RELEASE.md 'Version-format rule'." >&2
+            exit 1
+          fi
+          echo "nuget=$NUGET_VERSION" >> "$GITHUB_OUTPUT"
+
   publish:
+    needs: version
     uses: peacefulstudio/github-actions/.github/workflows/csharp-publish-public.yaml@v1
     secrets: inherit
     permissions:
       contents: read
     with:
-      version_override: ${{ inputs.version_override }}
+      version_override: ${{ needs.version.outputs.nuget }}
       working-directory: csharp
       test-filter: 'Category!=Integration'

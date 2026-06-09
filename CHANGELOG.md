@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Publish `Peaceful.Canton.Localnet.Testing` to nuget.org whenever a
+  GitHub Release is published, as a stable four-part version mapped
+  from the tag (`v0.6.5-1` → `0.6.5.1`) so plain `dotnet add package`
+  resolves it without `--prerelease` (#88). GitHub Packages keeps the
+  tag-verbatim prerelease version (`0.6.5-1`).
+
 ## [0.6.5-1] - 2026-06-06
 
 ### Added
