@@ -1,0 +1,29 @@
+# Copyright (c) 2026 Peaceful Studio OÜ
+# SPDX-License-Identifier: Apache-2.0
+
+name: Publish NuGet Packages
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version_override:
+        description: 'Override version (leave empty for auto-calculated)'
+        required: false
+        type: string
+
+concurrency:
+  group: publish-nuget-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    uses: peacefulstudio/github-actions/.github/workflows/csharp-publish-public.yaml@v1
+    secrets: inherit
+    permissions:
+      contents: read
+    with:
+      version_override: ${{ inputs.version_override }}
+      working-directory: csharp
+      test-filter: 'Category!=Integration'
