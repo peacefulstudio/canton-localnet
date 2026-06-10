@@ -16,6 +16,13 @@
 #                attached as Release assets with a SHA-256 checksums file.
 #   4. OCI    — compose/ packaged with oras and pushed to
 #                ghcr.io/<owner>/canton-localnet:<version>.
+#
+# The pipeline ends with a DRAFT GitHub Release. A maintainer reviews and
+# publishes it from the UI; that `release: published` event triggers the
+# nuget.org publish workflow (publish.yaml). The workflow must not publish
+# the release itself: events created with the workflow's GITHUB_TOKEN do
+# not trigger other workflows, so an auto-published release would silently
+# skip the nuget.org push.
 
 name: release
 
@@ -43,7 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           tag="${REF_NAME}"
-          if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$ ]]; then
+          if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-[1-9][0-9]*$ ]]; then
             echo "::error::Tag '${tag}' does not match v<splice>-<patch> (e.g. v0.6.2-1). See RELEASE.md."
             exit 1
           fi
@@ -251,7 +258,7 @@ jobs:
           echo "Pushed ${ref}"
 
   publish-release:
-    name: publish GitHub Release
+    name: draft GitHub Release
     runs-on: ubuntu-latest
     needs: [parse-version, release-notes, nuget, cli, oci]
     steps:
@@ -295,12 +302,3 @@ jobs:
             dist/canton-localnet-*
             dist/*.nupkg
             dist/checksums.txt
-
-      - name: Publish draft (transition to immutable final)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ needs.parse-version.outputs.tag }}
-        run: |
-          set -euo pipefail
-          gh release edit "${TAG}" --draft=false --prerelease
