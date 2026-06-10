@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.5-2] - 2026-06-10
+
 ### Added
 
 - Publish `Peaceful.Canton.Localnet.Testing` to nuget.org whenever a
