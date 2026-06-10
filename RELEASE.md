@@ -59,8 +59,8 @@ the first preview ships.
 
 1. Make sure `CHANGELOG.md`'s `[Unreleased]` section is up to date
    and lists every consumer-visible change since the previous tag.
-   The release workflow extracts this section verbatim and uses it
-   as the GitHub Release body.
+   The release workflow extracts the `## [<version>]` section promoted
+   in step 3 and uses it as the GitHub Release body.
 2. Decide the next tag using the version-format rule above. If
    `compose/splice.sha` was bumped this cycle, reset the patch to
    `1`; otherwise increment the previous patch.
