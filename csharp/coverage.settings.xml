@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Copyright (c) 2026 Peaceful Studio OÜ
+  SPDX-License-Identifier: Apache-2.0
+-->
+<Configuration>
+  <CodeCoverage>
+    <ModulePaths>
+      <Exclude>
+        <ModulePath>.*\.Tests\.dll$</ModulePath>
+      </Exclude>
+    </ModulePaths>
+    <Attributes>
+      <Exclude>
+        <Attribute>^System\.ObsoleteAttribute$</Attribute>
+        <Attribute>^System\.CodeDom\.Compiler\.GeneratedCodeAttribute$</Attribute>
+        <Attribute>^System\.Runtime\.CompilerServices\.CompilerGeneratedAttribute$</Attribute>
+      </Exclude>
+    </Attributes>
+    <SkipAutoProps>True</SkipAutoProps>
+    <CollectFromChildProcesses>True</CollectFromChildProcesses>
+    <UseVerifiableInstrumentation>False</UseVerifiableInstrumentation>
+  </CodeCoverage>
+</Configuration>

@@ -78,7 +78,7 @@ csharp/
   Directory.Build.props          # net10.0, nullable, treat warnings as errors
   Directory.Packages.props       # central package versions
   NuGet.config                   # pins source to nuget.org with mapping
-  coverlet.runsettings           # coverage config shared with csharp-ci.yaml
+  coverage.settings.xml          # MTP code-coverage config shared with csharp-ci.yaml
   Peaceful.Canton.Localnet.Testing.sln
   src/Peaceful.Canton.Localnet.Testing/
   tests/Peaceful.Canton.Localnet.Testing.Tests/

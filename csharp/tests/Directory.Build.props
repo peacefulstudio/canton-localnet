@@ -1,0 +1,16 @@
+<!--
+  Copyright (c) 2026 Peaceful Studio OÜ
+  SPDX-License-Identifier: Apache-2.0
+-->
+<Project>
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+  <PropertyGroup>
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+    <TestingPlatformCommandLineArguments>--coverage --coverage-output-format cobertura --coverage-output $(MSBuildProjectName).cobertura.xml --coverage-settings $(MSBuildThisFileDirectory)../coverage.settings.xml</TestingPlatformCommandLineArguments>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
+  </ItemGroup>
+</Project>
