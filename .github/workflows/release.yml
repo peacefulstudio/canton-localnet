@@ -67,22 +67,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
-      - name: Extract [Unreleased] section from CHANGELOG.md
+      - name: Extract release notes from CHANGELOG.md
         env:
           TAG: ${{ needs.parse-version.outputs.tag }}
+          VERSION: ${{ needs.parse-version.outputs.version }}
         run: |
           set -euo pipefail
           if [ ! -f CHANGELOG.md ]; then
             echo "::error::CHANGELOG.md missing"
             exit 1
           fi
-          awk '
-            /^## \[Unreleased\]/ { capture=1; next }
+          awk -v ver="${VERSION}" '
+            /^## \[/ && index($0, "[" ver "]") { capture=1; next }
             /^## \[/ && capture { exit }
             capture { print }
           ' CHANGELOG.md > release-notes.md
-          if [ ! -s release-notes.md ]; then
-            echo "::error::[Unreleased] section of CHANGELOG.md is empty"
+          if [ -z "$(sed '/^[[:space:]]*$/d; /^#/d' release-notes.md)" ]; then
+            echo "::notice::## [${VERSION}] not found or contains no entries in CHANGELOG.md; falling back to ## [Unreleased]"
+            awk '
+              /^## \[Unreleased\]/ { capture=1; next }
+              /^## \[/ && capture { exit }
+              capture { print }
+            ' CHANGELOG.md > release-notes.md
+          fi
+          content="$(sed '/^[[:space:]]*$/d; /^#/d' release-notes.md)"
+          if [ -z "${content}" ]; then
+            echo "::error::Release notes for ${TAG} are empty — no entries found (only headings or blank lines) under ## [${VERSION}] or ## [Unreleased] in CHANGELOG.md"
             exit 1
           fi
           {
