@@ -6,6 +6,7 @@
   <PropertyGroup>
     <PackageId>Peaceful.Canton.Localnet.Testing</PackageId>
     <Description>xUnit fixtures for Canton LocalNet integration tests (OAuth2 + JSON Ledger API).</Description>
+    <PackageTags>canton;localnet;splice;daml;ledger;json-ledger-api;oauth2;xunit;integration-testing;test-fixtures</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <IsPackable>true</IsPackable>

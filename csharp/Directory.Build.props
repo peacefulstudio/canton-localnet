@@ -18,6 +18,7 @@
     <Copyright>Copyright (c) 2026 Peaceful Studio OÜ</Copyright>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
     <PackageProjectUrl>https://github.com/peacefulstudio/canton-localnet</PackageProjectUrl>
     <RepositoryUrl>https://github.com/peacefulstudio/canton-localnet</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
@@ -39,6 +40,7 @@
 
   <ItemGroup>
     <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" />
+    <None Include="$(MSBuildThisFileDirectory)icon.png" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <ItemGroup>

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.6.5-3] - 2026-06-13
 
+### Added
+
+- Embed the Peaceful Studio package icon and NuGet `PackageTags`
+  (`canton`, `localnet`, `splice`, `daml`, `xunit`, …) in
+  `Peaceful.Canton.Localnet.Testing`, completing the
+  `dotnet-extensions` packaging baseline so the package presents with
+  branding and is discoverable on nuget.org (#98).
+
 ### Fixed
 
 - `DarUploader.UploadAsync` now transparently retries a transient
