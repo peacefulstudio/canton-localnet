@@ -92,4 +92,3 @@ jobs:
           api-key: ${{ steps.login.outputs.NUGET_API_KEY }}
           version_override: ${{ needs.version.outputs.nuget }}
           working-directory: csharp
-          test-filter: 'Category!=Integration'
