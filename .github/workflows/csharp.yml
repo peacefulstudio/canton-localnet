@@ -32,13 +32,11 @@ permissions:
 
 jobs:
   ci:
-    uses: peacefulstudio/github-actions/.github/workflows/csharp-ci.yaml@v1
+    uses: peacefulstudio/github-actions/.github/workflows/csharp-ci.yaml@v2
     with:
       concurrency-group: csharp-ci-${{ github.ref }}
       working-directory: csharp
       os-list: ${{ github.event_name == 'push' && '["ubuntu-latest","macos-latest","windows-latest"]' || '["ubuntu-latest"]' }}
-      test-project: tests/Peaceful.Canton.Localnet.Testing.Tests/Peaceful.Canton.Localnet.Testing.Tests.csproj
-      test-filter: 'Category!=Integration'
       coverage-pr-comment-header: csharp-coverage
       pack: true
       pack-project: src/Peaceful.Canton.Localnet.Testing/Peaceful.Canton.Localnet.Testing.csproj

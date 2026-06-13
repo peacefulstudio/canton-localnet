@@ -4,6 +4,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace Peaceful.Canton.Localnet.Testing.Tests;
@@ -29,6 +30,195 @@ public class DarUploaderTests
         }));
         var http = new HttpClient(handler);
         return new OAuth2TokenProvider(http, options);
+    }
+
+    private static DarUploader NoSleepUploader(HttpClient http, OAuth2TokenProvider tokenProvider) =>
+        new(http, tokenProvider, options: new DarUploaderRetryOptions(
+            MaxAttempts: 6,
+            BaseDelay: TimeSpan.FromSeconds(1),
+            MaxDelay: TimeSpan.FromSeconds(16),
+            Delay: (_, _) => Task.CompletedTask));
+
+    [Fact]
+    public async Task UploadAsync_retries_transient_503_then_succeeds()
+    {
+        var calls = 0;
+        var handler = new RecordingHandler((_, _) =>
+        {
+            calls++;
+            var status = calls < 3 ? HttpStatusCode.ServiceUnavailable : HttpStatusCode.OK;
+            return Task.FromResult(new HttpResponseMessage(status));
+        });
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var uploader = NoSleepUploader(http, StaticTokenProvider("tok"));
+
+        var outcome = await uploader.UploadAsync(new byte[] { 1, 2, 3 }, "warming.dar");
+
+        Assert.Equal(DarUploadOutcome.Uploaded, outcome);
+        Assert.Equal(3, calls);
+    }
+
+    [Fact]
+    public async Task UploadAsync_throws_503_with_body_preserved_after_budget_exhausted()
+    {
+        var calls = 0;
+        var handler = new RecordingHandler((_, _) =>
+        {
+            calls++;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            {
+                Content = new StringContent("""{"cause":"still warming up"}""", Encoding.UTF8, "application/json"),
+            });
+        });
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var uploader = NoSleepUploader(http, StaticTokenProvider("tok"));
+
+        var exception = await Assert.ThrowsAsync<JsonLedgerApiException>(
+            () => uploader.UploadAsync(new byte[] { 1, 2, 3 }, "cold.dar"));
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, exception.StatusCode);
+        Assert.Contains("still warming up", exception.ResponseBody);
+        Assert.Equal(6, calls);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    public async Task UploadAsync_does_not_retry_non_503_failure(HttpStatusCode status)
+    {
+        var calls = 0;
+        var handler = new RecordingHandler((_, _) =>
+        {
+            calls++;
+            return Task.FromResult(new HttpResponseMessage(status)
+            {
+                Content = new StringContent("""{"cause":"no token"}""", Encoding.UTF8, "application/json"),
+            });
+        });
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var uploader = NoSleepUploader(http, StaticTokenProvider("tok"));
+
+        var exception = await Assert.ThrowsAsync<JsonLedgerApiException>(
+            () => uploader.UploadAsync(new byte[] { 1, 2, 3 }, "unauth.dar"));
+
+        Assert.Equal(status, exception.StatusCode);
+        Assert.Equal(1, calls);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void DarUploaderRetryOptions_rejects_MaxAttempts_below_one(int maxAttempts)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new DarUploaderRetryOptions(
+            MaxAttempts: maxAttempts,
+            BaseDelay: TimeSpan.FromSeconds(1),
+            MaxDelay: TimeSpan.FromSeconds(16),
+            Delay: (_, _) => Task.CompletedTask));
+    }
+
+    [Fact]
+    public void DarUploaderRetryOptions_rejects_null_Delay()
+    {
+        Assert.Throws<ArgumentNullException>(() => new DarUploaderRetryOptions(
+            MaxAttempts: 6,
+            BaseDelay: TimeSpan.FromSeconds(1),
+            MaxDelay: TimeSpan.FromSeconds(16),
+            Delay: null!));
+    }
+
+    [Fact]
+    public void DarUploaderRetryOptions_rejects_negative_BaseDelay()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new DarUploaderRetryOptions(
+            MaxAttempts: 6,
+            BaseDelay: TimeSpan.FromSeconds(-1),
+            MaxDelay: TimeSpan.FromSeconds(16),
+            Delay: (_, _) => Task.CompletedTask));
+    }
+
+    [Fact]
+    public void DarUploaderRetryOptions_rejects_MaxDelay_below_BaseDelay()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new DarUploaderRetryOptions(
+            MaxAttempts: 6,
+            BaseDelay: TimeSpan.FromSeconds(16),
+            MaxDelay: TimeSpan.FromSeconds(1),
+            Delay: (_, _) => Task.CompletedTask));
+    }
+
+    [Theory]
+    [InlineData(1, 1000)]
+    [InlineData(2, 2000)]
+    [InlineData(3, 4000)]
+    [InlineData(4, 8000)]
+    [InlineData(5, 16000)]
+    [InlineData(6, 16000)]
+    public void DelayForAttempt_doubles_and_caps_at_MaxDelay(int attempt, int expectedMilliseconds)
+    {
+        var options = new DarUploaderRetryOptions(
+            MaxAttempts: 6,
+            BaseDelay: TimeSpan.FromSeconds(1),
+            MaxDelay: TimeSpan.FromSeconds(16),
+            Delay: (_, _) => Task.CompletedTask);
+
+        Assert.Equal(TimeSpan.FromMilliseconds(expectedMilliseconds), options.DelayForAttempt(attempt));
+    }
+
+    [Fact]
+    public async Task UploadAsync_passes_capped_exponential_delays_to_Delay_delegate()
+    {
+        var capturedDelays = new List<TimeSpan>();
+        var handler = new RecordingHandler((_, _) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            {
+                Content = new StringContent("""{"cause":"still warming up"}""", Encoding.UTF8, "application/json"),
+            }));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var uploader = new DarUploader(http, StaticTokenProvider("tok"), options: new DarUploaderRetryOptions(
+            MaxAttempts: 6,
+            BaseDelay: TimeSpan.FromSeconds(1),
+            MaxDelay: TimeSpan.FromSeconds(16),
+            Delay: (delay, _) =>
+            {
+                capturedDelays.Add(delay);
+                return Task.CompletedTask;
+            }));
+
+        await Assert.ThrowsAsync<JsonLedgerApiException>(
+            () => uploader.UploadAsync(new byte[] { 1, 2, 3 }, "cold.dar"));
+
+        Assert.Equal(
+            new[]
+            {
+                TimeSpan.FromSeconds(1),
+                TimeSpan.FromSeconds(2),
+                TimeSpan.FromSeconds(4),
+                TimeSpan.FromSeconds(8),
+                TimeSpan.FromSeconds(16),
+            },
+            capturedDelays);
+    }
+
+    [Fact]
+    public async Task UploadAsync_logs_a_warning_for_each_503_retry()
+    {
+        var calls = 0;
+        var handler = new RecordingHandler((_, _) =>
+        {
+            calls++;
+            var status = calls < 3 ? HttpStatusCode.ServiceUnavailable : HttpStatusCode.OK;
+            return Task.FromResult(new HttpResponseMessage(status));
+        });
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var logger = new RecordingLogger<DarUploader>();
+        var uploader = new DarUploader(http, StaticTokenProvider("tok"), logger,
+            new DarUploaderRetryOptions(6, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(16), (_, _) => Task.CompletedTask));
+
+        await uploader.UploadAsync(new byte[] { 1, 2, 3 }, "warming.dar");
+
+        var warnings = logger.Entries.Count(e => e.Level == LogLevel.Warning);
+        Assert.Equal(2, warnings);
     }
 
     [Fact]
