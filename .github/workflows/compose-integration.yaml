@@ -135,6 +135,7 @@ jobs:
 
       - name: C# fixture integration tests
         if: success() || failure()
+        working-directory: csharp
         env:
           CANTON_LOCALNET_TEST_DAR_PATH: ${{ steps.build-dar.outputs.dar_path }}
           CANTON_LOCALNET_JSON_API_URL: http://localhost:11975
@@ -147,7 +148,7 @@ jobs:
           CANTON_LOCALNET_B_VALIDATOR_1_CLIENT_SECRET: 6m12QyyGl81d9nABWQXMycZdXho6ejEX
         run: |
           set -euo pipefail
-          dotnet test csharp/tests/Peaceful.Canton.Localnet.Testing.Tests/Peaceful.Canton.Localnet.Testing.Tests.csproj \
+          dotnet test --project tests/Peaceful.Canton.Localnet.Testing.Tests/Peaceful.Canton.Localnet.Testing.Tests.csproj \
             --configuration Release \
             -- \
             --filter-trait "Category=Integration" \

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.5-3] - 2026-06-13
+
+### Added
+
+- Embed the Peaceful Studio package icon and NuGet `PackageTags`
+  (`canton`, `localnet`, `splice`, `daml`, `xunit`, …) in
+  `Peaceful.Canton.Localnet.Testing`, completing the
+  `dotnet-extensions` packaging baseline so the package presents with
+  branding and is discoverable on nuget.org (#98).
+
+### Fixed
+
+- `DarUploader.UploadAsync` now transparently retries a transient
+  `503 Service Unavailable` from `POST /v2/packages` with bounded
+  exponential backoff (6 attempts, 1s base delay capped at 16s),
+  fixing intermittent integration-suite failures on slow CI runners
+  where the package service is still warming up on the first ledger
+  call (#96). Retry behaviour is tunable via the new optional
+  `DarUploaderRetryOptions` constructor parameter; `2xx` success and
+  the idempotent `400 KNOWN_PACKAGE_VERSION` outcome are unchanged, and
+  all other failures (e.g. `401`/`403`) still fail fast with no retry.
+
 ## [0.6.5-2] - 2026-06-10
 
 ### Added

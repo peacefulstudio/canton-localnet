@@ -23,15 +23,18 @@ public sealed class DarUploader
     private readonly HttpClient _httpClient;
     private readonly OAuth2TokenProvider _tokenProvider;
     private readonly ILogger<DarUploader> _logger;
+    private readonly DarUploaderRetryOptions _retryOptions;
 
     public DarUploader(
         HttpClient httpClient,
         OAuth2TokenProvider tokenProvider,
-        ILogger<DarUploader>? logger = null)
+        ILogger<DarUploader>? logger = null,
+        DarUploaderRetryOptions? options = null)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _tokenProvider = tokenProvider ?? throw new ArgumentNullException(nameof(tokenProvider));
         _logger = logger ?? NullLogger<DarUploader>.Instance;
+        _retryOptions = options ?? DarUploaderRetryOptions.Default;
 
         if (_httpClient.BaseAddress is null)
         {
@@ -76,15 +79,10 @@ public sealed class DarUploader
 
         var token = await _tokenProvider.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, UploadPath);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        request.Content = new ByteArrayContent(darBytes);
-        request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
-
         _logger.LogDebug("POST {Uri} (DAR bytes: {Length}, source: {Source})",
             new Uri(_httpClient.BaseAddress!, UploadPath), darBytes.Length, sourceLabel);
 
-        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        using var response = await SendWithRetryAsync(darBytes, token, sourceLabel, cancellationToken).ConfigureAwait(false);
         if (response.IsSuccessStatusCode)
         {
             _logger.LogInformation("Uploaded DAR {Source} ({Length} bytes)", sourceLabel, darBytes.Length);
@@ -102,6 +100,37 @@ public sealed class DarUploader
             $"POST {UploadPath} for {sourceLabel} returned {(int)response.StatusCode} {response.ReasonPhrase}: {body}",
             response.StatusCode,
             body);
+    }
+
+    private async Task<HttpResponseMessage> SendWithRetryAsync(
+        byte[] darBytes,
+        string token,
+        string sourceLabel,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, UploadPath);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            request.Content = new ByteArrayContent(darBytes);
+            request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+
+            var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+            if (response.StatusCode != HttpStatusCode.ServiceUnavailable || attempt >= _retryOptions.MaxAttempts)
+            {
+                return response;
+            }
+
+            response.Dispose();
+
+            var delay = _retryOptions.DelayForAttempt(attempt);
+            _logger.LogWarning(
+                "POST {Path} for {Source} returned 503 Service Unavailable (attempt {Attempt}/{MaxAttempts}); retrying in {Delay}.",
+                UploadPath, sourceLabel, attempt, _retryOptions.MaxAttempts, delay);
+
+            await _retryOptions.Delay(delay, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     /// <summary>
@@ -141,3 +170,59 @@ public enum DarUploadOutcome
 /// Pairs a DAR source identifier with its upload outcome.
 /// </summary>
 public sealed record DarUploadResult(string Source, DarUploadOutcome Outcome);
+
+/// <summary>
+/// Bounded exponential-backoff configuration for retrying a transient
+/// <c>503 Service Unavailable</c> from <c>POST /v2/packages</c> while the
+/// package service is still warming up. Defaults give ~6 attempts with a 1s
+/// base delay capped at 16s (total budget on the order of ~30s).
+/// </summary>
+/// <param name="MaxAttempts">Total number of POST attempts, including the first.</param>
+/// <param name="BaseDelay">Delay before the first retry; doubles each subsequent retry.</param>
+/// <param name="MaxDelay">Upper bound applied to every computed backoff delay.</param>
+/// <param name="Delay">
+/// Wait primitive invoked between attempts. Production uses
+/// <see cref="Task.Delay(TimeSpan, CancellationToken)"/>; tests inject a
+/// near-instant delegate so they never actually sleep.
+/// </param>
+public sealed record DarUploaderRetryOptions(
+    int MaxAttempts,
+    TimeSpan BaseDelay,
+    TimeSpan MaxDelay,
+    Func<TimeSpan, CancellationToken, Task> Delay)
+{
+    public int MaxAttempts { get; } = Validated(MaxAttempts, BaseDelay, MaxDelay, Delay);
+    public TimeSpan BaseDelay { get; } = BaseDelay;
+    public TimeSpan MaxDelay { get; } = MaxDelay;
+    public Func<TimeSpan, CancellationToken, Task> Delay { get; } = Delay;
+
+    private static int Validated(
+        int maxAttempts,
+        TimeSpan baseDelay,
+        TimeSpan maxDelay,
+        Func<TimeSpan, CancellationToken, Task> delay)
+    {
+        ArgumentNullException.ThrowIfNull(delay);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxAttempts, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(baseDelay, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxDelay, baseDelay);
+        return maxAttempts;
+    }
+
+    /// <summary>Production defaults: 6 attempts, 1s base, 16s cap, real <see cref="Task.Delay(TimeSpan, CancellationToken)"/>.</summary>
+    public static DarUploaderRetryOptions Default { get; } = new(
+        MaxAttempts: 6,
+        BaseDelay: TimeSpan.FromSeconds(1),
+        MaxDelay: TimeSpan.FromSeconds(16),
+        Delay: Task.Delay);
+
+    /// <summary>Computes the capped exponential backoff delay before the retry following <paramref name="attempt"/>.</summary>
+    public TimeSpan DelayForAttempt(int attempt)
+    {
+        var multiplier = Math.Pow(2, attempt - 1);
+        var milliseconds = BaseDelay.TotalMilliseconds * multiplier;
+        return milliseconds >= MaxDelay.TotalMilliseconds
+            ? MaxDelay
+            : TimeSpan.FromMilliseconds(milliseconds);
+    }
+}
