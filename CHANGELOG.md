@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.5-3.preview.1] - 2026-06-14
+
+Preview of `0.6.5.3` (NuGet `0.6.5.3-preview.1`, opt-in prerelease) and
+the first published build to carry the changes below — the `0.6.5-3`
+final was drafted but never pushed to nuget.org.
+
+### Added
+
+- Embed the Peaceful Studio package icon and NuGet `PackageTags`
+  (`canton`, `localnet`, `splice`, `daml`, `xunit`, …) so the package
+  presents with branding and is discoverable on nuget.org.
+- Preview release lane: `v<X.Y.Z>-<N>.<label>` tags map to NuGet
+  prereleases (`v0.6.5-3.preview.1` → `0.6.5.3-preview.1`).
+
+### Fixed
+
+- `DarUploader.UploadAsync` transparently retries a transient
+  `503 Service Unavailable` from `POST /v2/packages` with bounded
+  exponential backoff (6 attempts, 1s base capped at 16s), tunable via
+  the new optional `DarUploaderRetryOptions` parameter; `2xx` and the
+  idempotent `400 KNOWN_PACKAGE_VERSION` outcome are unchanged, other
+  failures (`401`/`403`) still fail fast.
+- NuGet publish no longer fails at the test step — dropped the legacy
+  VSTest `--filter` flag that Microsoft.Testing.Platform rejects.
+
 ## [0.6.5-3] - 2026-06-13
 
 ### Added
