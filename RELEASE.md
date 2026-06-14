@@ -8,26 +8,36 @@ on a tag push.
 
 ## Version-format rule
 
-Tag format is **`v<splice-version>-<patch>`** (for example `v0.6.2-1`,
-`v0.6.2-2`, `v0.6.3-1`). The `<splice-version>` segment mirrors the
-upstream `hyperledger-labs/splice` release vendored under `compose/`
-and pinned in `compose/splice.sha`. The `<patch>` segment is a
-monotonically increasing integer that **resets to `1` on every splice
-version bump** and increments on every subsequent canton-localnet
-release that keeps the same splice version.
+Tag format is **`v<splice-version>-<patch>[.<prerelease-label>]`** (for
+example `v0.6.2-1`, `v0.6.2-2`, `v0.6.3-1`, `v0.6.3-1.preview.1`). The
+`<splice-version>` segment mirrors the upstream `hyperledger-labs/splice`
+release vendored under `compose/` and pinned in `compose/splice.sha`. The
+`<patch>` segment is a monotonically increasing integer **≥ 1** that
+**resets to `1` on every splice version bump** and increments on every
+subsequent canton-localnet release that keeps the same splice version. An
+optional `.<prerelease-label>` (e.g. `.preview.1`) marks a prerelease of
+that patch.
 
-**Never publish a plain `v<splice>` tag** (e.g. `v0.6.2`). The
-`-<patch>` suffix is non-optional. The dash makes the version a
-SemVer 2.0 prerelease (`0.6.2-1`), which keeps `go get` happy and
-sorts predictably in GitHub Releases. The release workflow
-rejects tags that don't match the regex.
+**Never publish a plain `v<splice>` tag** (e.g. `v0.6.2`) and **never use
+patch `0`** — the minimum is `-1`. The `-<patch>` suffix is non-optional;
+the dash makes the version a SemVer 2.0 prerelease so `go get` resolves
+it. The release workflow rejects tags that don't match the regex.
+
+> **Go consumers must pin an exact version.** Every tag is a SemVer
+> prerelease of a `v<splice>` that intentionally never exists, so
+> `go get …@latest` is unreliable here — it picks the highest SemVer
+> tag, and a `-3.preview.1` even outranks the stable `-3`. Always pin
+> the exact version:
+> `go get github.com/peacefulstudio/canton-localnet/go/fixture@v0.6.2-1`.
 
 | Example tag | Meaning | NuGet version published |
 |---|---|---|
 | `v0.6.2-1` | First canton-localnet release on splice 0.6.2 | `0.6.2.1` (stable) |
 | `v0.6.2-2` | Second release on splice 0.6.2 (no splice bump, canton-localnet-only changes) | `0.6.2.2` (stable) |
 | `v0.6.3-1` | First release after bumping splice to 0.6.3 (patch resets) | `0.6.3.1` (stable) |
-| `v0.6.2` | Invalid — workflow will reject | — |
+| `v0.6.3-1.preview.1` | Preview of `0.6.3.1` (opt-in prerelease) | `0.6.3.1-preview.1` (prerelease) |
+| `v0.6.2` | Invalid — plain splice tag, workflow will reject | — |
+| `v0.6.2-0` | Invalid — patch starts at `1` | — |
 | `0.6.2-1` | Invalid — must be prefixed with `v` | — |
 
 ### NuGet version mapping
@@ -42,18 +52,14 @@ the NuGet version from the tag instead of using it verbatim:
 | Tag shape | NuGet version | Stability |
 |---|---|---|
 | `v<X.Y.Z>-<N>` (final) | `<X.Y.Z>.<N>` (four-part) | stable |
-| `v<X.Y.Z>-0.<label>` (preview) | `<X.Y.Z>-0.<label>` | prerelease |
+| `v<X.Y.Z>-<N>.<label>` (preview) | `<X.Y.Z>.<N>-<label>` | prerelease |
 
-Go is indifferent to the mapping: it resolves the tag itself, and
-because every tag is a prerelease, `go get @latest` falls back to
-the highest one — which is why preview tags must carry the leading
-`0.` (`0.6.3-0.preview.1 < 0.6.3-1` since SemVer ranks the numeric
-`0` below `1`; a bare `-preview.1` label would permanently outrank
-the finals). Tags matching neither shape fail the publish workflow.
-
-The preview lane is reserved for future use: `release.yml`'s tag
-regex still accepts only final tags today and must be widened when
-the first preview ships.
+Both [`publish.yaml`](.github/workflows/publish.yaml) and `release.yml`'s
+tag validator accept exactly these two shapes; any other tag fails the
+run. NuGet orders them as intended — `0.6.3.1-preview.1 < 0.6.3.1 <
+0.6.3.2`. Go's own ordering is deliberately disregarded (it would rank a
+`-N.preview` above its `-N` final): consumers pin exact versions, per the
+note above.
 
 ## Cutting a release
 

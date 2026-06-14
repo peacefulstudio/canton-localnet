@@ -10,8 +10,8 @@
 # Git tags must stay Go-compatible SemVer prereleases (Go rejects four-part
 # versions), but NuGet treats X.Y.Z-N as a prerelease that plain
 # `dotnet add package` refuses to install. So:
-#   v0.6.5-1          → NuGet 0.6.5.1 (four-part, STABLE)
-#   v0.6.5-0.preview.1 → NuGet 0.6.5-0.preview.1 (prerelease, opt-in)
+#   v0.6.5-1           → NuGet 0.6.5.1 (four-part, STABLE)
+#   v0.6.5-1.preview.1 → NuGet 0.6.5.1-preview.1 (prerelease, opt-in)
 # Any other tag shape fails the run. See RELEASE.md "Version-format rule".
 
 name: Publish NuGet Packages
@@ -60,11 +60,11 @@ jobs:
           if [[ "$RELEASE_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-([1-9][0-9]*)$ ]]; then
             NUGET_VERSION="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
             echo "Final release tag $RELEASE_TAG → stable NuGet version $NUGET_VERSION"
-          elif [[ "$RELEASE_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-(0\.[0-9A-Za-z][0-9A-Za-z.]*)$ ]]; then
-            NUGET_VERSION="${BASH_REMATCH[1]}-${BASH_REMATCH[2]}"
+          elif [[ "$RELEASE_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-([1-9][0-9]*)\.([0-9A-Za-z][0-9A-Za-z.]*)$ ]]; then
+            NUGET_VERSION="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}-${BASH_REMATCH[3]}"
             echo "Preview release tag $RELEASE_TAG → prerelease NuGet version $NUGET_VERSION"
           else
-            echo "::error::Tag '$RELEASE_TAG' matches neither v<X.Y.Z>-<N> (final) nor v<X.Y.Z>-0.<label> (preview). See RELEASE.md 'Version-format rule'." >&2
+            echo "::error::Tag '$RELEASE_TAG' matches neither v<X.Y.Z>-<N> (final) nor v<X.Y.Z>-<N>.<label> (preview). See RELEASE.md 'Version-format rule'." >&2
             exit 1
           fi
           echo "nuget=$NUGET_VERSION" >> "$GITHUB_OUTPUT"
