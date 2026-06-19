@@ -126,6 +126,7 @@ jobs:
           echo "dar_path=$abs_dar" >> "$GITHUB_OUTPUT"
 
       - name: Go fixture integration tests
+        if: success() || failure()
         working-directory: go/fixture
         env:
           CANTON_LOCALNET_TEST_DAR_PATH: ${{ steps.build-dar.outputs.dar_path }}
