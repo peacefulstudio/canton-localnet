@@ -43,6 +43,17 @@ public sealed class OAuth2TokenProvider : IDisposable
 
     private CachedToken? _cached;
 
+    /// <summary>
+    /// Creates a token provider for a single <c>client_credentials</c> client.
+    /// </summary>
+    /// <param name="httpClient">Client used to POST to the token endpoint.</param>
+    /// <param name="options">Token endpoint, audience, scope, and client credentials.</param>
+    /// <param name="logger">Optional logger; defaults to a no-op logger.</param>
+    /// <param name="timeProvider">
+    /// Clock used for cache-expiry decisions; defaults to
+    /// <see cref="TimeProvider.System"/>. Override it in tests to drive expiry
+    /// deterministically.
+    /// </param>
     public OAuth2TokenProvider(
         HttpClient httpClient,
         OAuth2TokenProviderOptions options,
@@ -144,6 +155,7 @@ public sealed class OAuth2TokenProvider : IDisposable
         return new CachedToken(payload.AccessToken, expiresAt);
     }
 
+    /// <summary>Releases the internal refresh lock.</summary>
     public void Dispose()
     {
         _refreshLock.Dispose();
@@ -167,6 +179,13 @@ public sealed class OAuth2TokenProvider : IDisposable
 /// </summary>
 public sealed class OAuth2TokenException : Exception
 {
+    /// <summary>
+    /// Creates the exception with the originating <paramref name="statusCode"/>
+    /// and raw <paramref name="responseBody"/> for diagnostics.
+    /// </summary>
+    /// <param name="message">Human-readable description of the failure.</param>
+    /// <param name="statusCode">HTTP status the token endpoint returned.</param>
+    /// <param name="responseBody">Raw response body, or empty when none was read.</param>
     public OAuth2TokenException(string message, System.Net.HttpStatusCode statusCode, string responseBody)
         : base(message)
     {
@@ -174,6 +193,9 @@ public sealed class OAuth2TokenException : Exception
         ResponseBody = responseBody;
     }
 
+    /// <summary>HTTP status the token endpoint returned.</summary>
     public System.Net.HttpStatusCode StatusCode { get; }
+
+    /// <summary>Raw response body, or empty when none was read.</summary>
     public string ResponseBody { get; }
 }

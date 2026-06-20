@@ -12,10 +12,19 @@ namespace Peaceful.Canton.Localnet.Testing;
 /// </summary>
 public enum LocalnetProfile
 {
+    /// <summary>The super-validator slot (sv-validator-1, 10xxx ports).</summary>
     SvValidator1,
+
+    /// <summary>The a-validator-1 slot (11xxx ports); the fixture default.</summary>
     AValidator1,
+
+    /// <summary>The b-validator-1 slot (12xxx ports).</summary>
     BValidator1,
+
+    /// <summary>The c-validator-1 slot (13xxx ports).</summary>
     CValidator1,
+
+    /// <summary>The d-validator-1 slot (14xxx ports).</summary>
     DValidator1,
 }
 
@@ -85,13 +94,28 @@ public sealed record LocalnetEndpoints(
 /// </summary>
 public static class EndpointDiscovery
 {
+    /// <summary>Legacy global override for the JSON Ledger API base URL.</summary>
     public const string JsonApiUrlEnv = "CANTON_LOCALNET_JSON_API_URL";
+
+    /// <summary>Legacy global override for the OAuth2 token endpoint URL.</summary>
     public const string TokenUrlEnv = "CANTON_LOCALNET_TOKEN_URL";
+
+    /// <summary>Legacy global override for the requested token audience.</summary>
     public const string AudienceEnv = "CANTON_LOCALNET_AUDIENCE";
+
+    /// <summary>Legacy global override for the <c>client_credentials</c> client id.</summary>
     public const string ClientIdEnv = "CANTON_LOCALNET_CLIENT_ID";
+
+    /// <summary>Legacy global override for the <c>client_credentials</c> client secret.</summary>
     public const string ClientSecretEnv = "CANTON_LOCALNET_CLIENT_SECRET";
+
+    /// <summary>Legacy global override for the requested OAuth2 scope.</summary>
     public const string ScopeEnv = "CANTON_LOCALNET_SCOPE";
+
+    /// <summary>Legacy global override for the validator service-account user id.</summary>
     public const string ValidatorUserIdEnv = "CANTON_LOCALNET_VALIDATOR_USER_ID";
+
+    /// <summary>Selects the active <see cref="LocalnetProfile"/> for the fixture.</summary>
     public const string ProfileEnv = "CANTON_LOCALNET_PROFILE";
 
     private const string DefaultAudience = "https://canton.network.global";

@@ -23,6 +23,19 @@ public sealed class UserBuilder
     private readonly OAuth2TokenProvider _tokenProvider;
     private readonly ILogger<UserBuilder> _logger;
 
+    /// <summary>
+    /// Creates a builder bound to a JSON Ledger API <see cref="HttpClient"/>.
+    /// </summary>
+    /// <param name="httpClient">
+    /// Client whose <see cref="HttpClient.BaseAddress"/> is the JSON Ledger API
+    /// root (e.g. <c>http://localhost:11975/</c>). Required; an unset base
+    /// address throws.
+    /// </param>
+    /// <param name="tokenProvider">Supplies the bearer token for each request.</param>
+    /// <param name="logger">Optional logger; defaults to a no-op logger.</param>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="httpClient"/> has no <see cref="HttpClient.BaseAddress"/>.
+    /// </exception>
     public UserBuilder(
         HttpClient httpClient,
         OAuth2TokenProvider tokenProvider,

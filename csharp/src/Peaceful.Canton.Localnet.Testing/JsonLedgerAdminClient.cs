@@ -20,6 +20,19 @@ public sealed class JsonLedgerAdminClient
     private readonly OAuth2TokenProvider _tokenProvider;
     private readonly ILogger<JsonLedgerAdminClient> _logger;
 
+    /// <summary>
+    /// Creates a client bound to a JSON Ledger API <see cref="HttpClient"/>.
+    /// </summary>
+    /// <param name="httpClient">
+    /// Client whose <see cref="HttpClient.BaseAddress"/> is the JSON Ledger API
+    /// root (e.g. <c>http://localhost:11975/</c>). Required; an unset base
+    /// address throws.
+    /// </param>
+    /// <param name="tokenProvider">Supplies the bearer token for each request.</param>
+    /// <param name="logger">Optional logger; defaults to a no-op logger.</param>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="httpClient"/> has no <see cref="HttpClient.BaseAddress"/>.
+    /// </exception>
     public JsonLedgerAdminClient(
         HttpClient httpClient,
         OAuth2TokenProvider tokenProvider,
@@ -92,6 +105,13 @@ public sealed class JsonLedgerAdminClient
 /// </summary>
 public sealed class JsonLedgerApiException : Exception
 {
+    /// <summary>
+    /// Creates the exception with the originating <paramref name="statusCode"/>
+    /// and raw <paramref name="responseBody"/> for diagnostics.
+    /// </summary>
+    /// <param name="message">Human-readable description of the failure.</param>
+    /// <param name="statusCode">HTTP status the participant returned.</param>
+    /// <param name="responseBody">Raw response body, or empty when none was read.</param>
     public JsonLedgerApiException(string message, System.Net.HttpStatusCode statusCode, string responseBody)
         : base(message)
     {
@@ -99,6 +119,9 @@ public sealed class JsonLedgerApiException : Exception
         ResponseBody = responseBody;
     }
 
+    /// <summary>HTTP status the participant returned.</summary>
     public System.Net.HttpStatusCode StatusCode { get; }
+
+    /// <summary>Raw response body, or empty when none was read.</summary>
     public string ResponseBody { get; }
 }
