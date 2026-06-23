@@ -16,6 +16,14 @@ compose/.env.local
 # Local agent tooling
 .claude/
 
+# ...except the checked-in, shared skills
+!.claude/
+!/.claude/
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/localnet-vm/
+
 # Acceptance-test state files (sentinel usernames etc.)
 tests/acceptance/.*-state
 
