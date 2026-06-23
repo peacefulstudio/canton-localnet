@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Upgrade the vendored Splice / Canton LocalNet from 0.6.5 to 0.6.9
+  (#105), pinned to upstream `hyperledger-labs/splice`
+  `bc6a3587e7ea94230ba0c36c638945282c52b304` in `compose/splice.sha`
+  and `compose/links.csv`; `SPLICE_VERSION=0.6.9` in
+  `compose/.env.defaults` drives the `canton`/`splice-app` image tags.
+  Merged as a three-way merge that preserves this repo's 5-validator
+  topology, the `POSTGRES_VERSION=17` / `NGINX_VERSION=1.30.0` pins, and
+  the per-slot `env/` wiring. Two upstream functional changes carried
+  over: the splice container health check switched from `curl -f` to
+  `wget --no-verbose --tries=1 --spider`, and `domain-migration-id`
+  (`${?MIGRATION_ID}`) was dropped from `conf/splice/app.conf`. The
+  PQS `SCRIBE_VERSION` (0.6.13) is an independent pin and is left
+  unchanged. C# package version bumped to `0.6.9-1`.
+
 ## [0.6.5-3.preview.1] - 2026-06-14
 
 Preview of `0.6.5.3` (NuGet `0.6.5.3-preview.1`, opt-in prerelease) and
