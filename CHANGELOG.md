@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Bump the `go-ci.yaml` reusable workflow pin from `@v1` to `@v2`. The `@v1`
+  reusable carried a broken `sudo chown` coverage step that failed on
+  self-hosted Hetzner runners (`sudo: a password is required`), breaking Go CI;
+  the fix shipped in `@v2` (peacefulstudio/github-actions#29). The go-ci input
+  contract is unchanged between v1 and v2, so this is a non-breaking repoint.
 - Upgrade the vendored Splice / Canton LocalNet from 0.6.5 to 0.6.9
   (#105), pinned to upstream `hyperledger-labs/splice`
   `bc6a3587e7ea94230ba0c36c638945282c52b304` in `compose/splice.sha`
