@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.9-1.preview.1] - 2026-06-24
+
+Preview of `0.6.9-1` (NuGet `0.6.9.1-preview.1`, opt-in prerelease) — the
+Splice 0.6.9 LocalNet upgrade and the all-five-validator default.
+
 ### Changed
 
 - Default LocalNet topology now runs all five validators (`sv`, `a`, `b`,
