@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Default LocalNet topology now runs all five validators (`sv`, `a`, `b`,
+  `c`, `d`). Previously `c-validator-1` defaulted off; its
+  `C_VALIDATOR_1_PROFILE` default in `compose/modules/localnet/compose.env`
+  flips from `off` to `on`, so `make up` (and the CLI `canton-localnet up`,
+  which already enabled all five) now agree on a full-fidelity local
+  default. The shared Hetzner VM deployment runs a reduced `sv + a + b` set
+  — `terraform/hetzner/templates/cloud-init.yaml.tftpl` exports
+  `C_VALIDATOR_1_PROFILE=off` and `D_VALIDATOR_1_PROFILE=off` before
+  `make up`, since `c` and `d` are not exercised by CI integration tests and
+  dropping them saves resources on the billing box.
 - Bump the `go-ci.yaml` reusable workflow pin from `@v1` to `@v2`. The `@v1`
   reusable carried a broken `sudo chown` coverage step that failed on
   self-hosted Hetzner runners (`sudo: a password is required`), breaking Go CI;
