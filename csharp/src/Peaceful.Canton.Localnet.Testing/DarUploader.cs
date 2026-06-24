@@ -25,6 +25,22 @@ public sealed class DarUploader
     private readonly ILogger<DarUploader> _logger;
     private readonly DarUploaderRetryOptions _retryOptions;
 
+    /// <summary>
+    /// Creates an uploader bound to a JSON Ledger API <see cref="HttpClient"/>.
+    /// </summary>
+    /// <param name="httpClient">
+    /// Client whose <see cref="HttpClient.BaseAddress"/> is the JSON Ledger API
+    /// root (e.g. <c>http://localhost:11975/</c>). Required; an unset base
+    /// address throws.
+    /// </param>
+    /// <param name="tokenProvider">Supplies the bearer token for each upload.</param>
+    /// <param name="logger">Optional logger; defaults to a no-op logger.</param>
+    /// <param name="options">
+    /// Transient-503 retry policy; defaults to <see cref="DarUploaderRetryOptions.Default"/>.
+    /// </param>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="httpClient"/> has no <see cref="HttpClient.BaseAddress"/>.
+    /// </exception>
     public DarUploader(
         HttpClient httpClient,
         OAuth2TokenProvider tokenProvider,
@@ -191,9 +207,16 @@ public sealed record DarUploaderRetryOptions(
     TimeSpan MaxDelay,
     Func<TimeSpan, CancellationToken, Task> Delay)
 {
+    /// <summary>Total number of POST attempts, including the first.</summary>
     public int MaxAttempts { get; } = Validated(MaxAttempts, BaseDelay, MaxDelay, Delay);
+
+    /// <summary>Delay before the first retry; doubles each subsequent retry.</summary>
     public TimeSpan BaseDelay { get; } = BaseDelay;
+
+    /// <summary>Upper bound applied to every computed backoff delay.</summary>
     public TimeSpan MaxDelay { get; } = MaxDelay;
+
+    /// <summary>Wait primitive invoked between attempts.</summary>
     public Func<TimeSpan, CancellationToken, Task> Delay { get; } = Delay;
 
     private static int Validated(

@@ -33,7 +33,10 @@ public sealed class LocalnetFixture : IAsyncDisposable
         UserBuilder = services.GetRequiredService<UserBuilder>();
     }
 
+    /// <summary>Resolved endpoint set for the fixture's default slot.</summary>
     public LocalnetEndpoints Endpoints { get; }
+
+    /// <summary>The <see cref="LocalnetProfile"/> the fixture was built for.</summary>
     public LocalnetProfile Profile { get; }
 
     /// <summary>
@@ -43,10 +46,20 @@ public sealed class LocalnetFixture : IAsyncDisposable
     /// allocated party. See <see cref="LocalnetEndpoints.ValidatorUserId"/>.
     /// </summary>
     public string ValidatorUserId => Endpoints.ValidatorUserId;
+
+    /// <summary>JSON Ledger Admin client for the fixture's default slot.</summary>
     public JsonLedgerAdminClient AdminClient { get; }
+
+    /// <summary>OAuth2 token provider for the fixture's default slot.</summary>
     public OAuth2TokenProvider TokenProvider { get; }
+
+    /// <summary>DAR uploader for the fixture's default slot.</summary>
     public DarUploader DarUploader { get; }
+
+    /// <summary>Party allocator for the fixture's default slot.</summary>
     public PartyAllocator PartyAllocator { get; }
+
+    /// <summary>User builder for the fixture's default slot.</summary>
     public UserBuilder UserBuilder { get; }
 
     /// <summary>
@@ -366,6 +379,10 @@ public sealed class LocalnetFixture : IAsyncDisposable
         "d-validator-1",
     };
 
+    /// <summary>
+    /// Disposes every per-slot view created via <see cref="Validator(string)"/>,
+    /// the default slot's token provider, and the backing service container.
+    /// </summary>
     public async ValueTask DisposeAsync()
     {
         ValidatorFixture[] extras;

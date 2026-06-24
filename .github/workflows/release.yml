@@ -82,7 +82,7 @@ jobs:
             /^## \[/ && capture { exit }
             capture { print }
           ' CHANGELOG.md > release-notes.md
-          if [ -z "$(sed '/^[[:space:]]*$/d; /^#/d' release-notes.md)" ]; then
+          if [ -z "$(sed '/^[[:space:]]*$/d; /^#/d; /^<!--.*-->$/d; /^-\{3,\}$/d' release-notes.md)" ]; then
             echo "::notice::## [${VERSION}] not found or contains no entries in CHANGELOG.md; falling back to ## [Unreleased]"
             awk '
               /^## \[Unreleased\]/ { capture=1; next }
@@ -90,9 +90,9 @@ jobs:
               capture { print }
             ' CHANGELOG.md > release-notes.md
           fi
-          content="$(sed '/^[[:space:]]*$/d; /^#/d' release-notes.md)"
+          content="$(sed '/^[[:space:]]*$/d; /^#/d; /^<!--.*-->$/d; /^-\{3,\}$/d' release-notes.md)"
           if [ -z "${content}" ]; then
-            echo "::error::Release notes for ${TAG} are empty — no entries found (only headings or blank lines) under ## [${VERSION}] or ## [Unreleased] in CHANGELOG.md"
+            echo "::error::Release notes for ${TAG} are empty — no entries found (only headings, blank lines, HTML comments, or horizontal rules) under ## [${VERSION}] or ## [Unreleased] in CHANGELOG.md"
             exit 1
           fi
           {

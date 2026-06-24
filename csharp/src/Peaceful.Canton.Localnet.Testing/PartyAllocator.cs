@@ -27,6 +27,24 @@ public sealed class PartyAllocator
     private readonly ILogger<PartyAllocator> _logger;
     private readonly string _instanceSuffix;
 
+    /// <summary>
+    /// Creates an allocator bound to a JSON Ledger API <see cref="HttpClient"/>.
+    /// </summary>
+    /// <param name="httpClient">
+    /// Client whose <see cref="HttpClient.BaseAddress"/> is the JSON Ledger API
+    /// root (e.g. <c>http://localhost:11975/</c>). Required; an unset base
+    /// address throws.
+    /// </param>
+    /// <param name="tokenProvider">Supplies the bearer token for each request.</param>
+    /// <param name="logger">Optional logger; defaults to a no-op logger.</param>
+    /// <param name="instanceSuffix">
+    /// Fixed suffix appended to every party hint; defaults to a fresh random
+    /// hex value so concurrent runs and reruns don't collide. Pass an explicit
+    /// value when a deterministic hint is needed.
+    /// </param>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="httpClient"/> has no <see cref="HttpClient.BaseAddress"/>.
+    /// </exception>
     public PartyAllocator(
         HttpClient httpClient,
         OAuth2TokenProvider tokenProvider,

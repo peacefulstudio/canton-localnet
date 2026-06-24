@@ -107,6 +107,8 @@ write_files:
         docker rmi -f $BUILT_IMAGES || echo "WARN: failed to remove $BUILT_IMAGES — make up may reuse corrupt images" >&2
       fi
 
+      export C_VALIDATOR_1_PROFILE=off
+      export D_VALIDATOR_1_PROFILE=off
       make up
 
       mkdir -p "$(dirname "$DONE_FLAG")"
