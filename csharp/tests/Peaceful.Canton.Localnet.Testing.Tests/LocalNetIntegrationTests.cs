@@ -13,6 +13,7 @@ namespace Peaceful.Canton.Localnet.Testing.Tests;
 /// each test also self-skips when the required env vars are not set.
 /// </summary>
 [Trait("Category", "Integration")]
+[Collection("EnvVarMutation")]
 public class LocalNetIntegrationTests
 {
     private const string DarPathEnv = "CANTON_LOCALNET_TEST_DAR_PATH";
