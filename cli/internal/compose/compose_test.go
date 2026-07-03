@@ -270,6 +270,32 @@ func TestBuildAlwaysEmitsSvProfile(t *testing.T) {
 	}
 }
 
+func TestBuildAppendsMultiSyncProfileWhenEnabled(t *testing.T) {
+	t.Parallel()
+	root := newTestRepoRoot(t)
+	opts := DefaultOptions(root)
+	opts.MultiSync = true
+	plan, err := Build(opts)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if !containsPair(plan.Args, "--profile", "multi-sync") {
+		t.Errorf("expected --profile multi-sync in args, full args: %v", plan.Args)
+	}
+}
+
+func TestBuildOmitsMultiSyncProfileByDefault(t *testing.T) {
+	t.Parallel()
+	root := newTestRepoRoot(t)
+	plan, err := Build(DefaultOptions(root))
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if containsPair(plan.Args, "--profile", "multi-sync") {
+		t.Errorf("did not expect --profile multi-sync in args, full args: %v", plan.Args)
+	}
+}
+
 func TestBuildRequiresRepoRoot(t *testing.T) {
 	t.Parallel()
 	if _, err := Build(Options{}); err == nil {

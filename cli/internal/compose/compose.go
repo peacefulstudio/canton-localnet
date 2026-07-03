@@ -55,6 +55,7 @@ type Options struct {
 	NoResource   bool
 	Obs          bool
 	Pqs          bool
+	MultiSync    bool
 	HostOS       string
 	ExtraEnv     []string
 	EnabledSlots []string
@@ -181,6 +182,9 @@ func Build(opts Options) (Plan, error) {
 	}
 	if opts.Obs {
 		args = append(args, "--profile", "observability")
+	}
+	if opts.MultiSync {
+		args = append(args, "--profile", "multi-sync")
 	}
 
 	env := []string{

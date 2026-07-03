@@ -21,9 +21,9 @@ export LOCALNET_DIR
 #   secret  — Canton's shared-secret JWT (undocumented escape hatch; not CI-tested)
 AUTH_MODE ?= oauth2
 
-# RES=on (default) applies per-module mem_limit / JVM heap caps so the stack
-# fits comfortably on a 16 GB dev machine. Set RES=off to remove caps.
-RES ?= on
+# RES=true (default) applies per-module mem_limit / JVM heap caps so the stack
+# fits comfortably on a 16 GB dev machine. Set RES=false to remove caps.
+RES ?= true
 
 # Base stack: always present.
 COMPOSE_FILES := -f $(LOCALNET_DIR)/compose.yaml \
@@ -33,7 +33,7 @@ ENV_FILES     := --env-file $(COMPOSE_DIR)/.env.defaults \
                  --env-file $(LOCALNET_DIR)/env/common.env
 PROFILES      := --profile a-validator-1 --profile b-validator-1 --profile c-validator-1 --profile sv-validator-1 --profile d-validator-1
 
-ifeq ($(RES),on)
+ifeq ($(RES),true)
   COMPOSE_FILES += -f $(LOCALNET_DIR)/resource-constraints.yaml \
                    -f $(ONBOARD_DIR)/resource-constraints.yaml
 endif
@@ -42,19 +42,24 @@ ifeq ($(AUTH_MODE),oauth2)
   COMPOSE_FILES += -f $(KEYCLOAK_DIR)/compose.yaml
   ENV_FILES    += --env-file $(KEYCLOAK_DIR)/compose.env
   PROFILES     += --profile keycloak
-  ifeq ($(RES),on)
+  ifeq ($(RES),true)
     COMPOSE_FILES += -f $(KEYCLOAK_DIR)/resource-constraints.yaml
   endif
 endif
 
-# Optional PQS layer — opt in via `make up PQS=on`.
-ifeq ($(PQS),on)
+# Optional PQS layer — opt in via `make up PQS=true`.
+ifeq ($(PQS),true)
   COMPOSE_FILES += -f $(PQS_DIR)/compose.yaml
   ENV_FILES    += --env-file $(PQS_DIR)/compose.env
   PROFILES     += --profile pqs-a-validator-1
-  ifeq ($(RES),on)
+  ifeq ($(RES),true)
     COMPOSE_FILES += -f $(PQS_DIR)/resource-constraints.yaml
   endif
+endif
+
+MULTI_SYNC ?=
+ifeq ($(MULTI_SYNC),true)
+PROFILES += --profile multi-sync
 endif
 
 # `DOCKER_COMPOSE_APP` is the application stack alone — used by stop-app /
@@ -62,11 +67,11 @@ endif
 DOCKER_COMPOSE_APP := docker compose $(COMPOSE_FILES) $(ENV_FILES) $(PROFILES)
 
 # Optional observability layer (Grafana / Prometheus / Loki / Tempo / cAdvisor)
-# — opt in via `make up OBS=on`. Grafana lands on http://localhost:3030.
+# — opt in via `make up OBS=true`. Grafana lands on http://localhost:3030.
 OBS_COMPOSE_FILES :=
 OBS_ENV_FILES     :=
 OBS_PROFILES      :=
-ifeq ($(OBS),on)
+ifeq ($(OBS),true)
   OBS_COMPOSE_FILES += -f $(OBS_DIR)/compose.yaml \
                        -f $(OBS_DIR)/observability.yaml
   ifeq ($(shell uname -s),Darwin)
@@ -76,7 +81,7 @@ ifeq ($(OBS),on)
   endif
   OBS_ENV_FILES += --env-file $(OBS_DIR)/compose.env
   OBS_PROFILES  += --profile observability
-  ifeq ($(PQS),on)
+  ifeq ($(PQS),true)
     OBS_COMPOSE_FILES += -f $(PQS_DIR)/observability.yaml
   endif
 endif
@@ -98,7 +103,7 @@ down: ## Stop LocalNet and remove containers
 	$(DOCKER_COMPOSE) down --remove-orphans
 
 .PHONY: stop-app
-stop-app: ## Stop the app stack but leave observability containers running (only meaningful with OBS=on)
+stop-app: ## Stop the app stack but leave observability containers running (only meaningful with OBS=true)
 	$(DOCKER_COMPOSE_APP) down
 
 .PHONY: clean

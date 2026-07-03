@@ -98,7 +98,7 @@ jobs:
     env:
       AUTH_MODE: oauth2
       SCENARIO: ${{ matrix.scenario }}
-      OBS: ${{ (matrix.scenario == 'observability-on') && 'on' || 'off' }}
+      OBS: ${{ (matrix.scenario == 'observability-on') && 'true' || 'false' }}
       IS_OBS: ${{ startsWith(matrix.scenario, 'observability-') }}
     steps:
       - name: Checkout

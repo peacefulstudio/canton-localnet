@@ -32,6 +32,25 @@ func TestDefaultsAllSlotsOn(t *testing.T) {
 	}
 }
 
+func TestDefaultsMultiSyncOff(t *testing.T) {
+	t.Parallel()
+	if Defaults().MultiSync {
+		t.Errorf("Defaults().MultiSync = true, want false")
+	}
+}
+
+func TestParseMultiSync(t *testing.T) {
+	t.Parallel()
+	data := []byte("schemaVersion: preview-1\nmultiSync: true\n")
+	cfg, err := Parse(data, "test.yaml")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if !cfg.MultiSync {
+		t.Errorf("MultiSync = false, want true")
+	}
+}
+
 func TestDiscoverWalksUp(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -241,18 +260,18 @@ func TestEnvEmissionOnDefaults(t *testing.T) {
 	t.Parallel()
 	env := Defaults().Env()
 	want := map[string]string{
-		"OBS_PROFILE":                  "on",
-		"PQS_PROFILE":                  "on",
-		"SV_VALIDATOR_1_PROFILE":       "on",
-		"A_VALIDATOR_1_PROFILE":        "on",
-		"B_VALIDATOR_1_PROFILE":        "on",
-		"C_VALIDATOR_1_PROFILE":        "on",
-		"D_VALIDATOR_1_PROFILE":        "on",
-		"SV_VALIDATOR_1_PARTY_HINT":    "sv-validator-1",
-		"A_VALIDATOR_1_PARTY_HINT":     "a-validator-1",
-		"B_VALIDATOR_1_PARTY_HINT":     "b-validator-1",
-		"C_VALIDATOR_1_PARTY_HINT":     "c-validator-1",
-		"D_VALIDATOR_1_PARTY_HINT":     "d-validator-1",
+		"OBS_PROFILE":               "on",
+		"PQS_PROFILE":               "on",
+		"SV_VALIDATOR_1_PROFILE":    "on",
+		"A_VALIDATOR_1_PROFILE":     "on",
+		"B_VALIDATOR_1_PROFILE":     "on",
+		"C_VALIDATOR_1_PROFILE":     "on",
+		"D_VALIDATOR_1_PROFILE":     "on",
+		"SV_VALIDATOR_1_PARTY_HINT": "sv-validator-1",
+		"A_VALIDATOR_1_PARTY_HINT":  "a-validator-1",
+		"B_VALIDATOR_1_PARTY_HINT":  "b-validator-1",
+		"C_VALIDATOR_1_PARTY_HINT":  "c-validator-1",
+		"D_VALIDATOR_1_PARTY_HINT":  "d-validator-1",
 	}
 	assertEnvContains(t, env, want)
 	if !sort.StringsAreSorted(env) {
@@ -285,17 +304,17 @@ validators:
 	}
 	env := cfg.Env()
 	want := map[string]string{
-		"OBS_PROFILE":                          "off",
-		"PQS_PROFILE":                          "on",
-		"SV_VALIDATOR_1_PROFILE":               "on",
-		"A_VALIDATOR_1_PROFILE":                "on",
-		"B_VALIDATOR_1_PROFILE":                "on",
-		"C_VALIDATOR_1_PROFILE":                "off",
-		"D_VALIDATOR_1_PROFILE":                "off",
-		"A_VALIDATOR_1_PARTY_HINT":             "featuredapp-validator-1",
-		"B_VALIDATOR_1_PARTY_HINT":             "alice-validator-1",
-		"A_VALIDATOR_1_OAUTH_CLIENT_ID":        "app-provider-validator",
-		"A_VALIDATOR_1_OAUTH_CLIENT_SECRET":    "literal-secret",
+		"OBS_PROFILE":                       "off",
+		"PQS_PROFILE":                       "on",
+		"SV_VALIDATOR_1_PROFILE":            "on",
+		"A_VALIDATOR_1_PROFILE":             "on",
+		"B_VALIDATOR_1_PROFILE":             "on",
+		"C_VALIDATOR_1_PROFILE":             "off",
+		"D_VALIDATOR_1_PROFILE":             "off",
+		"A_VALIDATOR_1_PARTY_HINT":          "featuredapp-validator-1",
+		"B_VALIDATOR_1_PARTY_HINT":          "alice-validator-1",
+		"A_VALIDATOR_1_OAUTH_CLIENT_ID":     "app-provider-validator",
+		"A_VALIDATOR_1_OAUTH_CLIENT_SECRET": "literal-secret",
 	}
 	assertEnvContains(t, env, want)
 	slots := cfg.EnabledSlots()

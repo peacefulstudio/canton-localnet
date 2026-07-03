@@ -89,4 +89,91 @@ public class JsonLedgerAdminClientTests
 
         await Assert.ThrowsAsync<JsonLedgerApiException>(() => client.GetParticipantIdAsync());
     }
+
+    [Fact]
+    public async Task GetConnectedSynchronizersAsync_calls_endpoint_with_party_and_parses()
+    {
+        var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"connectedSynchronizers":[{"synchronizerAlias":"global","synchronizerId":"global::122a","permission":"PARTICIPANT_PERMISSION_SUBMISSION"},{"synchronizerAlias":"app-synchronizer","synchronizerId":"app-synchronizer::122b"}]}""",
+                Encoding.UTF8, "application/json"),
+        }));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var client = new JsonLedgerAdminClient(http, StaticTokenProvider("tok"));
+
+        var result = await client.GetConnectedSynchronizersAsync("alice::122a");
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal("app-synchronizer", result[1].Alias);
+        Assert.Equal("app-synchronizer::122b", result[1].Id);
+        var recorded = Assert.Single(handler.Requests);
+        Assert.Equal(HttpMethod.Get, recorded.Method);
+        Assert.Equal(new Uri(JsonApiBase, "v2/state/connected-synchronizers?party=alice%3A%3A122a"), recorded.Uri);
+        Assert.Equal("Bearer tok", recorded.Headers["Authorization"]);
+    }
+
+    [Fact]
+    public async Task GetAppSynchronizerIdAsync_returns_id_for_app_synchronizer_alias()
+    {
+        var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"connectedSynchronizers":[{"synchronizerAlias":"global","synchronizerId":"global::122a"},{"synchronizerAlias":"app-synchronizer","synchronizerId":"app-synchronizer::122b"}]}""",
+                Encoding.UTF8, "application/json"),
+        }));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var client = new JsonLedgerAdminClient(http, StaticTokenProvider("tok"));
+
+        var id = await client.GetAppSynchronizerIdAsync("alice::122a");
+
+        Assert.Equal("app-synchronizer::122b", id);
+    }
+
+    [Fact]
+    public async Task GetAppSynchronizerIdAsync_throws_when_only_global_connected()
+    {
+        var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"connectedSynchronizers":[{"synchronizerAlias":"global","synchronizerId":"global::122a"}]}""",
+                Encoding.UTF8, "application/json"),
+        }));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var client = new JsonLedgerAdminClient(http, StaticTokenProvider("tok"));
+
+        var ex = await Assert.ThrowsAsync<JsonLedgerApiException>(() => client.GetAppSynchronizerIdAsync("alice::122a"));
+        Assert.Equal(HttpStatusCode.NotFound, ex.StatusCode);
+        Assert.Contains("app-synchronizer", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetConnectedSynchronizersAsync_throws_when_entry_has_empty_synchronizerId()
+    {
+        var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"connectedSynchronizers":[{"synchronizerAlias":"global","synchronizerId":""}]}""",
+                Encoding.UTF8, "application/json"),
+        }));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var client = new JsonLedgerAdminClient(http, StaticTokenProvider("tok"));
+
+        var ex = await Assert.ThrowsAsync<JsonLedgerApiException>(() => client.GetConnectedSynchronizersAsync("alice::122a"));
+        Assert.Contains("synchronizerId", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetConnectedSynchronizersAsync_throws_when_connectedSynchronizers_field_absent()
+    {
+        var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"connectedSynchronizers":null}""", Encoding.UTF8, "application/json"),
+        }));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var client = new JsonLedgerAdminClient(http, StaticTokenProvider("tok"));
+
+        var ex = await Assert.ThrowsAsync<JsonLedgerApiException>(() => client.GetConnectedSynchronizersAsync("alice::122a"));
+        Assert.Contains("connectedSynchronizers", ex.Message);
+    }
 }

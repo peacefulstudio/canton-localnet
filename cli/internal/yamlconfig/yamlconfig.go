@@ -48,6 +48,7 @@ var KnownSlots = []string{
 type Config struct {
 	SchemaVersion string
 	Modules       Modules
+	MultiSync     bool
 	Validators    map[string]Validator
 }
 
@@ -86,8 +87,9 @@ type Party struct {
 }
 
 type rawConfig struct {
-	SchemaVersion string                  `yaml:"schemaVersion"`
-	Modules       *rawModules             `yaml:"modules"`
+	SchemaVersion string                   `yaml:"schemaVersion"`
+	Modules       *rawModules              `yaml:"modules"`
+	MultiSync     *bool                    `yaml:"multiSync"`
 	Validators    map[string]*rawValidator `yaml:"validators"`
 }
 
@@ -233,6 +235,9 @@ func Parse(data []byte, sourceLabel string) (Config, error) {
 		if raw.Modules.Pqs != nil {
 			cfg.Modules.Pqs = *raw.Modules.Pqs
 		}
+	}
+	if raw.MultiSync != nil {
+		cfg.MultiSync = *raw.MultiSync
 	}
 	for name, rv := range raw.Validators {
 		merged, err := mergeValidator(cfg.Validators[name], rv, name, sourceLabel)

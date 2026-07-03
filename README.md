@@ -32,9 +32,9 @@ Optional layers via Make flags (shortcuts — the canonical config layer is
 `canton-localnet.yaml`, see **Configuration** below):
 
 ```bash
-make up PQS=on              # opt in to PQS a-validator-1 profile
-make up OBS=on              # add Grafana (http://localhost:3030) + Prometheus / Loki / Tempo / cAdvisor
-make up RES=off             # remove the default mem_limit / JVM heap caps
+make up PQS=true            # opt in to PQS a-validator-1 profile
+make up OBS=true            # add Grafana (http://localhost:3030) + Prometheus / Loki / Tempo / cAdvisor
+make up RES=false           # remove the default mem_limit / JVM heap caps
 make up AUTH_MODE=secret    # shared-secret JWT (escape hatch; not CI-tested)
 ```
 
@@ -70,6 +70,28 @@ re-running on an already-applied state is a no-op refresh.
 Prerequisites: Docker ≥ 27, Docker Compose ≥ 2.27. The compose stack is
 vendored into `compose/modules/` from `hyperledger-labs/splice` at the SHA
 pinned in `compose/splice.sha`. Re-vendor with `make vendor`.
+
+### Multi-synchronizer profile
+
+Bring up a second synchronizer (`app-synchronizer`) that the `a`/`b`/`d`
+validators connect to, for cross-synchronizer tests:
+
+```bash
+canton-localnet up --multi-sync
+canton-localnet wait-ready --synchronizers 2   # blocks until a-validator-1 sees both
+# or, via make:
+MULTI_SYNC=true make up
+```
+
+Discover the second synchronizer's id from a test (C#):
+
+```csharp
+var party = await fixture.AllocatePartyAsync("lapi");
+var appSyncId = await fixture.GetAppSynchronizerIdAsync(party.PartyId);
+// pin a submission: WithSynchronizerId(new SynchronizerId(appSyncId))
+```
+
+`multi-sync` is local/CI only — it is not enabled on the shared VM.
 
 ## Driving a slot from a script
 

@@ -53,6 +53,16 @@ func (v *ValidatorFixture) GetParticipantId(ctx context.Context) (string, error)
 	return v.admin.GetParticipantId(ctx)
 }
 
+// GetConnectedSynchronizers is a convenience wrapper around Admin().GetConnectedSynchronizers.
+func (v *ValidatorFixture) GetConnectedSynchronizers(ctx context.Context, party string) ([]ConnectedSynchronizer, error) {
+	return v.admin.GetConnectedSynchronizers(ctx, party)
+}
+
+// GetAppSynchronizerId is a convenience wrapper around Admin().GetAppSynchronizerId.
+func (v *ValidatorFixture) GetAppSynchronizerId(ctx context.Context, party string) (string, error) {
+	return v.admin.GetAppSynchronizerId(ctx, party)
+}
+
 // UploadDar uploads a single DAR via this validator's JSON Ledger API.
 func (v *ValidatorFixture) UploadDar(ctx context.Context, path string) error {
 	return v.dars.Upload(ctx, path)

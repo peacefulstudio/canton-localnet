@@ -159,6 +159,14 @@ public sealed class LocalnetFixture : IAsyncDisposable
     public Task<string> GetParticipantIdAsync(CancellationToken cancellationToken = default)
         => AdminClient.GetParticipantIdAsync(cancellationToken);
 
+    /// <summary>Convenience pass-through to <see cref="JsonLedgerAdminClient.GetConnectedSynchronizersAsync"/>.</summary>
+    public Task<IReadOnlyList<ConnectedSynchronizer>> GetConnectedSynchronizersAsync(string party, CancellationToken cancellationToken = default)
+        => AdminClient.GetConnectedSynchronizersAsync(party, cancellationToken);
+
+    /// <summary>Convenience pass-through to <see cref="JsonLedgerAdminClient.GetAppSynchronizerIdAsync"/>.</summary>
+    public Task<string> GetAppSynchronizerIdAsync(string party, CancellationToken cancellationToken = default)
+        => AdminClient.GetAppSynchronizerIdAsync(party, cancellationToken);
+
     /// <summary>
     /// Convenience pass-through to <see cref="DarUploader.UploadAsync(string, CancellationToken)"/>.
     /// </summary>

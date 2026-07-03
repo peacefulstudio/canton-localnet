@@ -18,6 +18,7 @@ keys keep the default. References to unknown slots are rejected.
 | --------------- | ------ | -------- | ------------------------------------------------------ |
 | `schemaVersion` | string | yes      | Must be exactly `preview-1` for this release.          |
 | `modules`       | map    | no       | Global feature toggles.                                |
+| `multiSync`     | bool   | no       | Enables the multi-synchronizer profile — brings up the `app-synchronizer` and connects the `a`/`b`/`d` validators to it. Local/CI only; do not enable on the shared VM. Default `false`. |
 | `validators`    | map    | no       | Per-slot validator config keyed by canonical slot name. |
 
 ## `modules`
@@ -75,6 +76,11 @@ which the existing compose pipeline already consumes:
 
 `<SLOT_UPPER>` is the slot name uppercased with `-` replaced by `_`
 (e.g. `a-validator-1` → `A_VALIDATOR_1`).
+
+`multiSync` is the one top-level key that does **not** translate to an
+env var: it (along with the CLI `--multi-sync` flag and the
+`MULTI_SYNC` Makefile variable) maps directly to a
+`docker compose --profile multi-sync` flag.
 
 ## Example
 

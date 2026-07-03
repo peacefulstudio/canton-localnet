@@ -11,17 +11,19 @@ import (
 )
 
 type composeFlags struct {
-	auth    string
-	obs     bool
-	pqs     bool
-	noLimit bool
+	auth      string
+	obs       bool
+	pqs       bool
+	multiSync bool
+	noLimit   bool
 }
 
 func bindComposeFlags(cmd *cobra.Command, f *composeFlags) {
 	cmd.Flags().StringVar(&f.auth, "auth", string(compose.AuthOAuth2), "Authentication mode: oauth2 (default) or secret")
 	cmd.Flags().BoolVar(&f.obs, "obs", false, "Force-enable the observability stack (overrides canton-localnet.yaml modules.obs)")
 	cmd.Flags().BoolVar(&f.pqs, "pqs", false, "Force-enable the Participant Query Store module (overrides canton-localnet.yaml modules.pqs)")
-	cmd.Flags().BoolVar(&f.noLimit, "no-resource-limits", false, "Disable the resource-constraint overlays (RES=off in the Makefile)")
+	cmd.Flags().BoolVar(&f.multiSync, "multi-sync", false, "Enable the multi-synchronizer profile (brings up the app-synchronizer; overrides canton-localnet.yaml multiSync)")
+	cmd.Flags().BoolVar(&f.noLimit, "no-resource-limits", false, "Disable the resource-constraint overlays (RES=false in the Makefile)")
 }
 
 func (f *composeFlags) options(cmd *cobra.Command) (compose.Options, error) {
@@ -45,6 +47,7 @@ func (f *composeFlags) options(cmd *cobra.Command) (compose.Options, error) {
 	opts.AuthMode = authMode
 	opts.Obs = cfg.Modules.Obs || f.obs
 	opts.Pqs = cfg.Modules.Pqs || f.pqs
+	opts.MultiSync = cfg.MultiSync || f.multiSync
 	opts.NoResource = f.noLimit
 	opts.ExtraEnv = cfg.Env()
 	opts.EnabledSlots = cfg.EnabledSlots()

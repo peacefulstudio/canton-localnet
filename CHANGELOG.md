@@ -7,13 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.6.9-1.preview.1] - 2026-06-24
+### Added
 
-Preview of `0.6.9-1` (NuGet `0.6.9.1-preview.1`, opt-in prerelease) — the
-Splice 0.6.9 LocalNet upgrade and the all-five-validator default.
+- Multi-synchronizer profile: `canton-localnet up --multi-sync` (and `MULTI_SYNC=true make up`) brings up Splice's `app-synchronizer`; `a`/`b`/`d` validators connect to both synchronizers. `wait-ready --synchronizers 2` gates on the connection count. Fixtures (C# + Go) gain `GetConnectedSynchronizers`/`GetAppSynchronizerId` to discover the second synchronizer id. Local/CI only. (#115)
 
 ### Changed
 
+- **BREAKING (Make toggles):** the `RES`, `PQS`, and `OBS` make
+  variables now take `true` / `false` instead of `on` / `off`, for
+  consistency with the new `MULTI_SYNC` toggle. Callers of `make up`
+  passing `RES=on` / `PQS=on` / `OBS=on` (or `=off`) must switch to
+  `=true` / `=false`. (#115)
 - Default LocalNet topology now runs all five validators (`sv`, `a`, `b`,
   `c`, `d`). Previously `c-validator-1` defaulted off; its
   `C_VALIDATOR_1_PROFILE` default in `compose/modules/localnet/compose.env`
@@ -42,6 +46,19 @@ Splice 0.6.9 LocalNet upgrade and the all-five-validator default.
   (`${?MIGRATION_ID}`) was dropped from `conf/splice/app.conf`. The
   PQS `SCRIBE_VERSION` (0.6.13) is an independent pin and is left
   unchanged. C# package version bumped to `0.6.9-1`.
+
+### Fixed
+
+- The `c-validator-1` console failed to start: its `entrypoint.sh`
+  never exported `C_VALIDATOR_1_VALIDATOR_USER_TOKEN`, which the
+  console config already references, so the unresolved variable
+  aborted bring-up with a substitution error. The token is now
+  exported like the other slots'. (#115)
+- The `sv-validator-1` console keyed its remote participant under `sv`
+  in `app-auth.conf` while `app.conf` (and every other validator) used
+  `sv-validator-1`, so console commands failed with
+  `Key not found: admin-api/ledger-api`. Both files now agree on
+  `sv-validator-1`. (#115)
 
 ## [0.6.5-3.preview.1] - 2026-06-14
 
