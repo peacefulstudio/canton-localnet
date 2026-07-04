@@ -32,33 +32,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   consistency with the new `MULTI_SYNC` toggle. Callers of `make up`
   passing `RES=on` / `PQS=on` / `OBS=on` (or `=off`) must switch to
   `=true` / `=false`. (#115)
-- Default LocalNet topology now runs all five validators (`sv`, `a`, `b`,
-  `c`, `d`). Previously `c-validator-1` defaulted off; its
-  `C_VALIDATOR_1_PROFILE` default in `compose/modules/localnet/compose.env`
-  flips from `off` to `on`, so `make up` (and the CLI `canton-localnet up`,
-  which already enabled all five) now agree on a full-fidelity local
-  default. The shared Hetzner VM deployment runs a reduced `sv + a + b` set
-  — `terraform/hetzner/templates/cloud-init.yaml.tftpl` exports
-  `C_VALIDATOR_1_PROFILE=off` and `D_VALIDATOR_1_PROFILE=off` before
-  `make up`, since `c` and `d` are not exercised by CI integration tests and
-  dropping them saves resources on the billing box.
-- Bump the `go-ci.yaml` reusable workflow pin from `@v1` to `@v2`. The `@v1`
-  reusable carried a broken `sudo chown` coverage step that failed on
-  self-hosted Hetzner runners (`sudo: a password is required`), breaking Go CI;
-  the fix shipped in `@v2` (peacefulstudio/github-actions#29). The go-ci input
-  contract is unchanged between v1 and v2, so this is a non-breaking repoint.
-- Upgrade the vendored Splice / Canton LocalNet from 0.6.5 to 0.6.10
-  (#105, #117), pinned to upstream `hyperledger-labs/splice`
+- Upgrade the vendored Splice / Canton LocalNet from 0.6.9 to 0.6.10
+  (#117), pinned to upstream `hyperledger-labs/splice`
   `63cfb340ce0f8f254386d2d5df58905d695de902` in `compose/splice.sha`
   and `compose/links.csv`; `SPLICE_VERSION=0.6.10` in
   `compose/.env.defaults` drives the `canton`/`splice-app` image tags.
-  Merged as three-way merges that preserve this repo's 5-validator
+  Merged as a three-way merge that preserves this repo's 5-validator
   topology, the `POSTGRES_VERSION=17` / `NGINX_VERSION=1.30.0` pins, and
-  the per-slot `env/` wiring. Upstream functional changes carried
-  over: the splice container health check switched from `curl -f` to
-  `wget --no-verbose --tries=1 --spider`, `domain-migration-id`
-  (`${?MIGRATION_ID}`) was dropped from `conf/splice/app.conf`, and
-  postgres now initializes with `--data-checksums`. The
+  the per-slot `env/` wiring. One upstream functional change carried
+  over: postgres now initializes with `--data-checksums`. The
   PQS `SCRIBE_VERSION` (0.6.13) is an independent pin and is left
   unchanged. C# package version bumped to `0.6.10-1`.
 
@@ -74,6 +56,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `sv-validator-1`, so console commands failed with
   `Key not found: admin-api/ledger-api`. Both files now agree on
   `sv-validator-1`. (#115)
+
+## [0.6.9-1.preview.1] - 2026-06-24
+
+Preview of `0.6.9-1` (NuGet `0.6.9.1-preview.1`, opt-in prerelease) — the
+Splice 0.6.9 LocalNet upgrade and the all-five-validator default.
+
+### Changed
+
+- Default LocalNet topology now runs all five validators (`sv`, `a`, `b`,
+  `c`, `d`). Previously `c-validator-1` defaulted off; its
+  `C_VALIDATOR_1_PROFILE` default in `compose/modules/localnet/compose.env`
+  flips from `off` to `on`, so `make up` (and the CLI `canton-localnet up`,
+  which already enabled all five) now agree on a full-fidelity local
+  default. The shared Hetzner VM deployment runs a reduced `sv + a + b` set
+  — `terraform/hetzner/templates/cloud-init.yaml.tftpl` exports
+  `C_VALIDATOR_1_PROFILE=off` and `D_VALIDATOR_1_PROFILE=off` before
+  `make up`, since `c` and `d` are not exercised by CI integration tests and
+  dropping them saves resources on the billing box.
+- Bump the `go-ci.yaml` reusable workflow pin from `@v1` to `@v2`. The `@v1`
+  reusable carried a broken `sudo chown` coverage step that failed on
+  self-hosted Hetzner runners (`sudo: a password is required`), breaking Go CI;
+  the fix shipped in `@v2` (peacefulstudio/github-actions#29). The go-ci input
+  contract is unchanged between v1 and v2, so this is a non-breaking repoint.
+- Upgrade the vendored Splice / Canton LocalNet from 0.6.5 to 0.6.9
+  (#105), pinned to upstream `hyperledger-labs/splice`
+  `bc6a3587e7ea94230ba0c36c638945282c52b304` in `compose/splice.sha`
+  and `compose/links.csv`; `SPLICE_VERSION=0.6.9` in
+  `compose/.env.defaults` drives the `canton`/`splice-app` image tags.
+  Merged as a three-way merge that preserves this repo's 5-validator
+  topology, the `POSTGRES_VERSION=17` / `NGINX_VERSION=1.30.0` pins, and
+  the per-slot `env/` wiring. Two upstream functional changes carried
+  over: the splice container health check switched from `curl -f` to
+  `wget --no-verbose --tries=1 --spider`, and `domain-migration-id`
+  (`${?MIGRATION_ID}`) was dropped from `conf/splice/app.conf`. The
+  PQS `SCRIBE_VERSION` (0.6.13) is an independent pin and is left
+  unchanged. C# package version bumped to `0.6.9-1`.
 
 ## [0.6.5-3.preview.1] - 2026-06-14
 
