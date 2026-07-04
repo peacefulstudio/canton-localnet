@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [0.6.10-1.preview.1] - 2026-07-03
+
+### Added
+
 - Multi-synchronizer profile: `canton-localnet up --multi-sync` (and `MULTI_SYNC=true make up`) brings up Splice's `app-synchronizer`; `a`/`b`/`d` validators connect to both synchronizers. `wait-ready --synchronizers 2` gates on the connection count. Fixtures (C# + Go) gain `GetConnectedSynchronizers`/`GetAppSynchronizerId` to discover the second synchronizer id. Local/CI only. (#115)
 
 ### Changed
@@ -33,19 +47,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   self-hosted Hetzner runners (`sudo: a password is required`), breaking Go CI;
   the fix shipped in `@v2` (peacefulstudio/github-actions#29). The go-ci input
   contract is unchanged between v1 and v2, so this is a non-breaking repoint.
-- Upgrade the vendored Splice / Canton LocalNet from 0.6.5 to 0.6.9
-  (#105), pinned to upstream `hyperledger-labs/splice`
-  `bc6a3587e7ea94230ba0c36c638945282c52b304` in `compose/splice.sha`
-  and `compose/links.csv`; `SPLICE_VERSION=0.6.9` in
+- Upgrade the vendored Splice / Canton LocalNet from 0.6.5 to 0.6.10
+  (#105, #117), pinned to upstream `hyperledger-labs/splice`
+  `63cfb340ce0f8f254386d2d5df58905d695de902` in `compose/splice.sha`
+  and `compose/links.csv`; `SPLICE_VERSION=0.6.10` in
   `compose/.env.defaults` drives the `canton`/`splice-app` image tags.
-  Merged as a three-way merge that preserves this repo's 5-validator
+  Merged as three-way merges that preserve this repo's 5-validator
   topology, the `POSTGRES_VERSION=17` / `NGINX_VERSION=1.30.0` pins, and
-  the per-slot `env/` wiring. Two upstream functional changes carried
+  the per-slot `env/` wiring. Upstream functional changes carried
   over: the splice container health check switched from `curl -f` to
-  `wget --no-verbose --tries=1 --spider`, and `domain-migration-id`
-  (`${?MIGRATION_ID}`) was dropped from `conf/splice/app.conf`. The
+  `wget --no-verbose --tries=1 --spider`, `domain-migration-id`
+  (`${?MIGRATION_ID}`) was dropped from `conf/splice/app.conf`, and
+  postgres now initializes with `--data-checksums`. The
   PQS `SCRIBE_VERSION` (0.6.13) is an independent pin and is left
-  unchanged. C# package version bumped to `0.6.9-1`.
+  unchanged. C# package version bumped to `0.6.10-1`.
 
 ### Fixed
 
