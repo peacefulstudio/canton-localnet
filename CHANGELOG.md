@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [0.6.10-1.preview.1] - 2026-07-03
+
+### Added
+
+- Multi-synchronizer profile: `canton-localnet up --multi-sync` (and `MULTI_SYNC=true make up`) brings up Splice's `app-synchronizer`; `a`/`b`/`d` validators connect to both synchronizers. `wait-ready --synchronizers 2` gates on the connection count. Fixtures (C# + Go) gain `GetConnectedSynchronizers`/`GetAppSynchronizerId` to discover the second synchronizer id. Local/CI only. (#115)
+
+### Changed
+
+- **BREAKING (Make toggles):** the `RES`, `PQS`, and `OBS` make
+  variables now take `true` / `false` instead of `on` / `off`, for
+  consistency with the new `MULTI_SYNC` toggle. Callers of `make up`
+  passing `RES=on` / `PQS=on` / `OBS=on` (or `=off`) must switch to
+  `=true` / `=false`. (#115)
+- Upgrade the vendored Splice / Canton LocalNet from 0.6.9 to 0.6.10
+  (#117), pinned to upstream `hyperledger-labs/splice`
+  `63cfb340ce0f8f254386d2d5df58905d695de902` in `compose/splice.sha`
+  and `compose/links.csv`; `SPLICE_VERSION=0.6.10` in
+  `compose/.env.defaults` drives the `canton`/`splice-app` image tags.
+  Merged as a three-way merge that preserves this repo's 5-validator
+  topology, the `POSTGRES_VERSION=17` / `NGINX_VERSION=1.30.0` pins, and
+  the per-slot `env/` wiring. One upstream functional change carried
+  over: postgres now initializes with `--data-checksums`. The
+  PQS `SCRIBE_VERSION` (0.6.13) is an independent pin and is left
+  unchanged. C# package version bumped to `0.6.10-1`.
+
+### Fixed
+
+- The `c-validator-1` console failed to start: its `entrypoint.sh`
+  never exported `C_VALIDATOR_1_VALIDATOR_USER_TOKEN`, which the
+  console config already references, so the unresolved variable
+  aborted bring-up with a substitution error. The token is now
+  exported like the other slots'. (#115)
+- The `sv-validator-1` console keyed its remote participant under `sv`
+  in `app-auth.conf` while `app.conf` (and every other validator) used
+  `sv-validator-1`, so console commands failed with
+  `Key not found: admin-api/ledger-api`. Both files now agree on
+  `sv-validator-1`. (#115)
+
 ## [0.6.9-1.preview.1] - 2026-06-24
 
 Preview of `0.6.9-1` (NuGet `0.6.9.1-preview.1`, opt-in prerelease) — the

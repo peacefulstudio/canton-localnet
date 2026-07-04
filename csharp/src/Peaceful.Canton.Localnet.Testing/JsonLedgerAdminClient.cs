@@ -95,8 +95,105 @@ public sealed class JsonLedgerAdminClient
         return payload.ParticipantId;
     }
 
+    /// <summary>The stable alias of the app-provider synchronizer.</summary>
+    public const string AppSynchronizerAlias = "app-synchronizer";
+
+    /// <summary>
+    /// Lists the synchronizers the participant is connected to for <paramref name="party"/>,
+    /// via <c>GET /v2/state/connected-synchronizers</c>.
+    /// </summary>
+    public async Task<IReadOnlyList<ConnectedSynchronizer>> GetConnectedSynchronizersAsync(
+        string party,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(party))
+        {
+            throw new ArgumentException("party must be a non-empty party id.", nameof(party));
+        }
+
+        var token = await _tokenProvider.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
+        var requestUri = $"v2/state/connected-synchronizers?party={Uri.EscapeDataString(party)}";
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        _logger.LogDebug("GET {Uri}", new Uri(_httpClient.BaseAddress!, request.RequestUri!));
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            throw new JsonLedgerApiException(
+                $"GET {requestUri} returned {(int)response.StatusCode} {response.ReasonPhrase}: {body}",
+                response.StatusCode,
+                body);
+        }
+
+        var payload = await response.Content
+            .ReadFromJsonAsync<ConnectedSynchronizersResponse>(cancellationToken: cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new JsonLedgerApiException(
+                $"GET {requestUri} returned an empty body.",
+                response.StatusCode,
+                string.Empty);
+
+        if (payload.ConnectedSynchronizers is null)
+        {
+            throw new JsonLedgerApiException(
+                $"GET {requestUri} returned a response with no connectedSynchronizers field.",
+                response.StatusCode,
+                string.Empty);
+        }
+
+        foreach (var s in payload.ConnectedSynchronizers)
+        {
+            if (string.IsNullOrWhiteSpace(s.SynchronizerId))
+            {
+                throw new JsonLedgerApiException(
+                    $"GET {requestUri} returned a connected-synchronizers entry with an empty synchronizerId (alias='{s.SynchronizerAlias}').",
+                    response.StatusCode,
+                    string.Empty);
+            }
+        }
+
+        return payload.ConnectedSynchronizers
+            .Select(s => new ConnectedSynchronizer(s.SynchronizerAlias, s.SynchronizerId, s.Permission))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Returns the id of the connected synchronizer whose alias is
+    /// <see cref="AppSynchronizerAlias"/>. Throws if it is absent (multi-sync off).
+    /// </summary>
+    public async Task<string> GetAppSynchronizerIdAsync(
+        string party,
+        CancellationToken cancellationToken = default)
+    {
+        var synchronizers = await GetConnectedSynchronizersAsync(party, cancellationToken).ConfigureAwait(false);
+        var app = synchronizers.FirstOrDefault(s => string.Equals(s.Alias, AppSynchronizerAlias, StringComparison.Ordinal));
+        if (app is null)
+        {
+            var aliases = string.Join(", ", synchronizers.Select(s => s.Alias));
+            throw new JsonLedgerApiException(
+                $"No connected synchronizer with alias '{AppSynchronizerAlias}' (is the multi-sync profile enabled?). Connected: [{aliases}].",
+                System.Net.HttpStatusCode.NotFound,
+                string.Empty);
+        }
+
+        return app.Id;
+    }
+
     private sealed record ParticipantIdResponse(
         [property: JsonPropertyName("participantId")] string ParticipantId);
+
+    private sealed record ConnectedSynchronizersResponse(
+        [property: JsonPropertyName("connectedSynchronizers")] IReadOnlyList<ConnectedSynchronizerDto> ConnectedSynchronizers);
+
+    private sealed record ConnectedSynchronizerDto(
+        [property: JsonPropertyName("synchronizerAlias")] string SynchronizerAlias,
+        [property: JsonPropertyName("synchronizerId")] string SynchronizerId,
+        [property: JsonPropertyName("permission")] string? Permission);
 }
 
 /// <summary>

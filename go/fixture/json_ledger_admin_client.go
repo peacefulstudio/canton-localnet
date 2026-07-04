@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -76,6 +77,62 @@ func (c *JsonLedgerAdminClient) GetParticipantId(ctx context.Context) (string, e
 		return "", errors.New("admin: response missing participantId")
 	}
 	return out.ParticipantID, nil
+}
+
+// AppSynchronizerAlias is the stable alias of the app-provider synchronizer.
+const AppSynchronizerAlias = "app-synchronizer"
+
+// ConnectedSynchronizer is one entry from GET /v2/state/connected-synchronizers.
+type ConnectedSynchronizer struct {
+	Alias      string
+	ID         string
+	Permission string
+}
+
+type connectedSynchronizersResponse struct {
+	ConnectedSynchronizers []struct {
+		SynchronizerAlias string `json:"synchronizerAlias"`
+		SynchronizerID    string `json:"synchronizerId"`
+		Permission        string `json:"permission"`
+	} `json:"connectedSynchronizers"`
+}
+
+// GetConnectedSynchronizers lists the synchronizers the participant is
+// connected to for party, via GET /v2/state/connected-synchronizers.
+func (c *JsonLedgerAdminClient) GetConnectedSynchronizers(ctx context.Context, party string) ([]ConnectedSynchronizer, error) {
+	if strings.TrimSpace(party) == "" {
+		return nil, errors.New("admin: party is required")
+	}
+	var out connectedSynchronizersResponse
+	path := "/v2/state/connected-synchronizers?party=" + url.QueryEscape(party)
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, &out); err != nil {
+		return nil, err
+	}
+	result := make([]ConnectedSynchronizer, 0, len(out.ConnectedSynchronizers))
+	for _, s := range out.ConnectedSynchronizers {
+		if strings.TrimSpace(s.SynchronizerID) == "" {
+			return nil, fmt.Errorf("admin: connected-synchronizers entry missing synchronizerId (alias=%q)", s.SynchronizerAlias)
+		}
+		result = append(result, ConnectedSynchronizer{Alias: s.SynchronizerAlias, ID: s.SynchronizerID, Permission: s.Permission})
+	}
+	return result, nil
+}
+
+// GetAppSynchronizerId returns the id of the connected synchronizer whose
+// alias is AppSynchronizerAlias. Errors if absent (multi-sync off).
+func (c *JsonLedgerAdminClient) GetAppSynchronizerId(ctx context.Context, party string) (string, error) {
+	syncs, err := c.GetConnectedSynchronizers(ctx, party)
+	if err != nil {
+		return "", err
+	}
+	aliases := make([]string, 0, len(syncs))
+	for _, s := range syncs {
+		if s.Alias == AppSynchronizerAlias {
+			return s.ID, nil
+		}
+		aliases = append(aliases, s.Alias)
+	}
+	return "", fmt.Errorf("admin: no connected synchronizer with alias %q (is multi-sync enabled?); connected: %v", AppSynchronizerAlias, aliases)
 }
 
 func (c *JsonLedgerAdminClient) doJSON(ctx context.Context, method, path string, body []byte, out any) error {

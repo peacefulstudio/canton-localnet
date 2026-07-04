@@ -177,6 +177,16 @@ func (f *Fixture) GetParticipantId(ctx context.Context) (string, error) {
 	return f.Admin().GetParticipantId(ctx)
 }
 
+// GetConnectedSynchronizers is a convenience wrapper around Admin().GetConnectedSynchronizers.
+func (f *Fixture) GetConnectedSynchronizers(ctx context.Context, party string) ([]ConnectedSynchronizer, error) {
+	return f.Admin().GetConnectedSynchronizers(ctx, party)
+}
+
+// GetAppSynchronizerId is a convenience wrapper around Admin().GetAppSynchronizerId.
+func (f *Fixture) GetAppSynchronizerId(ctx context.Context, party string) (string, error) {
+	return f.Admin().GetAppSynchronizerId(ctx, party)
+}
+
 // DarUploader returns the DAR uploader. Panics if called before Setup.
 func (f *Fixture) DarUploader() *DarUploader {
 	f.mustBeReady("DarUploader")

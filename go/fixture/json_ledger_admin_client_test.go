@@ -163,3 +163,61 @@ func TestJsonLedgerAdminClient_RequiresArguments(t *testing.T) {
 		t.Error("expected error for nil TokenProvider")
 	}
 }
+
+func TestJsonLedgerAdminClient_GetConnectedSynchronizers(t *testing.T) {
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path + "?" + r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"connectedSynchronizers":[`+
+			`{"synchronizerAlias":"global","synchronizerId":"global::122a"},`+
+			`{"synchronizerAlias":"app-synchronizer","synchronizerId":"app-synchronizer::122b"}]}`)
+	}))
+	t.Cleanup(server.Close)
+
+	client, err := NewJsonLedgerAdminClient(server.URL, staticTokenProvider{token: "tok"})
+	if err != nil {
+		t.Fatalf("NewJsonLedgerAdminClient: %v", err)
+	}
+
+	id, err := client.GetAppSynchronizerId(context.Background(), "alice::122a")
+	if err != nil {
+		t.Fatalf("GetAppSynchronizerId: %v", err)
+	}
+	if id != "app-synchronizer::122b" {
+		t.Fatalf("id = %q, want app-synchronizer::122b", id)
+	}
+	if gotPath != "/v2/state/connected-synchronizers?party=alice%3A%3A122a" {
+		t.Fatalf("path = %q", gotPath)
+	}
+}
+
+func TestJsonLedgerAdminClient_GetConnectedSynchronizers_RejectsEmptySynchronizerId(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"connectedSynchronizers":[{"synchronizerAlias":"global","synchronizerId":""}]}`)
+	}))
+	t.Cleanup(server.Close)
+
+	client, err := NewJsonLedgerAdminClient(server.URL, staticTokenProvider{token: "tok"})
+	if err != nil {
+		t.Fatalf("NewJsonLedgerAdminClient: %v", err)
+	}
+	if _, err := client.GetConnectedSynchronizers(context.Background(), "alice::122a"); err == nil {
+		t.Fatal("expected error for entry missing synchronizerId")
+	}
+}
+
+func TestJsonLedgerAdminClient_GetAppSynchronizerId_ErrorWhenAbsent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"connectedSynchronizers":[{"synchronizerAlias":"global","synchronizerId":"global::122a"}]}`)
+	}))
+	t.Cleanup(server.Close)
+
+	client, _ := NewJsonLedgerAdminClient(server.URL, staticTokenProvider{token: "tok"})
+	_, err := client.GetAppSynchronizerId(context.Background(), "alice::122a")
+	if err == nil || !strings.Contains(err.Error(), "app-synchronizer") {
+		t.Fatalf("err = %v, want mention of app-synchronizer", err)
+	}
+}
