@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The baked-in splice-onboarding `upload_dar` helper now discovers the
+  connected synchronizers via `GET /v2/state/connected-synchronizers` and vets
+  each DAR per synchronizer (`POST /v2/packages?synchronizerId=<id>`), instead
+  of a bare upload that Canton could no longer autodetect once the
+  multi-synchronizer profile connects a validator to two synchronizers
+  (`PACKAGE_SERVICE_CANNOT_AUTODETECT_SYNCHRONIZER`). Synchronizer ids are
+  discovered at run time because they are not stable across a localnet down/up,
+  and re-uploads stay idempotent (`KNOWN_PACKAGE_VERSION` is treated as
+  success). (#118)
+
 ### Security
 
 ## [0.6.10-1.preview.1] - 2026-07-03
