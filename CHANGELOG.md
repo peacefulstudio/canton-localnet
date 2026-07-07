@@ -17,6 +17,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+### Security
+
+## [0.6.11-1.preview.1] - 2026-07-07
+
+### Changed
+
+- Upgrade the vendored Splice / Canton LocalNet from 0.6.10 to 0.6.11
+  (#122), pinned to upstream `hyperledger-labs/splice`
+  `fd93f86ac42ce3a08985dcd0baae530b4f235f60` in `compose/splice.sha`
+  and `compose/links.csv`; `SPLICE_VERSION=0.6.11` in
+  `compose/.env.defaults` drives the `canton`/`splice-app` image tags.
+  Upstream made no changes to `cluster/compose/localnet` between the two
+  tags — the BASE and THEIRS trees are byte-identical, so the three-way
+  merge left every shared file "upstream unchanged" — making this a pure
+  version-pin bump. The `POSTGRES_VERSION=17` / `NGINX_VERSION=1.30.0`
+  pins and the per-slot `env/` wiring are untouched. C# package version
+  bumped to `0.6.11-1`.
+
+### Fixed
+
 - The baked-in splice-onboarding `upload_dar` helper now discovers the
   connected synchronizers via `GET /v2/state/connected-synchronizers` and vets
   each DAR per synchronizer (`POST /v2/packages?synchronizerId=<id>`), instead
@@ -31,8 +51,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of falling through to `yamlconfig.Defaults()` (obs+pqs on), which
   overcommitted the CI runner and caused intermittent
   `integration (compose stack)` failures. (#124)
-
-### Security
 
 ## [0.6.10-1.preview.1] - 2026-07-03
 
