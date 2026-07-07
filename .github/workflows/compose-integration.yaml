@@ -16,6 +16,7 @@ on:
       - 'cli/**'
       - 'go/fixture/**'
       - 'csharp/**'
+      - 'canton-localnet.yaml'
       - '!**/*.md'
       - '.github/workflows/compose-integration.yaml'
   pull_request:
@@ -26,6 +27,7 @@ on:
       - 'cli/**'
       - 'go/fixture/**'
       - 'csharp/**'
+      - 'canton-localnet.yaml'
       - '!**/*.md'
       - '.github/workflows/compose-integration.yaml'
 

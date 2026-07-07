@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   discovered at run time because they are not stable across a localnet down/up,
   and re-uploads stay idempotent (`KNOWN_PACKAGE_VERSION` is treated as
   success). (#118)
+- Pin `modules.obs`/`modules.pqs` off via a repo-root `canton-localnet.yaml` so
+  bare `canton-localnet up` (CI's invocation) matches `make up` parity instead
+  of falling through to `yamlconfig.Defaults()` (obs+pqs on), which
+  overcommitted the CI runner and caused intermittent
+  `integration (compose stack)` failures. (#124)
 
 ### Security
 

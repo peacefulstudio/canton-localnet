@@ -11,6 +11,7 @@ on:
       - 'Makefile'
       - 'cli/**'
       - 'tests/acceptance/**'
+      - 'canton-localnet.yaml'
       - '!**/*.md'
       - '.github/workflows/integration-tests.yaml'
   pull_request:
@@ -21,6 +22,7 @@ on:
       - 'Makefile'
       - 'cli/**'
       - 'tests/acceptance/**'
+      - 'canton-localnet.yaml'
       - '!**/*.md'
       - '.github/workflows/integration-tests.yaml'
 
