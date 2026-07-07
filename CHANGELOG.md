@@ -7,19 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.11-1.preview.1] - 2026-07-07
+
 ### Added
 
-### Changed
-
-### Deprecated
-
-### Removed
-
-### Fixed
-
-### Security
-
-## [0.6.11-1.preview.1] - 2026-07-07
+- Multi-sync bring-up (`MULTI_SYNC=true`) now proposes the Canton
+  `EnableMultiSynchronizer` participant feature flag for the `a`/`b`/`d`
+  validators on every synchronizer they're connected to, so downstream
+  reassignment conformance tests run instead of skipping on the
+  feature-flag-off guard. Single-sync bring-up is unaffected — the bootstrap
+  script this lives in only ever runs under `--multi-sync`. (#121)
 
 ### Changed
 
