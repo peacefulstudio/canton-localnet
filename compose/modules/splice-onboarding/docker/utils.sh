@@ -171,19 +171,54 @@ update_user() {
 upload_dars() {
   local token=$1
   local participant=$2
+
+  local synchronizerIds
+  synchronizerIds=$(connected_synchronizer_ids "$token" "$participant")
+  if [ -z "$synchronizerIds" ]; then
+    echo "Request failed: no connected synchronizers discovered on $participant" >&2
+    return 1
+  fi
+
   while read -r file; do
     echo "uploadDar $file $participant" >&2
-    upload_dar "$token" "$participant" "$file" || return 1
+    upload_dar "$token" "$participant" "$file" "$synchronizerIds" || return 1
   done < <(find /canton/dars -type f -name "*.dar")
 }
 
+connected_synchronizer_ids() {
+  local token=$1
+  local participant=$2
+  echo "connected_synchronizer_ids $participant" >&2
+  curl_check "http://$participant/v2/state/connected-synchronizers" "$token" "application/json" |
+    jq -r '.connectedSynchronizers[].synchronizerId'
+}
+
+# The multi-synchronizer profile (ADR-0004, issue #118) connects validators to
+# more than one synchronizer, so a bare POST /v2/packages fails with
+# PACKAGE_SERVICE_CANNOT_AUTODETECT_SYNCHRONIZER. Synchronizer ids are not stable
+# across a localnet down/up, so upload_dars discovers them once per participant
+# and threads them here to vet the DAR on each rather than passing a hardcoded
+# synchronizerId.
 upload_dar() {
   local token=$1
   local participant=$2
   local file=$3
+  local synchronizerIds=$4
+
+  local synchronizerId
+  for synchronizerId in $synchronizerIds; do
+    upload_dar_to_synchronizer "$token" "$participant" "$file" "$synchronizerId" || return 1
+  done
+}
+
+upload_dar_to_synchronizer() {
+  local token=$1
+  local participant=$2
+  local file=$3
+  local synchronizerId=$4
 
   local response
-  response=$(curl -s -S -w "\n%{http_code}" "http://$participant/v2/packages" \
+  response=$(curl -s -S -w "\n%{http_code}" "http://$participant/v2/packages?synchronizerId=$synchronizerId" \
     -H "Authorization: Bearer $token" \
     -H "Content-Type: application/octet-stream" \
     --data-binary @"$file")
@@ -200,7 +235,7 @@ upload_dar() {
   esac
 
   if [ "$httpCode" -eq "200" ] || [ "$httpCode" -eq "201" ] || [ "$httpCode" -eq "204" ]; then
-    echo "Uploaded $file" >&2
+    echo "Uploaded $file to $synchronizerId" >&2
     echo "$responseBody"
     return 0
   fi
@@ -208,7 +243,7 @@ upload_dar() {
   # KNOWN_PACKAGE_VERSION (HTTP 400) means the package is already on the ledger,
   # possibly with a different hash (non-deterministic build). This is non-fatal.
   if [ "$httpCode" -eq "400" ] && printf '%s' "$responseBody" | grep -Fq "KNOWN_PACKAGE_VERSION"; then
-    echo "WARNING: Package already exists on ledger with a different hash — skipping $file" >&2
+    echo "WARNING: Package already exists on ledger with a different hash — skipping $file on $synchronizerId" >&2
     return 0
   fi
 

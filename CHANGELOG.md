@@ -7,17 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.11-1.preview.1] - 2026-07-07
+
 ### Added
+
+- Multi-sync bring-up (`MULTI_SYNC=true`) now proposes the Canton
+  `EnableMultiSynchronizer` participant feature flag for the `a`/`b`/`d`
+  validators on every synchronizer they're connected to, so downstream
+  reassignment conformance tests run instead of skipping on the
+  feature-flag-off guard. Single-sync bring-up is unaffected — the bootstrap
+  script this lives in only ever runs under `--multi-sync`. (#121)
 
 ### Changed
 
-### Deprecated
-
-### Removed
+- Upgrade the vendored Splice / Canton LocalNet from 0.6.10 to 0.6.11
+  (#122), pinned to upstream `hyperledger-labs/splice`
+  `fd93f86ac42ce3a08985dcd0baae530b4f235f60` in `compose/splice.sha`
+  and `compose/links.csv`; `SPLICE_VERSION=0.6.11` in
+  `compose/.env.defaults` drives the `canton`/`splice-app` image tags.
+  Upstream made no changes to `cluster/compose/localnet` between the two
+  tags — the BASE and THEIRS trees are byte-identical, so the three-way
+  merge left every shared file "upstream unchanged" — making this a pure
+  version-pin bump. The `POSTGRES_VERSION=17` / `NGINX_VERSION=1.30.0`
+  pins and the per-slot `env/` wiring are untouched. C# package version
+  bumped to `0.6.11-1`.
 
 ### Fixed
 
-### Security
+- The baked-in splice-onboarding `upload_dar` helper now discovers the
+  connected synchronizers via `GET /v2/state/connected-synchronizers` and vets
+  each DAR per synchronizer (`POST /v2/packages?synchronizerId=<id>`), instead
+  of a bare upload that Canton could no longer autodetect once the
+  multi-synchronizer profile connects a validator to two synchronizers
+  (`PACKAGE_SERVICE_CANNOT_AUTODETECT_SYNCHRONIZER`). Synchronizer ids are
+  discovered at run time because they are not stable across a localnet down/up,
+  and re-uploads stay idempotent (`KNOWN_PACKAGE_VERSION` is treated as
+  success). (#118)
+- Pin `modules.obs`/`modules.pqs` off via a repo-root `canton-localnet.yaml` so
+  bare `canton-localnet up` (CI's invocation) matches `make up` parity instead
+  of falling through to `yamlconfig.Defaults()` (obs+pqs on), which
+  overcommitted the CI runner and caused intermittent
+  `integration (compose stack)` failures. (#124)
 
 ## [0.6.10-1.preview.1] - 2026-07-03
 

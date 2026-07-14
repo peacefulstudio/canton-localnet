@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Peaceful Studio OÜ
+// SPDX-License-Identifier: Apache-2.0
+
 bootstrap.synchronizer(
   synchronizerName = "app-synchronizer",
   sequencers = Seq(`app-sequencer`),
@@ -15,4 +18,14 @@ utils.retry_until_true {
   `a-validator-1`.synchronizers.active("app-synchronizer") &&
     `b-validator-1`.synchronizers.active("app-synchronizer") &&
     `d-validator-1`.synchronizers.active("app-synchronizer")
+}
+
+Seq(`a-validator-1`, `b-validator-1`, `d-validator-1`).foreach { participant =>
+  participant.synchronizers.list_connected().foreach { connected =>
+    participant.topology.synchronizer_trust_certificates.propose(
+      participant.id,
+      connected.synchronizerId,
+      featureFlags = Seq(ParticipantTopologyFeatureFlag.EnableMultiSynchronizer),
+    )
+  }
 }
