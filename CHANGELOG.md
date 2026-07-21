@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Upgrade the vendored Splice / Canton LocalNet from 0.6.11 to 0.6.13
+  (#128), pinned to upstream `hyperledger-labs/splice`
+  `52ccdd6841f3eda11fe86313e8cdf9540efedfb7` in `compose/splice.sha`
+  and `compose/links.csv`; `SPLICE_VERSION=0.6.13` in
+  `compose/.env.defaults` drives the `canton`/`splice-app` image tags.
+  Upstream made no changes to `cluster/compose/localnet` between the two
+  tags (0.6.12 skipped as an intermediate step) — the BASE and THEIRS
+  trees are byte-identical, so the three-way merge left every shared file
+  "upstream unchanged", making this a pure version-pin bump. The
+  `POSTGRES_VERSION=17` / `NGINX_VERSION=1.30.0` pins and the per-slot
+  `env/` wiring are untouched. C# package version bumped to `0.6.13-1`.
+
 ## [0.6.11-1.preview.1] - 2026-07-07
 
 ### Added
