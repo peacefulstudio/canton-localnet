@@ -193,8 +193,8 @@ connected_synchronizer_ids() {
     jq -r '.connectedSynchronizers[].synchronizerId'
 }
 
-# The multi-synchronizer profile (ADR-0004, issue #118) connects validators to
-# more than one synchronizer, so a bare POST /v2/packages fails with
+# The multi-synchronizer profile connects validators to more than one
+# synchronizer, so a bare POST /v2/packages fails with
 # PACKAGE_SERVICE_CANNOT_AUTODETECT_SYNCHRONIZER. Synchronizer ids are not stable
 # across a localnet down/up, so upload_dars discovers them once per participant
 # and threads them here to vet the DAR on each rather than passing a hardcoded
