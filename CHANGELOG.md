@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.13-1.preview.1] - 2026-07-21
+
 ### Changed
 
 - Upgrade the vendored Splice / Canton LocalNet from 0.6.11 to 0.6.13
