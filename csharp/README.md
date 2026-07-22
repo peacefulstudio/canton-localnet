@@ -5,6 +5,8 @@ SPDX-License-Identifier: Apache-2.0
 
 # Peaceful.Canton.Localnet.Testing
 
+For the full consumer guide, see `docs/public/integration-testing.md`.
+
 xUnit fixtures for Canton LocalNet integration tests. Sub-modules:
 
 - `EndpointDiscovery` — env vars to URLs (JSON Ledger API, Keycloak token endpoint).

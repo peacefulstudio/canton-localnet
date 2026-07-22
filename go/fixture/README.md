@@ -1,5 +1,7 @@
 # canton-localnet Go fixture
 
+For the full consumer guide, see `docs/public/integration-testing.md`.
+
 Go-side integration-test harness for the Canton LocalNet compose stack. Pairs with the C# fixture; both target the same compose stack and OAuth2 realms.
 
 Module path: `github.com/peacefulstudio/canton-localnet/go/fixture`. Go 1.23+.

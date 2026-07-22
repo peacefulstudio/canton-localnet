@@ -2,7 +2,36 @@
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-Shared, reusable Canton LocalNet artifact (compose + xUnit/Go fixtures + CLI + AWS terraform) for Peaceful Studio repos.
+A shared, reusable, flexibly-topological Canton LocalNet that Peaceful Studio's
+repositories build their integration tests on — compose + xUnit/Go fixtures +
+CLI + AWS terraform.
+
+## Capabilities
+
+| Capability | What ships today |
+|---|---|
+| Declarative config | Single-file `canton-localnet.yaml` (topology, slots, parties, auth) |
+| CLI lifecycle | `up` / `down` / `wait-ready` / `auth token` / `info` / `vm` |
+| Flexible topology | 1 SV + N validators across 5 named slots; SV-only → all-five |
+| Programmatic fixtures | C# `LocalnetFixture` + Go `fixture`: query + mutate a live ledger |
+| Observability & PQS | Grafana/Prometheus/Loki/Tempo + per-slot Participant Query Store |
+| Multi-synchronizer | Second synchronizer profile for cross-domain scenarios |
+| Infra | AWS spot + part-time Hetzner Terraform, scheduled up/down |
+| Release artifacts | NuGet + Go module + CLI binaries + OCI compose artifact, in lockstep |
+
+## Use cases
+
+- Local multi-participant app development against a real Canton ledger.
+- Integration and end-to-end testing.
+- CI/CD pipelines.
+- Privacy-boundary / witness testing (the reserved `d-validator-1` slot).
+- Multi-synchronizer / cross-domain scenarios.
+- Demos and runtime samples.
+
+It underpins our own repositories' integration suites — see the
+[integration-testing guide](docs/public/integration-testing.md) — and the
+[topologies guide](docs/public/topologies.md) shows how far you can push the
+topology.
 
 ## Quickstart
 
