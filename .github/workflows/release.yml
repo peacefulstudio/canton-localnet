@@ -8,8 +8,10 @@
 # it. See RELEASE.md for the version-format rule and release SOP.
 #
 # Produces four artifacts in lockstep on every tag:
-#   1. NuGet  — Peaceful.Canton.Localnet.Testing.<version>.nupkg → GitHub
-#                Packages NuGet feed.
+#   1. NuGet  — Peaceful.Canton.Localnet.Testing.<version>.nupkg attached
+#                as a GitHub Release asset. We do not publish to the
+#                GitHub Packages NuGet feed — nuget.org (below) is the
+#                only NuGet distribution channel for this package.
 #   2. Go     — the tag itself IS the module version; no separate publish
 #                step (Go's proxy fetches from the repo on demand).
 #   3. CLI    — multi-platform binaries for the canton-localnet CLI,
@@ -112,7 +114,7 @@ jobs:
           if-no-files-found: error
 
   nuget:
-    name: pack + push NuGet
+    name: pack NuGet
     runs-on: ubuntu-latest
     needs: parse-version
     steps:
@@ -142,22 +144,6 @@ jobs:
             -p:PackageVersion="${VERSION}" \
             -o "${GITHUB_WORKSPACE}/nupkgs"
           ls -la "${GITHUB_WORKSPACE}/nupkgs"
-
-      - name: Push to GitHub Packages NuGet feed
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          dotnet nuget add source \
-            --username "${GITHUB_ACTOR}" \
-            --password "${GITHUB_TOKEN}" \
-            --store-password-in-clear-text \
-            --name github \
-            "https://nuget.pkg.github.com/${GITHUB_REPOSITORY_OWNER}/index.json"
-          dotnet nuget push "${GITHUB_WORKSPACE}/nupkgs/"*.nupkg \
-            --source github \
-            --api-key "${GITHUB_TOKEN}" \
-            --skip-duplicate
 
       - name: Upload nupkg artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

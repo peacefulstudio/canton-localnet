@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- Stop publishing `Peaceful.Canton.Localnet.Testing` to the GitHub
+  Packages NuGet feed on tag push — nuget.org (via `publish.yaml`,
+  triggered on GitHub Release publish) is now the sole NuGet
+  distribution channel. The GitHub Packages push had been failing
+  on an org-level billing/storage quota, and no downstream consumer
+  restored from that feed; all previously published versions were
+  removed from GitHub Packages.
+
 ## [0.6.13-1.preview.1] - 2026-07-21
 
 ### Changed
