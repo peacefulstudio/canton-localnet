@@ -5,6 +5,11 @@ Keycloak imports configuration from `docker/oauth/data/*.json` files on startup.
 /opt/keycloak/bin/kc.sh export --dir=/tmp/export --realm BValidator1
 ```
 
+> Note: the `c` and `d` slots (realms `CValidator1` / `DValidator1`) also exist in
+> the current stack. These export instructions predate them and cover only
+> `AValidator1` / `BValidator1`; apply the same setup and export steps to the
+> `CValidator1` and `DValidator1` realms when re-exporting.
+
 ## Setup via Keycloak Administration Console
 In http://keycloak.localhost:8082/admin/master/console/#/master admin/admin setup
 - two realms

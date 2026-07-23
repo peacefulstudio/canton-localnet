@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- New documentation guides under `docs/public/`:
+  `topologies.md` (the flexible-topology narrative — one
+  super-validator plus N validators, the five named slots, the
+  optional observability / PQS / multi-synchronizer layers, and a
+  scenario-to-config matrix) and `integration-testing.md` (a
+  consumer HOWTO for attaching the C# and Go test fixtures to a
+  running stack), both indexed from a new `docs/public/README.md`
+  landing page.
+- Internal `localnet-docs-release-update` skill that runs a
+  doc-freshness sweep at release time, flagging stale version
+  strings and drifted capability/slot references before publish.
+
+### Changed
+
+- Repositioned the documentation to lead with capabilities, use
+  cases, and the flexible topology rather than a bare quickstart:
+  the root `README.md` now opens with a capabilities matrix and the
+  supported use cases, linking out to the new topology and
+  integration-testing guides. Also refreshed stale version and
+  topology references across the docs and skills.
+
+### Removed
+
+- Stop publishing `Peaceful.Canton.Localnet.Testing` to the GitHub
+  Packages NuGet feed on tag push — nuget.org (via `publish.yaml`,
+  triggered on GitHub Release publish) is now the sole NuGet
+  distribution channel. The GitHub Packages push had been failing
+  on an org-level billing/storage quota, and no downstream consumer
+  restored from that feed; all previously published versions were
+  removed from GitHub Packages.
+
 ## [0.6.13-1.preview.1] - 2026-07-21
 
 ### Changed
