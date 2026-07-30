@@ -59,6 +59,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   restored from that feed; all previously published versions were
   removed from GitHub Packages.
 
+### Fixed
+
+- Multi-synchronizer bring-up (`MULTI_SYNC=true make up`) no longer
+  fails at the `multi-sync-startup` container. `app-synchronizer.sc`
+  referenced `ParticipantTopologyFeatureFlag` without importing it,
+  so the Canton console rejected the whole script with
+  `not found: value ParticipantTopologyFeatureFlag` /
+  `Compilation Failed` before any statement ran — meaning the
+  synchronizer bootstrap itself never executed and the multi-sync
+  profile could not start at all. Added the missing
+  `com.digitalasset.canton.topology.transaction.SynchronizerTrustCertificate.ParticipantTopologyFeatureFlag`
+  import. The enum value `EnableMultiSynchronizer` was already
+  correct; only the enclosing object was out of scope.
+
 ## [0.6.13-1.preview.1] - 2026-07-21
 
 ### Changed
