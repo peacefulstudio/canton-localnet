@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.14-1.preview.1] - 2026-07-28
+
 ### Added
 
 - New documentation guides under `docs/public/`:
@@ -23,6 +25,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Upgrade the vendored Splice / Canton LocalNet from 0.6.13 to 0.6.14
+  (#135), pinned to upstream `hyperledger-labs/splice`
+  `398919a5b13479877fd61587003ba7a4ba00091b` in `compose/splice.sha`
+  and `compose/links.csv`; `SPLICE_VERSION=0.6.14` in
+  `compose/.env.defaults` drives the `canton`/`splice-app`/web-ui image
+  tags. Upstream made no changes to `cluster/compose/localnet` between
+  the two tags — the BASE and THEIRS trees are byte-identical, so the
+  three-way merge left every shared file "upstream unchanged", making
+  the vendored-tree upgrade a pure version-pin bump. The
+  `POSTGRES_VERSION=17` / `NGINX_VERSION=1.30.0` pins and the per-slot
+  `env/` wiring are untouched. The C# package version is bumped to
+  `0.6.14-1`.
+- Bump the PQS `SCRIBE_VERSION` default from 0.6.13 to 0.6.14 in
+  `compose/modules/pqs/compose.env`, aligning it with the Splice pin
+  (it had been pinned independently at 0.6.13 since 0.6.9). PQS is
+  opt-in (`make up PQS=true`) and off in CI, so pass
+  `SCRIBE_VERSION=0.6.13` to stay on the previous image.
 - Repositioned the documentation to lead with capabilities, use
   cases, and the flexible topology rather than a bare quickstart:
   the root `README.md` now opens with a capabilities matrix and the
