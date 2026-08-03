@@ -134,6 +134,10 @@ vendor: ## Re-fetch splice modules pinned in compose/links.csv
 config: ## Print the resolved compose configuration (debugging)
 	$(DOCKER_COMPOSE) config
 
+.PHONY: check-party-hints
+check-party-hints: ## Assert every resolved slot party hint equals its slot name
+	@bash -eo pipefail -c '$(DOCKER_COMPOSE) config | $(COMPOSE_DIR)/scripts/check-party-hints.sh'
+
 .PHONY: test-restart-survival
 test-restart-survival: ## Onboarding-client restart-survival acceptance test (drives a full down/up cycle; ~5 min). Assumes the stack is already up.
 	@command -v jq > /dev/null || { echo "::error::jq is required for this target" >&2; exit 2; }

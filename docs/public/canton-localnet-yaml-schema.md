@@ -45,7 +45,7 @@ Each slot accepts:
 | Key         | Type   | Default        | Description                                                                       |
 | ----------- | ------ | -------------- | --------------------------------------------------------------------------------- |
 | `enabled`   | bool   | `true`         | Whether the slot's compose profile is activated. Ignored (and rejected if false) for `sv-validator-1`. |
-| `partyHint` | string | slot name      | Consumer-meaningful party hint baked into the validator at bootstrap.             |
+| `partyHint` | string | slot name      | Consumer-meaningful party hint baked into the validator at bootstrap. Currently has no effect for `sv-validator-1` — the CLI emits `SV_VALIDATOR_1_PARTY_HINT` but no `compose/` service consumes it yet. |
 | `auth`      | map    | `{}`           | OAuth2 client credentials, see below.                                             |
 | `parties`   | list   | `[]`           | Hosted-party hints carried for the runtime fixture (v1 is informational).         |
 
@@ -107,11 +107,48 @@ validators:
 
   b-validator-1:
     enabled: true
-    partyHint: alice-validator-1
+    partyHint: counterparty-validator-1
     parties:
-      - name: alice
+      - name: counterparty
         primary: true
 
   c-validator-1: { enabled: false }
   d-validator-1: { enabled: false }
 ```
+
+## Validators vs. the users hosted on them
+
+`partyHint` names a **validator**. It defaults to the validator's own slot
+name, and a consumer remaps it into their own domain the same way the
+example above does (`a-validator-1` → `featuredapp-validator-1`). It is
+never a person's name — it is the identity of the validator itself.
+
+The **users** hosted on a validator are a separate, application-level
+concern, expressed through that slot's `parties` list. When a scenario wants
+named participants for readability, name the *users*, not the validator. The
+conventional cast for that is
+[Alice and Bob](https://en.wikipedia.org/wiki/Alice_and_Bob), letter-aligned
+to the slot hosting them: Alice's party lives on `a-validator-1`, Bob's on
+`b-validator-1` (and further slots follow the same letter, e.g. `charlie` on
+`c-validator-1`).
+
+```yaml
+validators:
+  a-validator-1:
+    enabled: true
+    parties:
+      - name: alice
+        primary: true
+
+  b-validator-1:
+    enabled: true
+    parties:
+      - name: bob
+        primary: true
+```
+
+Note what did *not* change here: `a-validator-1` and `b-validator-1` keep
+their default party hints. Naming a user Alice does not rename the
+validator `a-validator-1` that hosts Alice's party — the two identifiers
+are independent, and confusing them is exactly the mistake this section
+exists to prevent.

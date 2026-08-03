@@ -25,6 +25,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING (party hints):** party hints now default to the slot
+  name on every validator slot (`a-validator-1`, `b-validator-1`,
+  `c-validator-1`, `d-validator-1`) instead of the
+  consumer-flavoured `localnet-validator-1`, `alice-validator-1`,
+  `bob-validator-1` and `danielle-validator-1`. This closes a
+  divergence where `make up` and `./canton-localnet up` bootstrapped
+  the `a` slot with different hints, leaving each path's postgres
+  volume unusable by the other: the container gets stuck restarting
+  (climbing `RestartCount`) with `does not match configured hint` in
+  `docker logs`, not a Docker-reported `unhealthy` status. It also
+  makes `partyHint:` in `canton-localnet.yaml` effective on the `b`,
+  `c` and `d` slots, where hardcoded module env values had silently
+  overridden it. **Existing volumes are invalidated on both paths**
+  — the recorded hint no longer matches the configured one. Run
+  `./canton-localnet down --volumes` (or `make clean`) before
+  upgrading. `partyHint:` renames the validator itself; the users
+  hosted on a validator are named separately via that slot's
+  `parties:` list — see `docs/public/canton-localnet-yaml-schema.md`.
+  (#137)
 - Upgrade the vendored Splice / Canton LocalNet from 0.6.13 to 0.6.14
   (#135), pinned to upstream `hyperledger-labs/splice`
   `398919a5b13479877fd61587003ba7a4ba00091b` in `compose/splice.sha`

@@ -292,7 +292,7 @@ validators:
       clientId: app-provider-validator
       clientSecret: literal-secret
   b-validator-1:
-    partyHint: alice-validator-1
+    partyHint: counterparty-validator-1
   c-validator-1:
     enabled: false
   d-validator-1:
@@ -312,7 +312,7 @@ validators:
 		"C_VALIDATOR_1_PROFILE":             "off",
 		"D_VALIDATOR_1_PROFILE":             "off",
 		"A_VALIDATOR_1_PARTY_HINT":          "featuredapp-validator-1",
-		"B_VALIDATOR_1_PARTY_HINT":          "alice-validator-1",
+		"B_VALIDATOR_1_PARTY_HINT":          "counterparty-validator-1",
 		"A_VALIDATOR_1_OAUTH_CLIENT_ID":     "app-provider-validator",
 		"A_VALIDATOR_1_OAUTH_CLIENT_SECRET": "literal-secret",
 	}
