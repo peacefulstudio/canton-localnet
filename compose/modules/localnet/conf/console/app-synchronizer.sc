@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Peaceful Studio OÜ
 // SPDX-License-Identifier: Apache-2.0
 
+import com.digitalasset.canton.topology.transaction.SynchronizerTrustCertificate.ParticipantTopologyFeatureFlag
+
 bootstrap.synchronizer(
   synchronizerName = "app-synchronizer",
   sequencers = Seq(`app-sequencer`),

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.14-1.preview.1] - 2026-07-28
+
 ### Added
 
 - New documentation guides under `docs/public/`:
@@ -23,6 +25,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING (party hints):** party hints now default to the slot
+  name on every validator slot (`a-validator-1`, `b-validator-1`,
+  `c-validator-1`, `d-validator-1`) instead of the
+  consumer-flavoured `localnet-validator-1`, `alice-validator-1`,
+  `bob-validator-1` and `danielle-validator-1`. This closes a
+  divergence where `make up` and `./canton-localnet up` bootstrapped
+  the `a` slot with different hints, leaving each path's postgres
+  volume unusable by the other: the container gets stuck restarting
+  (climbing `RestartCount`) with `does not match configured hint` in
+  `docker logs`, not a Docker-reported `unhealthy` status. It also
+  makes `partyHint:` in `canton-localnet.yaml` effective on the `b`,
+  `c` and `d` slots, where hardcoded module env values had silently
+  overridden it. **Existing volumes are invalidated on both paths**
+  — the recorded hint no longer matches the configured one. Run
+  `./canton-localnet down --volumes` (or `make clean`) before
+  upgrading. `partyHint:` renames the validator itself; the users
+  hosted on a validator are named separately via that slot's
+  `parties:` list — see `docs/public/canton-localnet-yaml-schema.md`.
+- Upgrade the vendored Splice / Canton LocalNet from 0.6.13 to 0.6.14,
+  pinned to upstream `hyperledger-labs/splice`
+  `398919a5b13479877fd61587003ba7a4ba00091b` in `compose/splice.sha`
+  and `compose/links.csv`; `SPLICE_VERSION=0.6.14` in
+  `compose/.env.defaults` drives the `canton`/`splice-app`/web-ui image
+  tags. Upstream made no changes to `cluster/compose/localnet` between
+  the two tags — the BASE and THEIRS trees are byte-identical, so the
+  three-way merge left every shared file "upstream unchanged", making
+  the vendored-tree upgrade a pure version-pin bump. The
+  `POSTGRES_VERSION=17` / `NGINX_VERSION=1.30.0` pins and the per-slot
+  `env/` wiring are untouched. The C# package version is bumped to
+  `0.6.14-1`.
+- Bump the PQS `SCRIBE_VERSION` default from 0.6.13 to 0.6.14 in
+  `compose/modules/pqs/compose.env`, aligning it with the Splice pin
+  (it had been pinned independently at 0.6.13 since 0.6.9). PQS is
+  opt-in (`make up PQS=true`) and off in CI, so pass
+  `SCRIBE_VERSION=0.6.13` to stay on the previous image.
 - Repositioned the documentation to lead with capabilities, use
   cases, and the flexible topology rather than a bare quickstart:
   the root `README.md` now opens with a capabilities matrix and the
@@ -40,12 +77,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   restored from that feed; all previously published versions were
   removed from GitHub Packages.
 
+### Fixed
+
+- Multi-synchronizer bring-up (`MULTI_SYNC=true make up`) no longer
+  fails at the `multi-sync-startup` container. `app-synchronizer.sc`
+  referenced `ParticipantTopologyFeatureFlag` without importing it,
+  so the Canton console rejected the whole script with
+  `not found: value ParticipantTopologyFeatureFlag` /
+  `Compilation Failed` before any statement ran — meaning the
+  synchronizer bootstrap itself never executed and the multi-sync
+  profile could not start at all. Added the missing
+  `com.digitalasset.canton.topology.transaction.SynchronizerTrustCertificate.ParticipantTopologyFeatureFlag`
+  import. The enum value `EnableMultiSynchronizer` was already
+  correct; only the enclosing object was out of scope.
+
 ## [0.6.13-1.preview.1] - 2026-07-21
 
 ### Changed
 
-- Upgrade the vendored Splice / Canton LocalNet from 0.6.11 to 0.6.13
-  (#128), pinned to upstream `hyperledger-labs/splice`
+- Upgrade the vendored Splice / Canton LocalNet from 0.6.11 to 0.6.13,
+  pinned to upstream `hyperledger-labs/splice`
   `52ccdd6841f3eda11fe86313e8cdf9540efedfb7` in `compose/splice.sha`
   and `compose/links.csv`; `SPLICE_VERSION=0.6.13` in
   `compose/.env.defaults` drives the `canton`/`splice-app` image tags.
@@ -65,12 +116,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   validators on every synchronizer they're connected to, so downstream
   reassignment conformance tests run instead of skipping on the
   feature-flag-off guard. Single-sync bring-up is unaffected — the bootstrap
-  script this lives in only ever runs under `--multi-sync`. (#121)
+  script this lives in only ever runs under `--multi-sync`.
 
 ### Changed
 
-- Upgrade the vendored Splice / Canton LocalNet from 0.6.10 to 0.6.11
-  (#122), pinned to upstream `hyperledger-labs/splice`
+- Upgrade the vendored Splice / Canton LocalNet from 0.6.10 to 0.6.11,
+  pinned to upstream `hyperledger-labs/splice`
   `fd93f86ac42ce3a08985dcd0baae530b4f235f60` in `compose/splice.sha`
   and `compose/links.csv`; `SPLICE_VERSION=0.6.11` in
   `compose/.env.defaults` drives the `canton`/`splice-app` image tags.
@@ -91,18 +142,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`PACKAGE_SERVICE_CANNOT_AUTODETECT_SYNCHRONIZER`). Synchronizer ids are
   discovered at run time because they are not stable across a localnet down/up,
   and re-uploads stay idempotent (`KNOWN_PACKAGE_VERSION` is treated as
-  success). (#118)
+  success).
 - Pin `modules.obs`/`modules.pqs` off via a repo-root `canton-localnet.yaml` so
   bare `canton-localnet up` (CI's invocation) matches `make up` parity instead
   of falling through to `yamlconfig.Defaults()` (obs+pqs on), which
   overcommitted the CI runner and caused intermittent
-  `integration (compose stack)` failures. (#124)
+  `integration (compose stack)` failures.
 
 ## [0.6.10-1.preview.1] - 2026-07-03
 
 ### Added
 
-- Multi-synchronizer profile: `canton-localnet up --multi-sync` (and `MULTI_SYNC=true make up`) brings up Splice's `app-synchronizer`; `a`/`b`/`d` validators connect to both synchronizers. `wait-ready --synchronizers 2` gates on the connection count. Fixtures (C# + Go) gain `GetConnectedSynchronizers`/`GetAppSynchronizerId` to discover the second synchronizer id. Local/CI only. (#115)
+- Multi-synchronizer profile: `canton-localnet up --multi-sync` (and `MULTI_SYNC=true make up`) brings up Splice's `app-synchronizer`; `a`/`b`/`d` validators connect to both synchronizers. `wait-ready --synchronizers 2` gates on the connection count. Fixtures (C# + Go) gain `GetConnectedSynchronizers`/`GetAppSynchronizerId` to discover the second synchronizer id. Local/CI only.
 
 ### Changed
 
@@ -110,9 +161,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   variables now take `true` / `false` instead of `on` / `off`, for
   consistency with the new `MULTI_SYNC` toggle. Callers of `make up`
   passing `RES=on` / `PQS=on` / `OBS=on` (or `=off`) must switch to
-  `=true` / `=false`. (#115)
-- Upgrade the vendored Splice / Canton LocalNet from 0.6.9 to 0.6.10
-  (#117), pinned to upstream `hyperledger-labs/splice`
+  `=true` / `=false`.
+- Upgrade the vendored Splice / Canton LocalNet from 0.6.9 to 0.6.10,
+  pinned to upstream `hyperledger-labs/splice`
   `63cfb340ce0f8f254386d2d5df58905d695de902` in `compose/splice.sha`
   and `compose/links.csv`; `SPLICE_VERSION=0.6.10` in
   `compose/.env.defaults` drives the `canton`/`splice-app` image tags.
@@ -129,12 +180,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never exported `C_VALIDATOR_1_VALIDATOR_USER_TOKEN`, which the
   console config already references, so the unresolved variable
   aborted bring-up with a substitution error. The token is now
-  exported like the other slots'. (#115)
+  exported like the other slots'.
 - The `sv-validator-1` console keyed its remote participant under `sv`
   in `app-auth.conf` while `app.conf` (and every other validator) used
   `sv-validator-1`, so console commands failed with
   `Key not found: admin-api/ledger-api`. Both files now agree on
-  `sv-validator-1`. (#115)
+  `sv-validator-1`.
 
 ## [0.6.9-1.preview.1] - 2026-06-24
 
@@ -156,10 +207,10 @@ Splice 0.6.9 LocalNet upgrade and the all-five-validator default.
 - Bump the `go-ci.yaml` reusable workflow pin from `@v1` to `@v2`. The `@v1`
   reusable carried a broken `sudo chown` coverage step that failed on
   self-hosted Hetzner runners (`sudo: a password is required`), breaking Go CI;
-  the fix shipped in `@v2` (peacefulstudio/github-actions#29). The go-ci input
+  the fix shipped in `@v2`. The go-ci input
   contract is unchanged between v1 and v2, so this is a non-breaking repoint.
-- Upgrade the vendored Splice / Canton LocalNet from 0.6.5 to 0.6.9
-  (#105), pinned to upstream `hyperledger-labs/splice`
+- Upgrade the vendored Splice / Canton LocalNet from 0.6.5 to 0.6.9,
+  pinned to upstream `hyperledger-labs/splice`
   `bc6a3587e7ea94230ba0c36c638945282c52b304` in `compose/splice.sha`
   and `compose/links.csv`; `SPLICE_VERSION=0.6.9` in
   `compose/.env.defaults` drives the `canton`/`splice-app` image tags.
@@ -205,7 +256,7 @@ final was drafted but never pushed to nuget.org.
   (`canton`, `localnet`, `splice`, `daml`, `xunit`, …) in
   `Peaceful.Canton.Localnet.Testing`, completing the
   `dotnet-extensions` packaging baseline so the package presents with
-  branding and is discoverable on nuget.org (#98).
+  branding and is discoverable on nuget.org.
 
 ### Fixed
 
@@ -214,7 +265,7 @@ final was drafted but never pushed to nuget.org.
   exponential backoff (6 attempts, 1s base delay capped at 16s),
   fixing intermittent integration-suite failures on slow CI runners
   where the package service is still warming up on the first ledger
-  call (#96). Retry behaviour is tunable via the new optional
+  call. Retry behaviour is tunable via the new optional
   `DarUploaderRetryOptions` constructor parameter; `2xx` success and
   the idempotent `400 KNOWN_PACKAGE_VERSION` outcome are unchanged, and
   all other failures (e.g. `401`/`403`) still fail fast with no retry.
@@ -226,7 +277,7 @@ final was drafted but never pushed to nuget.org.
 - Publish `Peaceful.Canton.Localnet.Testing` to nuget.org whenever a
   GitHub Release is published, as a stable four-part version mapped
   from the tag (`v0.6.5-1` → `0.6.5.1`) so plain `dotnet add package`
-  resolves it without `--prerelease` (#88). GitHub Packages keeps the
+  resolves it without `--prerelease`. GitHub Packages keeps the
   tag-verbatim prerelease version (`0.6.5-1`).
 
 ## [0.6.5-1] - 2026-06-06
@@ -234,8 +285,8 @@ final was drafted but never pushed to nuget.org.
 ### Added
 
 - `canton-localnet auth token --slot {sv|a|b|c|d}` and
-  `canton-localnet info --slot X [--json] [--offline]` CLI commands
-  (#64). The `auth token` command mints a participant-admin bearer —
+  `canton-localnet info --slot X [--json] [--offline]` CLI commands.
+  The `auth token` command mints a participant-admin bearer —
   OAuth2 `client_credentials` against Keycloak for a/b/c/d, self-signed
   HS256 against the LocalNet shared secret for sv. The `info` command
   prints the slot's ports, Keycloak realm, audience, token URLs (host
@@ -250,8 +301,8 @@ final was drafted but never pushed to nuget.org.
 - Per-realm onboarding service-account client (`{slot}-onboarding`) on
   each user-facing validator realm (`AValidator1`, `BValidator1`,
   `CValidator1`, `DValidator1`), with `realm-management` client roles
-  `manage-users`, `view-users`, `query-users` scoped to its realm only
-  (#65). Removes the need for master-realm `admin/admin` admin in
+  `manage-users`, `view-users`, `query-users` scoped to its realm only.
+  Removes the need for master-realm `admin/admin` admin in
   downstream user-creation flows (sign-up UI, integration test
   seeders). Dev secrets are surfaced via
   `AUTH_{SLOT}_ONBOARDING_CLIENT_ID` and
@@ -265,15 +316,15 @@ final was drafted but never pushed to nuget.org.
   (volumes preserved), and re-verifies the sentinel survives — wired
   into the `warm-restart` CI scenario in
   `.github/workflows/integration-tests.yaml`.
-- Hetzner Cloud LocalNet VM Terraform module (`terraform/hetzner/`)
-  (#80): a part-time CCX33 server gated by `server_enabled`, brought up
+- Hetzner Cloud LocalNet VM Terraform module (`terraform/hetzner/`):
+  a part-time CCX33 server gated by `server_enabled`, brought up
   on weekday mornings and deleted each evening (delete-not-poweroff) by
   `.github/workflows/hetzner-localnet-schedule.yaml`. Ledger state
   persists on a retained ext4 volume (Docker `data-root` relocated onto
   it) behind a retained primary IP across the nightly recreate. A
   `LOCALNET_PAUSED` repo variable forces the VM down for holds.
 - Keyless CI Terraform-state access via AWS OIDC
-  (`terraform/github-oidc/`) (#80): an IAM role whose trust policy is
+  (`terraform/github-oidc/`): an IAM role whose trust policy is
   scoped to this repo's `dev` branch and `localnet-infra` GitHub
   environment, replacing long-lived AWS keys in CI.
 
@@ -297,12 +348,12 @@ final was drafted but never pushed to nuget.org.
   defaults are unchanged.
 - **BREAKING (AWS Terraform root module):** the `terraform/` AWS stack
   is now self-contained — it clones `canton-localnet` and runs `make up`
-  directly instead of invoking a consumer repo's `install.sh`/`deploy.sh`
-  (#80). The `consumer_repo` / `github_token` / `localnet_branch`
+  directly instead of invoking a consumer repo's `install.sh`/`deploy.sh`.
+  The `consumer_repo` / `github_token` / `localnet_branch`
   variables are replaced by `repo_url` / `repo_ref` / `repo_token`;
   update any `.tfvars` accordingly.
 
-- DAR-upload integration tests run for the first time in CI (#60).
+- DAR-upload integration tests run for the first time in CI.
   Both Go and C# fixtures self-skip the DAR-upload portion on empty
   `CANTON_LOCALNET_TEST_DAR_PATH` for local-dev ergonomics, and the
   workflow previously tried to extract a DAR at CI time via
@@ -315,7 +366,7 @@ final was drafted but never pushed to nuget.org.
   appear to be embedded inside the Canton jar). The extract step
   therefore always hit a `::warning::no DAR files inside container …`
   branch and `exit 0`'d, keeping CI green on a permanent silent skip
-  ever since #26 introduced the step. Replace the extraction with a
+  ever since the step was introduced. Replace the extraction with a
   CI-time `daml build` of a 5-line `Noop.daml` under `testdata/noop/`
   using the same Daml SDK (3.4.11) the rest of the Peaceful Studio
   stack uses, so the produced DAR is guaranteed to be within Canton
@@ -353,7 +404,7 @@ final was drafted but never pushed to nuget.org.
   waiter errors on an exited container. This removes the need for the
   consumer-side bring-up retry that papered over the race.
 - Right-sized canton / splice JVM heaps and missing PQS caps for the
-  full 5-validator topology (#72). The `canton` and `splice` JVMs each
+  full 5-validator topology. The `canton` and `splice` JVMs each
   host every enabled slot's participant / validator app, so heap
   pressure scales linearly with slot count. Previous values (canton
   `-Xmx2560m` / `mem_limit 4g`, splice `-Xmx2560m` / `mem_limit 3g`)
@@ -388,13 +439,13 @@ final was drafted but never pushed to nuget.org.
 ### Security
 
 - Scope the CI Terraform-state OIDC role to a single branch and
-  environment (#80): the trust policy now requires the `aud`, `sub`
+  environment: the trust policy now requires the `aud`, `sub`
   (`…:environment:localnet-infra`), and `ref` (`refs/heads/dev`) claims
   together, replacing a `repo:…:*` wildcard, and the state-access policy
   is scoped to the Hetzner key prefix rather than the whole bucket.
 - Pass the repo clone token via a per-invocation
   `git -c http.extraHeader=…` on both the AWS and Hetzner provisioners
-  instead of embedding it in the clone URL (#80); the token is never
+  instead of embedding it in the clone URL; the token is never
   written to `.git/config` or the boot log.
 
 ## [0.6.2-4] - 2026-05-16
@@ -402,7 +453,7 @@ final was drafted but never pushed to nuget.org.
 ### Breaking
 
 - **Slot rename — `sv` → `sv-validator-1`, `app-provider` → `a-validator-1`,
-  `app-user` → `b-validator-1`** (#40). The rename applies to every form
+  `app-user` → `b-validator-1`**. The rename applies to every form
   of the identifier across the artifact:
   - **Kebab / lowercase** (compose profile names, file paths under
     `compose/modules/localnet/conf/{canton,splice,console}/<slot>/`,
@@ -436,7 +487,7 @@ final was drafted but never pushed to nuget.org.
     `--profile app-user` → `--profile b-validator-1`;
     `--profile sv` → `--profile sv-validator-1`;
     `--profile pqs-app-provider` → `--profile pqs-a-validator-1`.
-- **5-digit port scheme** (ADR-0002, #40). Host-exposed ports follow a
+- **5-digit port scheme**. Host-exposed ports follow a
   two-digit prefix per slot (`sv-validator-1`=10, `a-validator-1`=11,
   `b-validator-1`=12) plus the existing 3-digit suffix:
   - Participant ledger API: `3901`/`2901`/`4901` →
@@ -457,7 +508,7 @@ final was drafted but never pushed to nuget.org.
 
 ### Added
 
-- `.github/workflows/integration-tests.yaml` (#45) — end-to-end CI
+- `.github/workflows/integration-tests.yaml` — end-to-end CI
   integration test for the 5-slot topology. Three scenarios run in
   parallel on `ubuntu-latest`: `5-healthy-validators` brings up the
   default stack and polls `/readyz` on every validator's JSON Ledger API
@@ -475,7 +526,7 @@ final was drafted but never pushed to nuget.org.
   because it IS the test signal. Each scenario tears down with
   `--volumes` on completion and uploads `docker ps` + compose logs as
   an artifact on failure.
-- Multi-validator fixture API (#44). `LocalnetFixture.Validator(slot)`
+- Multi-validator fixture API. `LocalnetFixture.Validator(slot)`
   (C#) and `Fixture.Validator(role)` (Go) return a per-slot view
   exposing the same deep modules (admin client, DAR uploader, party
   allocator, user builder) scoped to a single validator slot. Tests
@@ -488,10 +539,10 @@ final was drafted but never pushed to nuget.org.
   exposes `LocalnetFixture.KnownSlots()` and Go exposes
   `fixture.KnownRoles()` returning the canonical five slots in stable
   order (sv, a, b, c, d).
-- Validator slot `d-validator-1` at port prefix 14 (#42).
-- Validator slot `c-validator-1` at port prefix 13 (#41)
+- Validator slot `d-validator-1` at port prefix 14.
+- Validator slot `c-validator-1` at port prefix 13
 - `canton-localnet.yaml` consumer config (preview-1, unstable) —
-  walk-up discovery and env translation (#43). The CLI walks up from
+  walk-up discovery and env translation. The CLI walks up from
   the working directory looking for a `canton-localnet.yaml` (matching
   `git` / `docker compose` / `kubectl` semantics), or accepts an
   explicit `--config <path>`. With no file found anywhere, the CLI
@@ -571,7 +622,7 @@ final was drafted but never pushed to nuget.org.
 - Consolidated `.github/workflows/compose-ci.yaml` into
   `.github/workflows/integration-tests.yaml` as new
   `observability-on` / `observability-off` scenarios and deleted the
-  standalone `compose-ci.yaml` (#53). The same one-shot bring-up retry
+  standalone `compose-ci.yaml`. The same one-shot bring-up retry
   that rescued the `warm-restart` scenario now wraps every initial
   `make up` / `canton-localnet up` invocation across
   `integration-tests.yaml` and `cli.yml`, absorbing the splice
@@ -599,7 +650,7 @@ final was drafted but never pushed to nuget.org.
   noisily. Matches the Go counterpart's per-slot `skipIfStackUnreachable`
   gating. The `SkipMessage` constant is refreshed to mention the per-slot
   `CANTON_LOCALNET_<SLOT>_*` variable shape alongside the legacy globals.
-- Multi-validator fixture routing (#52). `LocalnetFixture.Validator(slot)`
+- Multi-validator fixture routing. `LocalnetFixture.Validator(slot)`
   (C#) and `Fixture.Validator(role)` (Go) now route per-slot endpoints
   through a slot-namespaced discovery surface — every override variable is
   prefixed with the canonical slot (`CANTON_LOCALNET_A_VALIDATOR_1_*`,
@@ -634,7 +685,7 @@ final was drafted but never pushed to nuget.org.
   for first-party actions; SHA pinning is retained for third-party
   step actions where supply-chain risk is real).
 - `canton-localnet up` now honours the YAML config's per-slot
-  `enabled` flag (#45). The CLI's compose pipeline previously
+  `enabled` flag. The CLI's compose pipeline previously
   hardcoded the `sv`/`a`/`b`/`d` profile list and gated `c` on a
   `C_VALIDATOR_1_PROFILE=on` env var, so `canton-localnet.yaml`
   disabling `c-validator-1` or `d-validator-1` had no effect on which
@@ -645,7 +696,7 @@ final was drafted but never pushed to nuget.org.
   `pqs-c-validator-1` profile follows c's enablement uniformly — no
   more env-var indirection.
 - Top-level `Makefile` `PROFILES` list now includes
-  `--profile c-validator-1` (#45). PR #48 introduced the
+  `--profile c-validator-1`. An earlier PR introduced the
   `c-validator-1` compose profile but did not update the Makefile's
   hardcoded profile list, so `make up` silently omitted the
   c-validator stack. Surfaced by the new 5-validator integration test.
@@ -705,7 +756,7 @@ final was drafted but never pushed to nuget.org.
 
 ### Added
 
-- Tag-driven release pipeline (#11) — `.github/workflows/release.yml`
+- Tag-driven release pipeline — `.github/workflows/release.yml`
   triggered on `v<splice>-<patch>` tag pushes (e.g. `v0.6.2-1`).
   Produces four artifacts in lockstep on every tag: the
   `Peaceful.Canton.Localnet.Testing.<version>.nupkg` pushed to the
@@ -723,8 +774,8 @@ final was drafted but never pushed to nuget.org.
   `v<splice>`, patch resets on splice bump) and the release SOP are
   documented in the new [`RELEASE.md`](RELEASE.md), linked from
   `CONTRIBUTING.md`.
-- `canton-localnet vm` parent command with three subcommands (issue
-  #15) — `provision` runs `terraform init` + `terraform apply
+- `canton-localnet vm` parent command with three subcommands —
+  `provision` runs `terraform init` + `terraform apply
   -auto-approve` against `terraform/` and prints the elastic IP plus a
   ready-to-paste ssh command on success (re-running is a no-op
   terraform refresh); `destroy` runs `terraform destroy
@@ -744,7 +795,7 @@ final was drafted but never pushed to nuget.org.
   shells out to `ssh` and propagates `ctx.Done()` for clean Ctrl-C
   teardown.
 - `csharp/Peaceful.Canton.Localnet.Testing` — DAR upload, party allocation,
-  and user binding (issue #9). Three new sibling deep modules of
+  and user binding. Three new sibling deep modules of
   `JsonLedgerAdminClient`, wired into `LocalnetFixture` via the existing
   DI / `IHttpClientFactory` graph and exposed as convenience pass-throughs:
   - `DarUploader.UploadAsync` / `UploadManyAsync` — `POST /v2/packages`
@@ -769,7 +820,7 @@ final was drafted but never pushed to nuget.org.
     local daml SDK. The DAR is committed and copied to the test output
     directory; the smoke test self-skips when the localnet env vars are
     absent, matching the existing pattern.
-- `csharp/Peaceful.Canton.Localnet.Testing` — xUnit fixture v0 (issue #7).
+- `csharp/Peaceful.Canton.Localnet.Testing` — xUnit fixture v0.
   Four sub-modules:
   - `EndpointDiscovery` — resolves the JSON Ledger API base URL, Keycloak
     token endpoint, audience, and client credentials from
@@ -781,7 +832,7 @@ final was drafted but never pushed to nuget.org.
     `OAuth2TokenException`.
   - `JsonLedgerAdminClient` — `HttpClient` + `System.Text.Json` wrapper.
     v0 implements `GET /v2/parties/participant-id` only; DAR upload,
-    party allocation, and user binding land in #9.
+    party allocation, and user binding land in a follow-up.
   - `LocalnetFixture` — `IAsyncDisposable` surface that composes the
     above via `Microsoft.Extensions.DependencyInjection` and exposes
     `GetParticipantIdAsync`.
@@ -876,7 +927,7 @@ final was drafted but never pushed to nuget.org.
   Stdlib-only.
 - `go/fixture/dar_uploader.go`, `party_allocator.go`,
   `user_builder.go` — three deep modules added on top of the v0 Go
-  fixture (issue #10, Go-side parity with #9). `DarUploader` posts
+  fixture (Go-side parity with the C# fixture). `DarUploader` posts
   raw DAR bytes to `POST /v2/packages` and treats an HTTP 400 whose
   body contains `KNOWN_PACKAGE_VERSION` as success, so repeated
   uploads of the same DAR (possibly with a different hash from a
@@ -918,7 +969,7 @@ final was drafted but never pushed to nuget.org.
 
 ### Changed
 
-- Refactored Go fixture HTTP path into a shared helper (#29). The
+- Refactored Go fixture HTTP path into a shared helper. The
   POST + bearer-auth + body-capture + status-check pattern duplicated
   across `DarUploader`, `PartyAllocator`, `UserBuilder` (and the
   pre-existing `JsonLedgerAdminClient`) is now one unexported
@@ -927,8 +978,8 @@ final was drafted but never pushed to nuget.org.
   a single `normalizeBaseURL`. The DAR `KNOWN_PACKAGE_VERSION`
   400-as-success shortcut is preserved as a per-call
   `treat400AsSuccess` hook. No public API change.
-- Aligned C# smoke-test DAR strategy with Go (issue #30, follow-up to
-  PRs #26 and #28): the C# `LocalnetFixture` upload smoke now reads the
+- Aligned C# smoke-test DAR strategy with Go: the C# `LocalnetFixture`
+  upload smoke now reads the
   DAR path from the `CANTON_LOCALNET_TEST_DAR_PATH` env var (matching
   the Go side) and self-skips with `Assert.Skip` when the var is unset
   or points at a missing file. `.github/workflows/csharp.yml` grew a

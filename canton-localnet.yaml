@@ -1,0 +1,10 @@
+# Copyright (c) 2026 Peaceful Studio OÜ
+# SPDX-License-Identifier: Apache-2.0
+
+# Pin obs/pqs off so bare `canton-localnet up` (CI's invocation) matches `make up`
+# parity; yamlconfig.Defaults() otherwise enables both and overcommits the CI runner.
+schemaVersion: preview-1
+
+modules:
+  obs: false
+  pqs: false
