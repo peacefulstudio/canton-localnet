@@ -35,7 +35,7 @@ topology.
 
 ## Quickstart
 
-Boot a complete Canton LocalNet (Splice 0.6.14) on your machine:
+Boot a complete Canton LocalNet (Splice 0.7.0) on your machine:
 
 ```bash
 make up           # docker compose up -d, OAuth2 mode by default
