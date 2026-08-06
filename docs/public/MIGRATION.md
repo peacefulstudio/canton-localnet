@@ -1,5 +1,34 @@
 # Migration guide
 
+## v0.6.14-1.preview.1 → v0.7.0-1.preview.1: Postgres 18
+
+This release moves the stack from Splice 0.6.14 to 0.7.0 and, with it, Postgres
+17 to 18.4. Postgres 18 images keep their data in a major-version subdirectory,
+so the `postgres` volume now mounts at `/var/lib/postgresql` rather than
+`/var/lib/postgresql/data` (docker-library/postgres#1259).
+
+**An existing stack has to be wiped before it will boot.** Postgres 18 cannot
+use the data directory Postgres 17 left behind, and LocalNet has no in-place
+major upgrade path.
+
+```bash
+make clean   # docker compose down -v — removes containers and volumes
+make up
+```
+
+Ledger state, onboarded parties, and uploaded DARs do not survive the wipe;
+re-run whatever seeds them. A long-lived host whose docker volumes outlive the
+containers needs the same `make clean` run explicitly — recreating the host does
+not clear the old data directory.
+
+PQS moves from `scribe` 0.6.14 to 3.5.7. Scribe versions independently of Splice
+and tracks the Canton 3.5.x line, so its pin no longer resembles the release
+tag. The two versions are unrelated from here on. Nothing to do unless you want
+the previous image, which `SCRIBE_VERSION=0.6.14` still pins.
+
+No new or removed config, port, slot, env-var, or fixture surface in this
+release — only the `POSTGRES_VERSION` and `SCRIBE_VERSION` default values above.
+
 ## v0.6.2-3 → v0.6.2-4: slot rename + 5-digit port scheme
 
 This release renames the three pre-existing localnet slots and renumbers

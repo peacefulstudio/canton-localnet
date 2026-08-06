@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0-1.preview.1] - 2026-08-05
+
+### Changed
+
+- **BREAKING (postgres 18):** the postgres image pin moves from 17 to
+  18 (resolving to 18.4) — `POSTGRES_VERSION` in
+  `compose/modules/localnet/compose.env`. PostgreSQL 18 cannot read a
+  version-17 data directory, so **any existing stack — local or the
+  shared Hetzner VM — must be wiped before the next `make up`**: run
+  `make clean` (or `./canton-localnet down --volumes`) first.
+  Skipping the wipe leaves `postgres` unable to start against the old
+  data directory, and because every other service depends on it the
+  whole stack never comes up. The bump also forces a mount-path
+  change: the
+  `postgres` volume now mounts at `/var/lib/postgresql` instead of
+  `/var/lib/postgresql/data` in
+  `compose/modules/localnet/compose.yaml`, because postgres:18 stores
+  data in major-version-specific subdirectories and refuses to start
+  against the old path (docker-library/postgres#1259). That one bites
+  on a *fresh* volume, not merely a stale one.
+- Upgrade the vendored Splice / Canton LocalNet from 0.6.14 to 0.7.0,
+  pinned to upstream `hyperledger-labs/splice`
+  `a9076eb91f87a9bd9315d2f9e122d6350bdc9d4c` in `compose/splice.sha`
+  and `compose/links.csv`; `SPLICE_VERSION=0.7.0` in
+  `compose/.env.defaults` drives the `canton`/`splice-app`/web-ui
+  image tags. Upstream made no changes to `cluster/compose/localnet`
+  between the two tags — the BASE and THEIRS trees are byte-identical,
+  so the three-way merge left every shared file "upstream unchanged",
+  making the vendored-tree upgrade a pure version-pin bump; that is
+  the third consecutive release with an unchanged vendored tree. Both
+  of upstream 0.7.0's own breaking changes are no-ops here: neither
+  the Scan `/transactions` endpoint nor `TransferCommand` is
+  referenced by the compose stack or by any fixture in this repo. The
+  `NGINX_VERSION=1.30.0` pin, the 5-validator topology and the
+  per-slot `env/` wiring are untouched. The C# package version is
+  bumped to `0.7.0-1`.
+- Move the PQS `SCRIBE_VERSION` default from 0.6.14 to 3.5.7 in
+  `compose/modules/pqs/compose.env`. scribe versions independently of
+  Splice — there is no scribe 0.7.0 — so this is a deliberate move
+  off the stale legacy 0.6.x line onto the current line, which tracks
+  Canton 3.5.x, and not a lockstep bump with the Splice pin. The
+  3.5.7 image moves its `WorkingDir` from `/daml3.4/` to `/` while
+  keeping a relative jar path in its entrypoint, so the four
+  `working_dir: /daml3.4` lines are removed from
+  `compose/modules/pqs/compose.yaml`; retaining them fails with
+  `Unable to access jarfile scribe.jar`. PQS is opt-in
+  (`make up PQS=true`) and off in CI and in the shared VM's default
+  profile, so pass `SCRIBE_VERSION=0.6.14` to stay on the previous
+  image.
+
 ## [0.6.14-1.preview.1] - 2026-07-28
 
 ### Added

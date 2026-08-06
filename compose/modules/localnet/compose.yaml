@@ -46,7 +46,10 @@ services:
     image: "postgres:${POSTGRES_VERSION}"
     container_name: postgres
     volumes:
-      - postgres:/var/lib/postgresql/data
+      # postgres:18+ images store data in major-version-specific subdirectories and
+      # reject a mount at the old /var/lib/postgresql/data path
+      # (docker-library/postgres#1259). Upstream Splice still defaults to postgres:14.
+      - postgres:/var/lib/postgresql
       - ${LOCALNET_DIR}/docker/postgres/postgres-entrypoint.sh:/postgres-entrypoint.sh
     env_file:
       - ${LOCALNET_ENV_DIR}/common.env
