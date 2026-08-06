@@ -37,7 +37,6 @@ services:
   pqs-a-validator-1:
     image: ${SCRIBE_IMAGE}:${SCRIBE_VERSION}
     container_name: pqs-a-validator-1
-    working_dir: /daml3.4
     env_file:
       - ${LOCALNET_ENV_DIR}/common.env
       - ${MODULES_DIR}/pqs/env/pqs.env
@@ -61,7 +60,6 @@ services:
   pqs-b-validator-1:
     image: ${SCRIBE_IMAGE}:${SCRIBE_VERSION}
     container_name: pqs-b-validator-1
-    working_dir: /daml3.4
     env_file:
       - ${LOCALNET_ENV_DIR}/common.env
       - ${MODULES_DIR}/pqs/env/pqs.env
@@ -85,7 +83,6 @@ services:
   pqs-c-validator-1:
     image: ${SCRIBE_IMAGE}:${SCRIBE_VERSION}
     container_name: pqs-c-validator-1
-    working_dir: /daml3.4
     env_file:
       - ${LOCALNET_ENV_DIR}/common.env
       - ${MODULES_DIR}/pqs/env/pqs.env
@@ -109,7 +106,6 @@ services:
   pqs-sv-validator-1:
     image: ${SCRIBE_IMAGE}:${SCRIBE_VERSION}
     container_name: pqs-sv-validator-1
-    working_dir: /daml3.4
     env_file:
       - ${LOCALNET_ENV_DIR}/common.env
       - ${MODULES_DIR}/pqs/env/pqs.env

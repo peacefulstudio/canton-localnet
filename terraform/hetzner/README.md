@@ -12,6 +12,24 @@ volume, primary IP, SSH key, and firewall survive, and the next `up` re-attaches
 the existing volume. Onboarded parties, DARs, and ledger state therefore carry
 over from one day to the next.
 
+## What the volume holds
+
+The volume mounts at `/mnt/canton-localnet-data` and holds both the git checkout
+(`/mnt/canton-localnet-data/canton-localnet`) and Docker's data-root
+(`/mnt/canton-localnet-data/docker`, configured in `/etc/docker/daemon.json` at
+provisioning). Images, named volumes, and container state are therefore all on
+the persistent tier.
+
+Provisioning runs `make down` — without `-v` — before `make up`, so a
+delete/recreate resets containers but never removes docker volumes. Anything
+that needs the volumes gone, such as a Postgres major upgrade whose new image
+cannot read the previous major's data directory, has to be done deliberately on
+the server:
+
+```bash
+cd /mnt/canton-localnet-data/canton-localnet && make clean
+```
+
 ## Why delete instead of power off?
 
 On Hetzner a powered-off server still bills at the full hourly rate. To actually
@@ -60,8 +78,8 @@ registered.
 | `image` | `ubuntu-24.04` | Base OS image. |
 | `hcloud_token` | — (sensitive) | Hetzner Cloud API token. Provide via `TF_VAR_hcloud_token`. |
 | `ssh_allowed_cidrs` | `["0.0.0.0/0"]` | CIDRs allowed to reach SSH (port 22). Narrow this to harden access. |
-| `repo_url` | `…/canton-localnet.git` | Git repository cloned on the server for LocalNet compose assets. |
-| `repo_ref` | `dev` | Git ref (branch, tag, or SHA) to check out. |
+| `repo_url` | `https://github.com/peacefulstudio/canton-localnet.git` | Git repository cloned on the server for LocalNet compose assets. Defaults to the public repository, which clones without a token. |
+| `repo_ref` | `dev` | Git ref (branch, tag, or SHA) to check out. The nightly lifecycle apply passes `server_enabled` only, so it re-resolves this to the default on every run — an override lasts until the next scheduled apply. |
 | `repo_token` | — (sensitive) | Optional token for cloning a private repository. |
 | `developer_ssh_public_keys` | `{}` | Map of name → SSH public-key string. Each entry is registered as an `hcloud_ssh_key` named `canton-localnet-<key>`. |
 
