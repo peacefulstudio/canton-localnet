@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0-1] - 2026-08-13
+
+First stable release since `0.6.5-2` (NuGet `0.6.5.2`, 2026-06-10).
+Functionally identical to `0.7.0-1.preview.1` — no code changes; this
+promotes that preview to a stable four-part NuGet version, `0.7.0.1`.
+
+Upgrading from `0.6.5.2` crosses six vendored Splice bumps (0.6.9,
+0.6.10, 0.6.11, 0.6.13, 0.6.14, 0.7.0) and the three breaking changes
+below. Per-release detail is in the `[0.6.9-1.preview.1]` through
+`[0.7.0-1.preview.1]` sections.
+
+### Changed — BREAKING
+
+- **Wipe every existing stack before the first `make up` on this
+  version.** The postgres 17 → 18 bump and the domain-neutral party
+  hints each invalidate existing volumes on their own; postgres or the
+  validator will otherwise restart-loop. Run `make clean` (or
+  `./canton-localnet down --volumes`) first.
+- **`make up` toggles take `true`/`false` instead of `on`/`off`.**
+  Callers passing `RES=on` / `PQS=on` / `OBS=on` (or `=off`) must
+  switch to `=true` / `=false`.
+- **Validator party hints default to the slot name** —
+  `a-validator-1`, `b-validator-1`, `c-validator-1`, `d-validator-1` —
+  instead of `localnet-validator-1`, `alice-validator-1`,
+  `bob-validator-1` and `danielle-validator-1`. Tests or tooling
+  asserting on the old hints must be updated.
+
 ## [0.7.0-1.preview.1] - 2026-08-05
 
 ### Changed

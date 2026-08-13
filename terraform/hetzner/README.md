@@ -30,6 +30,22 @@ the server:
 cd /mnt/canton-localnet-data/canton-localnet && make clean
 ```
 
+## Repointing the checkout
+
+`repo_url` is read only by the one-shot clone that runs when the volume holds no
+checkout yet, so it seeds an empty volume and nothing more. Changing it against a
+volume that already has a checkout still force-replaces the server — it is
+templated into `user_data` — and the box comes back on the same origin, having
+paid a full cold bring-up for nothing.
+
+To move an existing box to a different repository, do it on the server: set the
+checkout's `origin` to the new URL **and** reset the branch onto it. Provisioning
+ends in `git pull --ff-only`, which aborts the script when the branch has
+diverged, leaving the box with no containers. The alternative is to delete
+`/mnt/canton-localnet-data/canton-localnet`, which re-arms the one-shot clone at
+the next server recreate — pass `-var repo_url=<url>` on that same apply, or the
+clone uses the default again.
+
 ## Why delete instead of power off?
 
 On Hetzner a powered-off server still bills at the full hourly rate. To actually

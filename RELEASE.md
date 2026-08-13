@@ -69,7 +69,10 @@ note above.
    in step 3 and uses it as the GitHub Release body.
 2. Decide the next tag using the version-format rule above. If
    `compose/splice.sha` was bumped this cycle, reset the patch to
-   `1`; otherwise increment the previous patch.
+   `1`; otherwise increment the previous patch. Append a
+   `.preview.<n>` label for an opt-in prerelease; omit it to cut a
+   stable release. Everything downstream — the NuGet version shape
+   and the GitHub pre-release flag — follows from that one choice.
 3. Promote `[Unreleased]` to `[<version>] - <YYYY-MM-DD>` in
    `CHANGELOG.md` and add an empty `[Unreleased]` block above it.
    Commit on `dev`.
@@ -85,7 +88,11 @@ note above.
    job creates a **draft** GitHub Release once they all succeed.
 6. Review the draft release — notes, assets, `checksums.txt` —
    and publish it from the GitHub UI (or `gh release edit <tag>
-   --draft=false --prerelease` with your own credentials). The
+   --draft=false` with your own credentials). The workflow already
+   sets the GitHub "pre-release" flag from the tag shape — on for
+   `v<X.Y.Z>-<N>.<label>`, off for a final `v<X.Y.Z>-<N>` — so do
+   not pass `--prerelease` by hand; on a final tag it would
+   mislabel a stable release and stop it becoming "Latest". The
    `release: published` event triggers the nuget.org publish
    workflow ([`publish.yaml`](.github/workflows/publish.yaml)),
    which pushes `Peaceful.Canton.Localnet.Testing` to nuget.org
