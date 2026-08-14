@@ -80,6 +80,18 @@ write_files:
       if [ ! -d "$SRC/.git" ]; then
         run_git clone "${repo_url}" "$SRC"
       fi
+      # Older provisioning embedded a PAT in the remote URL, and the checkout
+      # outlives the server on the persistent volume. Auth comes from
+      # http.extraHeader per run, so strip any credential the URL still carries.
+      # Rewrites userinfo only -- the origin repo is the volume's to decide, and
+      # is deliberately not always repo_url.
+      CURRENT_ORIGIN=$(git -C "$SRC" remote get-url origin)
+      CLEAN_ORIGIN=$(printf '%s' "$CURRENT_ORIGIN" | sed -E 's#^(https://)[^/@]*@#\1#')
+      if [ "$CLEAN_ORIGIN" != "$CURRENT_ORIGIN" ]; then
+        echo "Stripping embedded credential from origin URL"
+        git -C "$SRC" remote set-url origin "$CLEAN_ORIGIN"
+      fi
+      unset CURRENT_ORIGIN CLEAN_ORIGIN
       run_git -C "$SRC" fetch --all --prune
       run_git -C "$SRC" checkout "${repo_ref}"
       if run_git -C "$SRC" symbolic-ref -q HEAD >/dev/null; then
