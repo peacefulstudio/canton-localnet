@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Upgrade the vendored Splice / Canton LocalNet from 0.7.0 to 0.7.1
+  (#153), pinned to upstream `hyperledger-labs/splice`
+  `c95e1ef5c939cef13cc344d7678f9d2ce2474c6a` in `compose/splice.sha`
+  and `compose/links.csv`; `SPLICE_VERSION=0.7.1` in
+  `compose/.env.defaults` drives the `canton`/`splice-app`/web-ui
+  image tags. Upstream's only change to `cluster/compose/localnet`
+  between the two tags is in `env/splice.env`: the traffic-topup
+  target is now overridable as
+  `TARGET_TRAFFIC_THROUGHPUT=${TARGET_TRAFFIC_THROUGHPUT:-20000}`
+  instead of a hardcoded `20000`, so exporting
+  `TARGET_TRAFFIC_THROUGHPUT` before `make up` now takes effect. The
+  rendered default is unchanged at `20000`, and the three-way merge
+  produced no conflicts. No volume wipe is needed: the
+  `POSTGRES_VERSION=18` and `NGINX_VERSION=1.30.0` pins, the PQS
+  `SCRIBE_VERSION` pin, the 5-validator topology and the per-slot
+  `env/` wiring are all untouched. The C# package version is bumped
+  to `0.7.1-1`.
+
 ## [0.7.0-1] - 2026-08-13
 
 First stable release since `0.6.5-2` (NuGet `0.6.5.2`, 2026-06-10).
