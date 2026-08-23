@@ -121,7 +121,7 @@ write_files:
 
       export C_VALIDATOR_1_PROFILE=off
       export D_VALIDATOR_1_PROFILE=off
-      make up
+      make up PQS=true
 
       mkdir -p "$(dirname "$DONE_FLAG")"
       touch "$DONE_FLAG"
