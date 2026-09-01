@@ -3,7 +3,7 @@
 
 import com.digitalasset.canton.topology.transaction.SynchronizerTrustCertificate.ParticipantTopologyFeatureFlag
 
-bootstrap.synchronizer(
+val appSynchronizerId = bootstrap.synchronizer(
   synchronizerName = "app-synchronizer",
   sequencers = Seq(`app-sequencer`),
   mediators = Seq(`app-mediator`),
@@ -22,12 +22,52 @@ utils.retry_until_true {
     `d-validator-1`.synchronizers.active("app-synchronizer")
 }
 
-Seq(`a-validator-1`, `b-validator-1`, `d-validator-1`).foreach { participant =>
-  participant.synchronizers.list_connected().foreach { connected =>
-    participant.topology.synchronizer_trust_certificates.propose(
-      participant.id,
-      connected.synchronizerId,
-      featureFlags = Seq(ParticipantTopologyFeatureFlag.EnableMultiSynchronizer),
-    )
+// Enable the multi-synchronizer topology feature flag on every synchronizer each
+// participant is connected to
+val multiSyncParticipants = Seq(`a-validator-1`, `b-validator-1`, `d-validator-1`)
+
+// Wait until the participants are also connected to the global synchronizer, otherwise
+// we would only enable the flag on the app-synchronizer.
+utils.retry_until_true {
+  multiSyncParticipants.forall(
+    _.synchronizers.list_connected().exists(_.synchronizerId != appSynchronizerId.logical)
+  )
+}
+
+val multiSyncFeatureFlag = ParticipantTopologyFeatureFlag.EnableMultiSynchronizer
+multiSyncParticipants.foreach { participant =>
+  participant.synchronizers.list_connected().map(_.synchronizerId).distinct.foreach {
+    synchronizerId =>
+      val existingFlags = participant.topology.synchronizer_trust_certificates
+        .list(
+          store = Some(TopologyStoreId.Synchronizer(synchronizerId)),
+          filterUid = participant.id.filterString,
+        )
+        .map(_.item.featureFlags)
+        .flatten
+        .distinct
+      if (!existingFlags.contains(multiSyncFeatureFlag)) {
+        participant.topology.synchronizer_trust_certificates
+          .propose(
+            participant.id,
+            synchronizerId,
+            featureFlags = existingFlags :+ multiSyncFeatureFlag,
+          )
+      }
+  }
+}
+
+// Ensure the flag became effective on all synchronizers before the console exits.
+utils.retry_until_true {
+  multiSyncParticipants.forall { participant =>
+    participant.synchronizers.list_connected().map(_.synchronizerId).distinct.forall {
+      synchronizerId =>
+        participant.topology.synchronizer_trust_certificates
+          .list(
+            store = Some(TopologyStoreId.Synchronizer(synchronizerId)),
+            filterUid = participant.id.filterString,
+          )
+          .exists(_.item.featureFlags.contains(multiSyncFeatureFlag))
+    }
   }
 }

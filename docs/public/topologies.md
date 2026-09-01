@@ -89,6 +89,13 @@ single run with the `--pqs` flag.
 
 Brings up a second synchronizer (`app-synchronizer`) and connects the `a`, `b`,
 and `d` validators to it, enabling cross-domain scenarios such as reassignment.
+The bootstrap also enables the multi-synchronizer topology feature flag on those
+three participants, on **every** synchronizer each is connected to at bootstrap,
+and waits for it to take effect before the `multi-sync-startup` container exits.
+`make up` blocks on that container completing, so a consumer driving an
+unassign/assign flow does not need its own step to turn the flag on. A
+synchronizer a participant connects to *later* is not covered — the flag is
+applied once, over the connections present at bootstrap.
 Default: **off**. Enable it with `multiSync: true` in `canton-localnet.yaml` or
 the `--multi-sync` flag. This profile is for local and CI use only — do not
 enable it on the shared VM.
