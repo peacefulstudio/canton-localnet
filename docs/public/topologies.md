@@ -129,7 +129,7 @@ headroom for Daml compilation or test runs on top.
 ## Scenario → config matrix
 
 Each shape below maps to a supported configuration; the last column names the
-CI scenario that proves it, where this repo's matrix has one.
+CI scenario in this repo's integration matrix that proves it.
 
 | Scenario | Topology | Optional layers | Proven in CI |
 |---|---|---|---|
@@ -137,7 +137,7 @@ CI scenario that proves it, where this repo's matrix has one.
 | Reduced network | SV + a/b (c/d disabled) | — | `3-healthy-validators` |
 | Restart survival | default, volumes preserved | — | `warm-restart` |
 | Observability | default | `observability` | `observability-on` / `observability-off` |
-| Cross-domain | SV + a/b/d on 2nd synchronizer | `multi-sync` | — (local/CI; not in this repo's scenario matrix) |
+| Cross-domain | SV + a/b/d on 2nd synchronizer | `multi-sync` | `multi-sync` |
 
 ## See also
 

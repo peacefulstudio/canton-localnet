@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.5-1] - 2026-09-02
+
+Vendored Splice moves 0.7.3 → 0.7.5. Drop-in from `0.7.3-1`: no breaking
+change, no volume wipe, and no config you hold needs editing.
+
+The only behaviour change reaches the `--multi-sync` lane, whose bootstrap
+now follows upstream's hardened `EnableMultiSynchronizer` flow; that lane
+also gains gating CI coverage for the first time. Single-synchronizer
+consumers see an image-tag bump and nothing else.
+
 ### Changed
 
 - Upgrade the vendored Splice / Canton LocalNet from 0.7.3 to 0.7.5,
