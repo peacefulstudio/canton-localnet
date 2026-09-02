@@ -235,6 +235,11 @@ run "cloud_init_renders_mount_and_compose" {
   }
 
   assert {
+    condition     = strcontains(hcloud_server.localnet[0].user_data, "make up PQS=true")
+    error_message = "cloud-init must start LocalNet with PQS enabled — a downstream integration lane reads pqs-a-validator-1"
+  }
+
+  assert {
     condition     = strcontains(hcloud_server.localnet[0].user_data, "git clone")
     error_message = "cloud-init must clone the repo"
   }

@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.5-1] - 2026-09-02
+
+Vendored Splice moves 0.7.3 → 0.7.5. Drop-in from `0.7.3-1`: no breaking
+change, no volume wipe, and no config you hold needs editing.
+
+The only behaviour change reaches the `--multi-sync` lane, whose bootstrap
+now follows upstream's hardened `EnableMultiSynchronizer` flow; that lane
+also gains gating CI coverage for the first time. Single-synchronizer
+consumers see an image-tag bump and nothing else.
+
+### Changed
+
+- Upgrade the vendored Splice / Canton LocalNet from 0.7.3 to 0.7.5,
+  pinned to upstream `hyperledger-labs/splice`
+  `858a7347aaeb958657b76b0957186102b74e3bd6` in `compose/splice.sha` and
+  `compose/links.csv`; `SPLICE_VERSION=0.7.5` in `compose/.env.defaults`
+  drives the `canton`, `splice-app` and web-ui image tags. Of the 93
+  upstream commits between the two tags, exactly one reaches
+  `cluster/compose/localnet`: `49c770819` *"fix: added missing feature
+  flag for multisync (#6809)"*, which hardens the multi-synchronizer
+  bootstrap in `conf/console/app-synchronizer.sc`. No volume wipe is
+  needed: the `POSTGRES_VERSION=18` and `NGINX_VERSION=1.30.0` pins, the
+  postgres `/var/lib/postgresql` mount path, the PQS `SCRIBE_VERSION`
+  pin, the 5-validator topology and the per-slot `env/` wiring are all
+  untouched. `make config` renders 18 services, with every Splice image
+  at the 0.7.5 tag. The C# package version moves to `0.7.5-1`.
+
+### Added
+
+- Gating CI coverage for the multi-synchronizer bootstrap. The
+  `integration-tests` matrix gains a `multi-sync` scenario that brings the
+  stack up with `canton-localnet up --multi-sync` and runs
+  `tests/acceptance/multi-sync.sh`, which asserts that
+  `multi-sync-startup` exited 0 (its final `retry_until_true` re-reads the
+  trust certificates, so a zero exit means `EnableMultiSynchronizer`
+  actually became effective), that its logs carry no console failure, that
+  the `a`/`b`/`d` validators each report 2 connected synchronizers over the
+  JSON Ledger API, and — as a negative control — that `c-validator-1` is
+  healthy on only 1. The scenario runs on any `compose/**`, `cli/**` or
+  `Makefile` change and on every push to `dev`. Until now
+  `conf/console/app-synchronizer.sc` was rewritten on each Splice bump but
+  executed by nothing in this repo; its only coverage was a weekly,
+  non-gating lane in a consumer repo.
+
+### Fixed
+
+- Multi-synchronizer bootstrap (`compose/modules/localnet/conf/console/app-synchronizer.sc`)
+  now adopts upstream's hardened `EnableMultiSynchronizer` flow instead of
+  the equivalent block this repo had hand-rolled ahead of upstream, applied
+  to the `a`/`b`/`d` validator slots. Two real behaviour fixes come with it,
+  plus one piece of hardening. The console now waits until
+  each participant is connected to the **global** synchronizer before
+  proposing, closing a race in which the flag *could* land on
+  `app-synchronizer` only; and it **appends** to the participant's existing
+  feature flags instead of replacing them, so no unrelated flag is dropped.
+  It additionally re-checks that the flag became effective before the
+  bootstrap container exits, and guards the proposal so a re-run is a
+  no-op — hardening rather than a fix, since the one-shot
+  `multi-sync-startup` container never ran the old block twice. Only the
+  `MULTI_SYNC=true` lane is affected.
+
 ## [0.7.3-1] - 2026-08-21
 
 Rolls up two vendored Splice bumps — 0.7.0 → 0.7.1 → 0.7.3. `0.7.1-1` was
