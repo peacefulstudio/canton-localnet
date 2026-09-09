@@ -45,6 +45,7 @@ type Endpoints struct {
 	HS256Secret          string
 	HS256User            string
 	PartyHint            string
+	ValidatorUserID      string
 }
 
 // EnvLookup mirrors os.LookupEnv so tests can inject fake environments.
@@ -109,9 +110,16 @@ func Resolve(s Slot, repoRoot string, lookup EnvLookup) (Endpoints, error) {
 			"AUTH_"+s.EnvPrefix()+"_VALIDATOR_CLIENT_SECRET",
 			"",
 		)
+		out.ValidatorUserID = pick(
+			lookup, composeEnv,
+			"CANTON_LOCALNET_"+s.EnvPrefix()+"_USER_ID",
+			"AUTH_"+s.EnvPrefix()+"_VALIDATOR_USER_ID",
+			s.ValidatorUserID,
+		)
 	case AuthKindHS256:
 		out.HS256Secret = envOr(lookup, "CANTON_LOCALNET_"+s.EnvPrefix()+"_HS256_SECRET", "unsafe")
 		out.HS256User = envOr(lookup, "CANTON_LOCALNET_"+s.EnvPrefix()+"_HS256_USER", "ledger-api-user")
+		out.ValidatorUserID = envOr(lookup, "CANTON_LOCALNET_"+s.EnvPrefix()+"_USER_ID", out.HS256User)
 	default:
 		return Endpoints{}, fmt.Errorf("slot: %s has unknown auth kind %q", s.Canonical, s.AuthKind)
 	}

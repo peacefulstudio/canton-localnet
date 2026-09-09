@@ -15,6 +15,10 @@ func newRootCommand(makeRunner runnerFactory) *cobra.Command {
 }
 
 func newRootCommandWithVM(makeRunner runnerFactory, vm vmDeps) *cobra.Command {
+	return newRootCommandWithDeps(makeRunner, vm, defaultRightsDeps())
+}
+
+func newRootCommandWithDeps(makeRunner runnerFactory, vm vmDeps, rights rightsDeps) *cobra.Command {
 	if makeRunner == nil {
 		makeRunner = func(dir string) composeRunner { return compose.NewRunner(dir) }
 	}
@@ -34,5 +38,6 @@ func newRootCommandWithVM(makeRunner runnerFactory, vm vmDeps) *cobra.Command {
 	cmd.AddCommand(newVMCommand(vm))
 	cmd.AddCommand(newAuthCommand())
 	cmd.AddCommand(newInfoCommand())
+	cmd.AddCommand(newRightsCommand(rights))
 	return cmd
 }

@@ -69,6 +69,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rights. Its failure message carries the participant version, so a Splice
   repin that changes the encoding reports itself.
 
+- `canton-localnet rights list --slot <s>` and `canton-localnet rights
+  prune --slot <s>`, with `make list-rights` / `make prune-rights`
+  wrapping them. A Canton participant caps a user at 1000 rights and
+  never deletes a party, so every `CanActAs` grant an integration suite
+  makes on an ephemeral party is permanent; a run killed before its
+  teardown leaks its grants, and a long-lived shared LocalNet silts up
+  until further grants fail with `TOO_MANY_USER_RIGHTS`. `rights list`
+  is the audit read — it splits the slot's validator user's rights into
+  what a prune would preserve and what it would revoke, collapsing
+  ephemeral party families such as `grpc-writer-parity-<hex>::…` onto a
+  single counted row, or naming every party with `--full`. `rights
+  prune` is the sweep; its contract and rails are stated in `rights
+  prune --help` and restated in the plan it prints on every run. Both
+  reuse the existing `auth token` minting, so the bearer and the
+  Keycloak client secret never reach output, a log line, an error, or a
+  process argument.
+
+  `prune` writes nothing without `--yes` or an answered interactive
+  prompt. `--dry-run` plans and runs every check without writing, and is
+  mutually exclusive with `--yes`. The preserved party is read from the
+  participant as the target user's `primaryParty` — it is not derivable
+  from the slot name, since `sv-validator-1` operates as the founded
+  party `sv::<ns>` — and `--preserve-party <party>` overrides that
+  lookup, requiring a full party id containing `::` that the user still
+  holds an act-as right on. `--max-revoke` (default 1000, the
+  participant's own per-user cap) bounds a runaway revoke list.
+
+  `prune` exits `2` when the sweep was not authorised, because the
+  prompt was declined or `--yes` was withheld from a non-interactive
+  run; `0` when there was nothing to revoke, the revoke succeeded, or
+  `--dry-run` planned a run that passes every check; `1` for everything
+  else, including an invocation rejected before any ledger call. Only
+  `2` guarantees nothing changed — a partial revoke exits `1` with
+  rights already gone — so a `1` calls for a `rights list` before
+  assuming the state. The distinct `2` keeps a deliberate "no", and a CI
+  job that forgot `--yes`, from looking like a completed sweep.
+
+- `slot.Endpoints.ValidatorUserID`, resolved as
+  `CANTON_LOCALNET_<SLOT>_USER_ID` > `AUTH_<SLOT>_VALIDATOR_USER_ID` in
+  `compose/modules/keycloak/env/<slot>/on/oauth2.env` > a built-in
+  default, falling back to the HS256 token subject for `sv-validator-1`.
+  A test asserts the built-in defaults still match the compose env tree.
+
 ### Changed
 
 - Duplicate parties within a single `actAs` or `readAs` list are collapsed

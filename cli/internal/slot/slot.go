@@ -39,6 +39,12 @@ type Slot struct {
 	Realm      string
 	PortPrefix string
 	AuthKind   AuthKind
+
+	// ValidatorUserID is the ledger user the slot's participant treats
+	// as its admin user, mirroring AUTH_<SLOT>_VALIDATOR_USER_ID in the
+	// vendored compose env tree. Empty for slots whose user id follows
+	// their token subject instead; Resolve fills that case in.
+	ValidatorUserID string
 }
 
 func (s Slot) JSONLedgerPort() string     { return s.PortPrefix + "975" }
@@ -54,10 +60,10 @@ func (s Slot) EnvPrefix() string {
 
 var all = []Slot{
 	{Canonical: "sv-validator-1", Short: "sv", Realm: "", PortPrefix: "10", AuthKind: AuthKindHS256},
-	{Canonical: "a-validator-1", Short: "a", Realm: "AValidator1", PortPrefix: "11", AuthKind: AuthKindOAuth2},
-	{Canonical: "b-validator-1", Short: "b", Realm: "BValidator1", PortPrefix: "12", AuthKind: AuthKindOAuth2},
-	{Canonical: "c-validator-1", Short: "c", Realm: "CValidator1", PortPrefix: "13", AuthKind: AuthKindOAuth2},
-	{Canonical: "d-validator-1", Short: "d", Realm: "DValidator1", PortPrefix: "14", AuthKind: AuthKindOAuth2},
+	{Canonical: "a-validator-1", Short: "a", Realm: "AValidator1", PortPrefix: "11", AuthKind: AuthKindOAuth2, ValidatorUserID: "c87743ab-80e0-4b83-935a-4c0582226691"},
+	{Canonical: "b-validator-1", Short: "b", Realm: "BValidator1", PortPrefix: "12", AuthKind: AuthKindOAuth2, ValidatorUserID: "97bb6cef-a7a9-410b-ba8c-ada08451a5c9"},
+	{Canonical: "c-validator-1", Short: "c", Realm: "CValidator1", PortPrefix: "13", AuthKind: AuthKindOAuth2, ValidatorUserID: "f902df23-9d11-4836-94c1-b9b584112755"},
+	{Canonical: "d-validator-1", Short: "d", Realm: "DValidator1", PortPrefix: "14", AuthKind: AuthKindOAuth2, ValidatorUserID: "d82c7c58-f453-4961-9c34-4dd539994264"},
 }
 
 // All returns every known slot in canonical order (sv first, then a..d).
