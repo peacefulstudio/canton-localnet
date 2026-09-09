@@ -58,7 +58,7 @@ left behind.
 
   Until now `GrantUserRightsAsync` had no inverse anywhere on the package's
   public surface, so every consumer that granted rights had to hand-roll its
-  own revoke-on-teardown; `canton-ledger-api-csharp-internal` did exactly
+  own revoke-on-teardown; `canton-ledger-api-csharp` did exactly
   that. A Canton participant caps a user at 1000 rights and parties are
   never deletable, so a long-lived shared LocalNet silts up until command
   submission fails with `TOO_MANY_USER_RIGHTS`. `GrantUserRightsAsync` keeps
