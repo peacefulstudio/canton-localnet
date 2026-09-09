@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.5-2] - 2026-09-09
+
+Same Splice pin as `0.7.5-1`. This release gives shared-stack consumers a
+way to take user rights without silting the participant: a leased grant that
+hands them back on dispose, a strict revoke inverse, and a CLI
+`rights list` / `rights prune` pair for cleaning up leaks a killed suite
+left behind.
+
 ### Added
 
 - An inverse for user-rights grants on `Peaceful.Canton.Localnet.Testing`
@@ -139,6 +147,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   subclass today — `UserBuilder.GrantRightsLeaseAsync` is new in this release
   — but every consumer of this package is an xUnit suite, so that is how the
   subclass will be met.
+
+### Fixed
+
+- Clear `UserRightsLease.Rights` / `ActAs` / `ReadAs` on a successful dispose,
+  and count the partial-revoke exception from the narrowed set the retry's
+  `GET` proved (#167). A lease that had handed everything back used to keep
+  naming the rights it no longer held, so a consumer asking "did anything
+  leak?" got a false positive on the one path where nothing did; the
+  exception message could also over-count rights the `GET` had already
+  proved gone.
 
 ## [0.7.5-1] - 2026-09-02
 
