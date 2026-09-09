@@ -128,17 +128,27 @@ Three properties worth knowing before you rely on it:
   alone — `lease.Rights` is then empty, and disposing it issues no request.
   That also means a second, overlapping lease is not the one that decides
   when the right goes away: the first holder's dispose ends it for both.
-  Check `lease.Rights`, `lease.ActAs` and `lease.ReadAs` if you need to know
-  whether you are the owner.
+  Check `lease.Rights`, `lease.ActAs` and `lease.ReadAs` **before disposing**
+  if you need to know whether you are the owner: a clean dispose empties them
+  too, so after one an empty list answers a different question — that nothing
+  was left behind.
+
+  Rights on a shared user are shared, not owned, and one more case follows
+  from that: if a lease's first revoke fails and its retry succeeds, the
+  retry's `PATCH` can revoke a right that a second lease acquired in the
+  gap. The count check passes, the first lease reports success, and the
+  second silently loses its authorization. This is inherent to retrying a
+  `PATCH` against a shared user and is not defended against — the only
+  defence costs a round trip and races in its own way. Overlapping leases on
+  the same party across concurrent tests are the thing to avoid.
 
 - **Disposal revokes on `CancellationToken.None`**, so a run cancelled
   mid-flight still hands the rights back, and it throws if the participant
   does not confirm the hand-back. A silently swallowed revoke is a
   permanent, invisible leak; a thrown one is visible. The throw does mean
   that `await using` — which compiles to `try`/`finally` — can replace a
-  failing assertion in your test body with the revoke's exception. When the
-  test body has assertions of its own and you want both, dispose
-  explicitly:
+  failing assertion in your test body with the revoke's exception. Disposing
+  explicitly buys back the transient case:
 
   ```csharp
   var rights = await fixture.GrantUserRightsLeaseAsync(userId, actAs: parties);
@@ -155,7 +165,11 @@ Three properties worth knowing before you rely on it:
 
   A failed revoke narrows the lease to the rights the participant did not
   confirm and leaves it disposable again, which is what makes that second
-  `DisposeAsync()` a retry rather than a no-op.
+  `DisposeAsync()` a retry rather than a no-op. It recovers a dropped
+  connection or a brief 503 and keeps your test body's exception. It does not
+  keep both when the rights genuinely will not come back: a second failure
+  throws out of the `finally` and masks the body exception exactly as
+  `await using` would.
 
 - **`RevokeUserRightsAsync` is not the teardown tool.** It is the strict
   inverse of a grant: it throws unless the participant reports every

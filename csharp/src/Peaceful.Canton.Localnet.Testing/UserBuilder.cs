@@ -182,7 +182,7 @@ public sealed class UserBuilder
         var outcome = await PatchRevokeRightsAsync(token, userId, rights, cancellationToken).ConfigureAwait(false);
         if (outcome.Revoked.Count < rights.Count)
         {
-            throw PartialRevokeError(userId, outcome, rights.Count);
+            throw PartialRevokeError(userId, outcome, rights.Count, rights.Count - outcome.Revoked.Count);
         }
     }
 
@@ -284,11 +284,15 @@ public sealed class UserBuilder
         return new RevokeOutcome(revoked, response.StatusCode, body, path);
     }
 
-    internal JsonLedgerApiException PartialRevokeError(string userId, RevokeOutcome outcome, int requested)
+    internal JsonLedgerApiException PartialRevokeError(
+        string userId,
+        RevokeOutcome outcome,
+        int requested,
+        int outstanding)
         => new(
-            $"PATCH {outcome.Path} (userId={userId}) reported {outcome.Revoked.Count} of {requested} "
-            + $"requested rights as newly revoked; the other {requested - outcome.Revoked.Count} "
-            + $"were not reported as revoked and may still be granted: {outcome.Body}",
+            $"PATCH {outcome.Path} (userId={userId}) left {outstanding} of {requested} rights unconfirmed "
+            + $"and possibly still granted; the participant reported {outcome.Revoked.Count} as newly "
+            + $"revoked: {outcome.Body}",
             outcome.StatusCode,
             outcome.Body);
 
@@ -593,7 +597,7 @@ public sealed class UserBuilder
 public sealed class UserRightsLease : IAsyncDisposable
 {
     private readonly UserBuilder _builder;
-    private IReadOnlyList<JsonElement> _owned;
+    private IReadOnlyList<JsonElement> _owned = Array.Empty<JsonElement>();
     private int _disposed;
     private int _attempts;
 
@@ -601,7 +605,6 @@ public sealed class UserRightsLease : IAsyncDisposable
     {
         _builder = builder;
         UserId = userId;
-        _owned = owned;
         Own(owned);
     }
 
@@ -611,9 +614,17 @@ public sealed class UserRightsLease : IAsyncDisposable
     /// <summary>
     /// The rights this lease owns and will revoke, exactly as the participant
     /// reported them, one raw JSON object per right. Empty when the grant newly
-    /// granted nothing — every requested right was already on the user — in
-    /// which case disposal is a no-op. Narrows to the outstanding rights when a
-    /// revoke comes back partial.
+    /// granted nothing — every requested right was already on the user — and
+    /// again once disposal has handed everything back, so an empty list after a
+    /// dispose means nothing was left behind. Narrows to the rights still
+    /// outstanding when a revoke comes back partial.
+    /// <para>
+    /// Rights are matched across responses by kind and party. A right whose
+    /// shape this package does not model has no such identity and is matched by
+    /// its raw text instead, so recognising it in a later response relies on the
+    /// participant serializing it byte-identically — which Canton does, emitting
+    /// both from one serializer.
+    /// </para>
     /// </summary>
     public IReadOnlyList<string> Rights { get; private set; } = Array.Empty<string>();
 
@@ -649,18 +660,21 @@ public sealed class UserRightsLease : IAsyncDisposable
     /// }
     /// </code>
     /// <para>
-    /// Prefer that shape over <c>await using</c> when the test body has
-    /// assertions of its own: <c>await using</c> compiles to a
-    /// <c>try</c>/<c>finally</c>, and an exception thrown from the <c>finally</c>
-    /// replaces the in-flight one, so a failing assertion followed by a failing
-    /// revoke reports the revoke. It also disposes exactly once, so the retry
-    /// above is unreachable through it.
+    /// That shape buys one thing over <c>await using</c>: a transient failure —
+    /// a dropped connection, a participant that briefly returned 503 — is
+    /// recovered by the retry, and the test body's own exception survives. It is
+    /// not a way to keep both when the rights genuinely will not come back: a
+    /// second failure throws out of the <c>finally</c> and replaces the in-flight
+    /// exception, exactly as <c>await using</c> would. <c>await using</c> also
+    /// disposes exactly once, so the retry is unreachable through it.
     /// </para>
     /// </summary>
     /// <exception cref="JsonLedgerApiException">
-    /// The participant rejected the revoke, or did not report every owned right
-    /// as revoked. The message names the user and the outstanding rights, so it
-    /// does not read as a failure of the test body it interrupted.
+    /// The participant rejected the revoke, or did not confirm every owned right
+    /// as revoked. The message names the user and how many of how many rights
+    /// are unconfirmed, so it does not read as a failure of the test body it
+    /// interrupted; <see cref="Rights"/>, <see cref="ActAs"/> and
+    /// <see cref="ReadAs"/> carry which ones they are.
     /// </exception>
     public async ValueTask DisposeAsync()
     {
@@ -672,12 +686,14 @@ public sealed class UserRightsLease : IAsyncDisposable
         var attempt = Interlocked.Increment(ref _attempts);
         try
         {
+            var requested = _owned.Count;
             var token = await _builder.GetTokenAsync(CancellationToken.None).ConfigureAwait(false);
             var outcome = await _builder
                 .PatchRevokeRightsAsync(token, UserId, _owned, CancellationToken.None)
                 .ConfigureAwait(false);
-            if (outcome.Revoked.Count >= _owned.Count)
+            if (outcome.Revoked.Count >= requested)
             {
+                Own(Array.Empty<JsonElement>());
                 return;
             }
 
@@ -687,15 +703,15 @@ public sealed class UserRightsLease : IAsyncDisposable
                 outstanding = await _builder
                     .RightsStillHeldAsync(token, UserId, outstanding, CancellationToken.None)
                     .ConfigureAwait(false);
-                if (outstanding.Count == 0)
-                {
-                    return;
-                }
             }
 
-            var requested = _owned.Count;
             Own(outstanding);
-            throw _builder.PartialRevokeError(UserId, outcome, requested);
+            if (outstanding.Count == 0)
+            {
+                return;
+            }
+
+            throw _builder.PartialRevokeError(UserId, outcome, requested, outstanding.Count);
         }
         catch
         {

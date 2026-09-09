@@ -54,8 +54,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that. A Canton participant caps a user at 1000 rights and parties are
   never deletable, so a long-lived shared LocalNet silts up until command
   submission fails with `TOO_MANY_USER_RIGHTS`. `GrantUserRightsAsync` keeps
-  its signature and behaviour — its XML doc now points at the leased variant
-  as the preferred way to take rights on a shared stack, and
+  its signature, and its behaviour except for the deduplication noted under
+  *Changed* — a caller who repeats a party in one list now puts one right on
+  the wire instead of two. Its XML doc points at the leased variant as the
+  preferred way to take rights on a shared stack, and
   `docs/public/integration-testing.md` gains a *User rights on a shared
   stack* section.
 
@@ -123,7 +125,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `JsonLedgerApiException` is no longer `sealed` (#163), so
   `UserRightsGrantedWithoutLeaseException` can extend it and existing
-  `catch (JsonLedgerApiException)` clauses keep catching it.
+  `catch (JsonLedgerApiException)` clauses keep catching it. That is the
+  point of subclassing — a teardown handler written before this signal
+  existed still runs — and it is also the hazard: such a handler that
+  swallows rather than logs will discard the one report that rights are
+  stranded on the participant. Deriving from `Exception` instead would make
+  those handlers miss it entirely, which is worse, so check any `catch
+  (JsonLedgerApiException)` you own on a rights path. Unsealing is one-way:
+  re-sealing later would be a binary break. xUnit's `Assert.Throws<T>` and
+  `ThrowsAsync<T>` match the exact type rather than the hierarchy, so a suite
+  that asserts the base type around a call that can now throw the derived one
+  needs `ThrowsAny<JsonLedgerApiException>`. No shipped call path throws the
+  subclass today — `UserBuilder.GrantRightsLeaseAsync` is new in this release
+  — but every consumer of this package is an xUnit suite, so that is how the
+  subclass will be met.
 
 ## [0.7.5-1] - 2026-09-02
 

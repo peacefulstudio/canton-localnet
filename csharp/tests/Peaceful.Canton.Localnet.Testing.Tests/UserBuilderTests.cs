@@ -278,6 +278,8 @@ public class UserBuilderTests
         var builder = new UserBuilder(http, StaticTokenProvider("tok"));
 
         await builder.GrantRightsAsync("some-user", actAs: new[] { "alice::p" });
+
+        Assert.Single(handler.Requests);
     }
 
     [Fact]
@@ -296,6 +298,7 @@ public class UserBuilderTests
         var id = await builder.CreateAsync("grace", actAs: new[] { "grace::p" });
 
         Assert.Equal("grace", id);
+        Assert.Equal(2, handler.Requests.Count);
     }
 
     [Fact]
@@ -437,8 +440,8 @@ public class UserBuilderTests
         var exception = await Assert.ThrowsAsync<JsonLedgerApiException>(
             () => builder.RevokeRightsAsync("some-user", actAs: new[] { "alice::p", "bob::p" }));
 
-        Assert.Contains("reported 1 of 2", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("were not reported as revoked", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("left 1 of 2", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("reported 1 as newly revoked", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -451,7 +454,7 @@ public class UserBuilderTests
         var exception = await Assert.ThrowsAsync<JsonLedgerApiException>(
             () => builder.RevokeRightsAsync("some-user", actAs: new[] { "alice::p" }));
 
-        Assert.Contains("reported 0 of 1", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("left 1 of 1", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -756,7 +759,7 @@ public class UserBuilderTests
 
         var exception = await Assert.ThrowsAsync<JsonLedgerApiException>(
             async () => await lease.DisposeAsync());
-        Assert.Contains("reported 1 of 2", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("left 1 of 2", exception.Message, StringComparison.Ordinal);
         Assert.Contains("some-user", exception.Message, StringComparison.Ordinal);
     }
 
@@ -800,6 +803,145 @@ public class UserBuilderTests
         Assert.Equal(
             "bob::p",
             rights[0].GetProperty("kind").GetProperty("CanActAs").GetProperty("value").GetProperty("party").GetString());
+    }
+
+    [Fact]
+    public async Task GrantRightsLeaseAsync_dispose_stops_listing_rights_once_they_are_handed_back()
+    {
+        var requests = new List<(HttpMethod Method, string Body)>();
+        var handler = LeaseHandler(
+            requests,
+            grantResponse: RightsJson(
+                "newlyGrantedRights",
+                ("CanActAs", "alice::p"),
+                ("CanReadAs", "observer::p")),
+            revokeResponse: RightsJson(
+                "newlyRevokedRights",
+                ("CanActAs", "alice::p"),
+                ("CanReadAs", "observer::p")));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var builder = new UserBuilder(http, StaticTokenProvider("tok"));
+
+        var lease = await builder.GrantRightsLeaseAsync(
+            "some-user",
+            actAs: new[] { "alice::p" },
+            readAs: new[] { "observer::p" });
+        await lease.DisposeAsync();
+
+        Assert.Empty(lease.Rights);
+        Assert.Empty(lease.ActAs);
+        Assert.Empty(lease.ReadAs);
+    }
+
+    [Fact]
+    public async Task GrantRightsLeaseAsync_dispose_retry_stops_listing_rights_the_participant_confirms_gone()
+    {
+        var patches = 0;
+        var handler = new RecordingHandler((req, _) =>
+        {
+            if (req.Method == HttpMethod.Get)
+            {
+                return Task.FromResult(JsonOk(RightsJson("rights")));
+            }
+            if (req.Method != HttpMethod.Patch)
+            {
+                return Task.FromResult(JsonOk(RightsJson("newlyGrantedRights", ("CanActAs", "alice::p"))));
+            }
+            patches++;
+            return Task.FromResult(patches == 1
+                ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+                {
+                    Content = new StringContent("{\"cause\":\"UNAVAILABLE\"}", Encoding.UTF8, "application/json"),
+                }
+                : JsonOk(RightsJson("newlyRevokedRights")));
+        });
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var builder = new UserBuilder(http, StaticTokenProvider("tok"));
+
+        var lease = await builder.GrantRightsLeaseAsync("some-user", actAs: new[] { "alice::p" });
+
+        await Assert.ThrowsAsync<JsonLedgerApiException>(async () => await lease.DisposeAsync());
+        Assert.Single(lease.Rights);
+
+        await lease.DisposeAsync();
+
+        Assert.Empty(lease.Rights);
+        Assert.Empty(lease.ActAs);
+    }
+
+    [Fact]
+    public async Task GrantRightsLeaseAsync_dispose_retry_counts_only_the_rights_the_participant_still_holds()
+    {
+        var patches = 0;
+        var handler = new RecordingHandler((req, _) =>
+        {
+            if (req.Method == HttpMethod.Get)
+            {
+                return Task.FromResult(JsonOk(RightsJson("rights", ("CanActAs", "alice::p"))));
+            }
+            if (req.Method != HttpMethod.Patch)
+            {
+                return Task.FromResult(JsonOk(RightsJson(
+                    "newlyGrantedRights",
+                    ("CanActAs", "alice::p"),
+                    ("CanActAs", "bob::p"))));
+            }
+            patches++;
+            return Task.FromResult(patches == 1
+                ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+                {
+                    Content = new StringContent("{\"cause\":\"UNAVAILABLE\"}", Encoding.UTF8, "application/json"),
+                }
+                : JsonOk(RightsJson("newlyRevokedRights")));
+        });
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var builder = new UserBuilder(http, StaticTokenProvider("tok"));
+
+        var lease = await builder.GrantRightsLeaseAsync(
+            "some-user",
+            actAs: new[] { "alice::p", "bob::p" });
+
+        await Assert.ThrowsAsync<JsonLedgerApiException>(async () => await lease.DisposeAsync());
+        var exception = await Assert.ThrowsAsync<JsonLedgerApiException>(async () => await lease.DisposeAsync());
+
+        Assert.Equal(new[] { "alice::p" }, lease.ActAs);
+        Assert.Contains("left 1 of 2", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GrantRightsLeaseAsync_dispose_narrows_read_as_rights_after_a_partial()
+    {
+        var patches = 0;
+        var handler = new RecordingHandler((req, _) =>
+        {
+            if (req.Method != HttpMethod.Patch)
+            {
+                return Task.FromResult(JsonOk(RightsJson(
+                    "newlyGrantedRights",
+                    ("CanActAs", "alice::p"),
+                    ("CanReadAs", "observer::p"))));
+            }
+            patches++;
+            return Task.FromResult(JsonOk(patches == 1
+                ? RightsJson("newlyRevokedRights", ("CanActAs", "alice::p"))
+                : RightsJson("newlyRevokedRights", ("CanReadAs", "observer::p"))));
+        });
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var builder = new UserBuilder(http, StaticTokenProvider("tok"));
+
+        var lease = await builder.GrantRightsLeaseAsync(
+            "some-user",
+            actAs: new[] { "alice::p" },
+            readAs: new[] { "observer::p" });
+
+        await Assert.ThrowsAsync<JsonLedgerApiException>(async () => await lease.DisposeAsync());
+
+        Assert.Empty(lease.ActAs);
+        Assert.Equal(new[] { "observer::p" }, lease.ReadAs);
+
+        await lease.DisposeAsync();
+
+        Assert.Empty(lease.Rights);
     }
 
     [Fact]
