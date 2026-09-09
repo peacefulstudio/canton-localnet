@@ -7,6 +7,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- An inverse for user-rights grants on `Peaceful.Canton.Localnet.Testing`
+  (#163). `UserBuilder.RevokeRightsAsync` issues the `PATCH
+  /v2/users/{id}/rights` that undoes `GrantRightsAsync`. It is the strict
+  inverse: it throws unless the participant reports every requested right as
+  newly revoked, so a right that was already gone counts as a shortfall and
+  calling it twice for the same parties throws the second time. A silent
+  partial revoke leaves rights behind, which is precisely the failure this
+  closes.
+
+  `UserBuilder.GrantRightsLeaseAsync` grants and returns a
+  `UserRightsLease` — a new public `IAsyncDisposable` — that hands the
+  rights back on dispose. It owns **only** the rights the participant
+  reported as `newlyGrantedRights`, never the full requested set: a right
+  that was already on the user belongs to whoever granted it first, and
+  revoking it here would break them. A lease that newly granted nothing
+  therefore owns nothing, reports an empty `Rights`, and disposes without a
+  request; `Rights`, `ActAs` and `ReadAs` say what it holds, so an
+  overlapping second lease is observable rather than a silent no-op. The
+  rights it holds are kept as the participant's own JSON and echoed back
+  verbatim on revoke, so a right variant this package does not model round
+  trips instead of being flattened into a shape the participant rejects.
+
+  Disposal revokes on `CancellationToken.None`, so a run cancelled
+  mid-flight still returns its rights, and the grant itself is issued the
+  same way — the caller's token governs the run-up to it and nothing after,
+  because a cancellation landing between the participant committing the
+  rights and the lease being returned would strand them. A revoke that
+  succeeded is never repeated. One that fails throws — an invisible leak is
+  worse than a visible failure — and leaves the lease disposable again,
+  narrowed to the rights the participant did not confirm, so the hand-back
+  can be retried; a retry that finds the rights already gone from the user
+  settles rather than looping. `UserRightsGrantedWithoutLeaseException` (a
+  `JsonLedgerApiException`) covers the one case where rights are committed
+  and no lease can be built: it carries the requested parties, and names the
+  call that hands them back.
+
+  Both reach the fixtures as `GrantUserRightsLeaseAsync` and
+  `RevokeUserRightsAsync` on `LocalnetFixture` and `ValidatorFixture`.
+
+  Until now `GrantUserRightsAsync` had no inverse anywhere on the package's
+  public surface, so every consumer that granted rights had to hand-roll its
+  own revoke-on-teardown; `canton-ledger-api-csharp-internal` did exactly
+  that. A Canton participant caps a user at 1000 rights and parties are
+  never deletable, so a long-lived shared LocalNet silts up until command
+  submission fails with `TOO_MANY_USER_RIGHTS`. `GrantUserRightsAsync` keeps
+  its signature and behaviour — its XML doc now points at the leased variant
+  as the preferred way to take rights on a shared stack, and
+  `docs/public/integration-testing.md` gains a *User rights on a shared
+  stack* section.
+
+- An integration test pinning the JSON Ledger API's encoding of empty rights
+  lists (#163), run by the `integration (compose stack)` lane against a live
+  participant. The OpenAPI spec marks `newlyGrantedRights`,
+  `newlyRevokedRights` and `rights` as optional with no `required` array, and
+  the lease's design turns on the difference between an absent field and an
+  empty one, so the test asserts on the raw response bodies for a grant that
+  was already held, a revoke of a right already gone, and a user holding no
+  rights. Its failure message carries the participant version, so a Splice
+  repin that changes the encoding reports itself.
+
+### Changed
+
+- Duplicate parties within a single `actAs` or `readAs` list are collapsed
+  before the request is sent (#163). Concatenating two party lists used to
+  send the same right twice, which the participant reports as one — and, with
+  the strict revoke above, would have thrown while claiming a right was still
+  granted. The same party in both `actAs` and `readAs` is unaffected: those
+  are two distinct rights.
+
+- `JsonLedgerApiException` is no longer `sealed` (#163), so
+  `UserRightsGrantedWithoutLeaseException` can extend it and existing
+  `catch (JsonLedgerApiException)` clauses keep catching it.
+
 ## [0.7.5-1] - 2026-09-02
 
 Vendored Splice moves 0.7.3 → 0.7.5. Drop-in from `0.7.3-1`: no breaking

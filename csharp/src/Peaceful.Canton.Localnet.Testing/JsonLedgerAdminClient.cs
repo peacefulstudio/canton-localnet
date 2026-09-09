@@ -200,7 +200,7 @@ public sealed class JsonLedgerAdminClient
 /// Raised when the JSON Ledger API returns a non-success status, an empty
 /// response body, or a response that fails the v0 contract (missing fields).
 /// </summary>
-public sealed class JsonLedgerApiException : Exception
+public class JsonLedgerApiException : Exception
 {
     /// <summary>
     /// Creates the exception with the originating <paramref name="statusCode"/>

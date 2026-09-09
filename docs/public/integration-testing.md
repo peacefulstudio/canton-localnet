@@ -98,6 +98,71 @@ var bParticipantId = await b.GetParticipantIdAsync();
 Canonical slot names come from `KnownSlots()`: `sv-validator-1`,
 `a-validator-1`, `b-validator-1`, `c-validator-1`, `d-validator-1`.
 
+## User rights on a shared stack
+
+A Canton participant caps a ledger user at 1000 rights, and parties are
+never deletable. On a long-lived stack — the shared-VM shape below, or any
+LocalNet that outlives a single CI job — rights that are granted and never
+handed back accumulate on the validator's service-account user until
+command submission fails with `TOO_MANY_USER_RIGHTS` and the stack has to
+be rebuilt.
+
+`GrantUserRightsLeaseAsync` is the grant that cleans up after itself:
+
+```csharp
+await using var fixture = LocalnetFixture.FromEnvironment();
+
+var party = await fixture.AllocatePartyAsync("globex");
+
+await using var rights = await fixture.GrantUserRightsLeaseAsync(
+    fixture.ValidatorUserId,
+    actAs: new[] { party.PartyId });
+
+// submit commands as party.PartyId here; the rights go back at scope exit
+```
+
+Three properties worth knowing before you rely on it:
+
+- **A lease owns only what it newly granted.** If the right was already on
+  the user, some other holder granted it first and the lease leaves it
+  alone — `lease.Rights` is then empty, and disposing it issues no request.
+  That also means a second, overlapping lease is not the one that decides
+  when the right goes away: the first holder's dispose ends it for both.
+  Check `lease.Rights`, `lease.ActAs` and `lease.ReadAs` if you need to know
+  whether you are the owner.
+
+- **Disposal revokes on `CancellationToken.None`**, so a run cancelled
+  mid-flight still hands the rights back, and it throws if the participant
+  does not confirm the hand-back. A silently swallowed revoke is a
+  permanent, invisible leak; a thrown one is visible. The throw does mean
+  that `await using` — which compiles to `try`/`finally` — can replace a
+  failing assertion in your test body with the revoke's exception. When the
+  test body has assertions of its own and you want both, dispose
+  explicitly:
+
+  ```csharp
+  var rights = await fixture.GrantUserRightsLeaseAsync(userId, actAs: parties);
+  try
+  {
+      // test body
+  }
+  finally
+  {
+      try { await rights.DisposeAsync(); }
+      catch (JsonLedgerApiException) { await rights.DisposeAsync(); }
+  }
+  ```
+
+  A failed revoke narrows the lease to the rights the participant did not
+  confirm and leaves it disposable again, which is what makes that second
+  `DisposeAsync()` a retry rather than a no-op.
+
+- **`RevokeUserRightsAsync` is not the teardown tool.** It is the strict
+  inverse of a grant: it throws unless the participant reports every
+  requested right as newly revoked, so calling it twice for the same
+  parties throws the second time. Use it when you know exactly which rights
+  you hold; use the lease for teardown.
+
 ## Go fixture pattern
 
 Module: `github.com/peacefulstudio/canton-localnet/go/fixture`. The
