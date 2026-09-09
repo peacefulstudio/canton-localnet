@@ -18,7 +18,12 @@ xUnit fixtures for Canton LocalNet integration tests. Sub-modules:
   `<consumer-prefix>-<instance-suffix>` where the suffix is a 12-hex
   cryptographic random per fixture instance.
 - `UserBuilder` — `POST /v2/users` followed by `POST /v2/users/{id}/rights`
-  to grant `CanActAs` / `CanReadAs`.
+  to grant `CanActAs` / `CanReadAs`, `PATCH /v2/users/{id}/rights` to revoke
+  them again, and `GrantRightsLeaseAsync` for a grant that hands the rights
+  back on dispose. A participant caps a user at 1000 rights, so on a
+  long-lived shared stack take the lease — see *User rights on a shared
+  stack* in `docs/public/integration-testing.md` for what it owns, when its
+  disposal throws, and why `RevokeRightsAsync` is not the teardown tool.
 - `LocalnetFixture` — composes the above into a single user-facing surface
   via `Microsoft.Extensions.DependencyInjection` and exposes convenience
   pass-throughs (`UploadDarAsync`, `AllocatePartyAsync`, `CreateUserAsync`,
@@ -41,7 +46,16 @@ await fixture.CreateUserAsync(
     userId: $"globex-user-{fixture.PartyAllocator.InstanceSuffix}",
     primaryParty: party.PartyId,
     actAs: new[] { party.PartyId });
+
+await using var rights = await fixture.GrantUserRightsLeaseAsync(
+    fixture.ValidatorUserId,
+    actAs: new[] { party.PartyId });
 ```
+
+The lease revokes on dispose, so the shared validator user does not silt up
+to `TOO_MANY_USER_RIGHTS`. A failed revoke throws out of `DisposeAsync`,
+which under `await using` can replace an in-flight assertion failure —
+dispose explicitly when the test body has assertions of its own.
 
 ## Environment variables
 

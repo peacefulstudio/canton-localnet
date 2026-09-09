@@ -10,6 +10,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
@@ -19,8 +20,17 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if err := newRootCommand(nil).ExecuteContext(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "canton-localnet: %v\n", err)
-		os.Exit(1)
+	os.Exit(run(ctx, os.Args[1:], os.Stdout, os.Stderr))
+}
+
+func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	root := newRootCommand(nil)
+	root.SetArgs(args)
+	root.SetOut(stdout)
+	root.SetErr(stderr)
+	if err := root.ExecuteContext(ctx); err != nil {
+		fmt.Fprintf(stderr, "canton-localnet: %v\n", err)
+		return exitCode(err)
 	}
+	return 0
 }

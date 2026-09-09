@@ -126,6 +126,9 @@ public sealed class ValidatorFixture : IAsyncDisposable
     /// parties to an already-existing ledger user — e.g. this slot's validator
     /// service-account token user (<see cref="ValidatorUserId"/>) — so that
     /// <c>client_credentials</c>-authenticated command submission is authorized.
+    /// The rights stay until something revokes them, and a participant caps a
+    /// user at 1000 of them; prefer <see cref="GrantUserRightsLeaseAsync"/>,
+    /// which hands them back on dispose.
     /// </summary>
     public Task GrantUserRightsAsync(
         string userId,
@@ -133,6 +136,34 @@ public sealed class ValidatorFixture : IAsyncDisposable
         IEnumerable<string>? readAs = null,
         CancellationToken cancellationToken = default)
         => UserBuilder.GrantRightsAsync(userId, actAs, readAs, cancellationToken);
+
+    /// <summary>
+    /// Convenience pass-through to <see cref="UserBuilder.GrantRightsLeaseAsync"/>.
+    /// Grants the rights and returns a lease that revokes exactly what it newly
+    /// granted, on <see cref="CancellationToken.None"/>, when disposed —
+    /// throwing from <see cref="UserRightsLease.DisposeAsync"/> if the
+    /// participant does not confirm the hand-back.
+    /// </summary>
+    public Task<UserRightsLease> GrantUserRightsLeaseAsync(
+        string userId,
+        IEnumerable<string>? actAs = null,
+        IEnumerable<string>? readAs = null,
+        CancellationToken cancellationToken = default)
+        => UserBuilder.GrantRightsLeaseAsync(userId, actAs, readAs, cancellationToken);
+
+    /// <summary>
+    /// Convenience pass-through to <see cref="UserBuilder.RevokeRightsAsync"/>.
+    /// Revokes the given <c>CanActAs</c>/<c>CanReadAs</c> rights from a ledger
+    /// user, throwing unless the participant reports every one of them as newly
+    /// revoked — so it is not safe to call twice for the same parties. For
+    /// teardown use <see cref="GrantUserRightsLeaseAsync"/>.
+    /// </summary>
+    public Task RevokeUserRightsAsync(
+        string userId,
+        IEnumerable<string>? actAs = null,
+        IEnumerable<string>? readAs = null,
+        CancellationToken cancellationToken = default)
+        => UserBuilder.RevokeRightsAsync(userId, actAs, readAs, cancellationToken);
 
     /// <summary>
     /// Disposes the scoped service container (if any) created for this

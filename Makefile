@@ -4,6 +4,7 @@
 .DEFAULT_GOAL := help
 
 COMPOSE_DIR := compose
+CLI_DIR      := cli
 LOCALNET_DIR := $(CURDIR)/$(COMPOSE_DIR)/modules/localnet
 KEYCLOAK_DIR := $(CURDIR)/$(COMPOSE_DIR)/modules/keycloak
 PQS_DIR      := $(CURDIR)/$(COMPOSE_DIR)/modules/pqs
@@ -24,6 +25,10 @@ AUTH_MODE ?= oauth2
 # RES=true (default) applies per-module mem_limit / JVM heap caps so the stack
 # fits comfortably on a 16 GB dev machine. Set RES=false to remove caps.
 RES ?= true
+
+SLOT ?= a
+
+YES ?=
 
 # Base stack: always present.
 COMPOSE_FILES := -f $(LOCALNET_DIR)/compose.yaml \
@@ -137,6 +142,16 @@ config: ## Print the resolved compose configuration (debugging)
 .PHONY: check-party-hints
 check-party-hints: ## Assert every resolved slot party hint equals its slot name
 	@bash -eo pipefail -c '$(DOCKER_COMPOSE) config | $(COMPOSE_DIR)/scripts/check-party-hints.sh'
+
+.PHONY: prune-rights
+prune-rights: ## Revoke the leaked ledger rights on SLOT's validator user. Destructive, and SLOT defaults to a: prints the plan and asks before revoking, unless YES is set to anything other than 0
+	@cd $(CLI_DIR) && go build -o canton-localnet ./cmd/canton-localnet
+	@$(CLI_DIR)/canton-localnet rights prune --slot $(SLOT) --repo-root $(CURDIR) $(if $(filter-out 0,$(YES)),--yes,)
+
+.PHONY: list-rights
+list-rights: ## List the ledger rights held by SLOT's validator user (read-only; SLOT defaults to a)
+	@cd $(CLI_DIR) && go build -o canton-localnet ./cmd/canton-localnet
+	@$(CLI_DIR)/canton-localnet rights list --slot $(SLOT) --repo-root $(CURDIR)
 
 .PHONY: test-restart-survival
 test-restart-survival: ## Onboarding-client restart-survival acceptance test (drives a full down/up cycle; ~5 min). Assumes the stack is already up.

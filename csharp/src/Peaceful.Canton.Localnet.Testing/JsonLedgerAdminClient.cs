@@ -199,8 +199,15 @@ public sealed class JsonLedgerAdminClient
 /// <summary>
 /// Raised when the JSON Ledger API returns a non-success status, an empty
 /// response body, or a response that fails the v0 contract (missing fields).
+/// <para>
+/// This is a base type — <see cref="UserRightsGrantedWithoutLeaseException"/>
+/// derives from it. A <c>catch</c> on this type catches the derived ones; xUnit's
+/// <c>Assert.Throws&lt;T&gt;</c> and <c>ThrowsAsync&lt;T&gt;</c> match the exact
+/// type and do not, so assert with <c>ThrowsAny</c> where a derived exception is
+/// possible.
+/// </para>
 /// </summary>
-public sealed class JsonLedgerApiException : Exception
+public class JsonLedgerApiException : Exception
 {
     /// <summary>
     /// Creates the exception with the originating <paramref name="statusCode"/>
