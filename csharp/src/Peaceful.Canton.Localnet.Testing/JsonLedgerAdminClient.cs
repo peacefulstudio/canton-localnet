@@ -11,8 +11,8 @@ namespace Peaceful.Canton.Localnet.Testing;
 
 /// <summary>
 /// Thin wrapper over the Canton JSON Ledger API v2. v0 implements only
-/// <c>GET /v2/parties/participant-id</c>; subsequent slices (#9 onwards) will
-/// add DAR upload, party allocation, and user binding.
+/// <c>GET /v2/parties/participant-id</c>; subsequent slices will add DAR
+/// upload, party allocation, and user binding.
 /// </summary>
 public sealed class JsonLedgerAdminClient
 {

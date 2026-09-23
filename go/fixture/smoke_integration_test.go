@@ -76,7 +76,7 @@ func TestSmoke_MultiValidator_GetParticipantIdPerSlot(t *testing.T) {
 	}
 
 	if ids[RoleAValidator1] == ids[RoleBValidator1] {
-		t.Fatalf("expected distinct participant ids per validator slot, got %s for both a-validator-1 and b-validator-1 — multi-validator routing regression (issue #52)", ids[RoleAValidator1])
+		t.Fatalf("expected distinct participant ids per validator slot, got %s for both a-validator-1 and b-validator-1 — multi-validator routing regression", ids[RoleAValidator1])
 	}
 }
 
