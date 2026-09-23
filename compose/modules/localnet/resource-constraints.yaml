@@ -49,6 +49,14 @@ services:
     mem_limit: 2g
     environment:
       _JAVA_OPTIONS: "-XX:+UseContainerSupport -XX:-UseCompressedOops"
+  # compose `extends:` only pulls in same-file service definitions, not
+  # overlay-file settings — so multi-sync-startup (which extends console in
+  # compose.yaml) does not inherit this file's console: block and needs its
+  # own entry mirroring it.
+  multi-sync-startup:
+    mem_limit: 2g
+    environment:
+      _JAVA_OPTIONS: "-XX:+UseContainerSupport -XX:-UseCompressedOops"
   scan-web-ui:
     mem_limit: 256mb
   sv-web-ui:

@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.3-1] - 2026-09-22
+
+Vendored Splice moves 0.7.5 → 0.8.3, crossing upstream's 0.8.0, 0.8.1 and
+0.8.2 releases. Drop-in from `0.7.5-2`: no breaking change, no volume wipe,
+and no config you hold needs editing. This is the first public release on the
+0.8 line; it also carries a memory-cap fix for the `--multi-sync` lane.
+
+### Changed
+
+- Upgrade the vendored Splice / Canton LocalNet from 0.7.5 to 0.8.3.
+  - The pin is upstream `hyperledger-labs/splice`
+    `8460154135f39019b8bb370c9c1321ff13c9bb10`, in `compose/splice.sha` and
+    `compose/links.csv`. `SPLICE_VERSION=0.8.3` in `compose/.env.defaults`
+    moves the `canton`, `splice-app` and web-ui image tags.
+  - No file under `compose/modules/localnet/` changed. The one upstream
+    change to the compose tree across these releases is a new default
+    `POSTGRES_VERSION`, which this stack already overrides with its own
+    `POSTGRES_VERSION=18` pin.
+  - Existing volumes keep working: the `POSTGRES_VERSION=18` and
+    `NGINX_VERSION=1.30.0` pins, the postgres `/var/lib/postgresql` mount
+    path, the 5-validator topology and the per-slot `env/` wiring are
+    unchanged.
+  - Upstream's 0.8.x changes outside the compose tree — the removed
+    `TransferCommand` flag, the Helm-only validator settings, and a Scan-proxy
+    fix for the Token Standard V2 allocation- and transfer-instruction
+    endpoints — reach this stack only through the new image tags.
+- The C# package version moves to `0.8.3-1` (NuGet `0.8.3.1`); pin
+  `go/fixture` at `v0.8.3-1`.
+
+### Fixed
+
+- `multi-sync-startup` now runs under the same memory cap as `console`.
+  - It ran uncapped for about 90 seconds under `MULTI_SYNC=true` and sized
+    its JVM heap from host RAM, because Compose's `extends:` does not carry
+    `console`'s limits across from `resource-constraints.yaml`.
+  - The cap and `_JAVA_OPTIONS` now sit on the service itself. Nothing to do
+    on upgrade.
+
 ## [0.7.5-2] - 2026-09-09
 
 Same Splice pin as `0.7.5-1`. This release gives shared-stack consumers a

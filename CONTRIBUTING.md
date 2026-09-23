@@ -28,16 +28,21 @@ test fixture. Build and test commands depend on which surface you are
 touching:
 
 ```bash
-# Go fixture and CLI
-go build ./...
-go test ./...
+# CLI
+(cd cli && go build ./...)
+(cd cli && go test -race ./...)
+
+# Go fixture
+(cd go/fixture && go vet ./...)
+(cd go/fixture && go test -race -count=1 ./...)
 
 # .NET fixture
-dotnet restore && dotnet build
-dotnet test
+(cd csharp && dotnet restore && dotnet build)
+(cd csharp && dotnet test)
 
 # Terraform module
 terraform -chdir=terraform fmt -check
+terraform -chdir=terraform init -backend=false
 terraform -chdir=terraform validate
 ```
 
@@ -77,11 +82,14 @@ Bug fixes and new features must follow red-green TDD:
 3. **Refactor** — clean up while keeping tests green.
 
 ```bash
-# Go
-go test -v -race -coverprofile=coverage.out ./... && go tool cover -func=coverage.out
+# CLI
+(cd cli && go test -v -race -coverprofile=coverage.out ./... && go tool cover -func=coverage.out)
+
+# Go fixture
+(cd go/fixture && go test -v -race -count=1 -coverprofile=coverage.out ./... && go tool cover -func=coverage.out)
 
 # .NET
-dotnet test --configuration Release --collect:"XPlat Code Coverage" --results-directory ./coverage
+(cd csharp && dotnet test --configuration Release --collect:"XPlat Code Coverage" --results-directory ./coverage)
 ```
 
 ## Code style

@@ -63,30 +63,68 @@ note above.
 
 ## Cutting a release
 
-1. Make sure `CHANGELOG.md`'s `[Unreleased]` section is up to date
-   and lists every consumer-visible change since the previous tag.
-   The release workflow extracts the `## [<version>]` section promoted
-   in step 3 and uses it as the GitHub Release body.
+Maintainers develop in a private source repository and promote curated
+paths into this one. The source repository keeps its own `CHANGELOG.md` as
+the maintainers' full record; this repository's `CHANGELOG.md` is the public
+one, and each release adds a curated entry to it during promotion. Steps 1–5
+run in the source repository; steps 6–9 run here.
+
+1. Make sure the source `CHANGELOG.md`'s `[Unreleased]` section is up
+   to date and lists every consumer-visible change since the previous
+   tag.
 2. Decide the next tag using the version-format rule above. If
    `compose/splice.sha` was bumped this cycle, reset the patch to
    `1`; otherwise increment the previous patch. Append a
    `.preview.<n>` label for an opt-in prerelease; omit it to cut a
    stable release. Everything downstream — the NuGet version shape
    and the GitHub pre-release flag — follows from that one choice.
-3. Promote `[Unreleased]` to `[<version>] - <YYYY-MM-DD>` in
-   `CHANGELOG.md` and add an empty `[Unreleased]` block above it.
-   Commit on `dev`.
-4. Tag and push:
+3. Promote `[Unreleased]` to `[<version>] - <YYYY-MM-DD>` in the
+   source `CHANGELOG.md` and add an empty `[Unreleased]` block above
+   it. In the same PR, write the public entry for this release as
+   `.github/release-notes/<version>.md`: one `## [<version>] -
+   <YYYY-MM-DD>` heading followed by Keep-a-Changelog sections, written
+   for a consumer upgrading from the previous public release. Each item
+   opens with one line naming what changed, then says what a consumer
+   does about it. It carries no issue or PR numbers and no
+   private-repository names. Merge to `dev`.
+4. Advance `stage` to `dev` with a merge PR (`dev` → `stage`, merge
+   commit, no squash):
+   ```bash
+   gh pr create --base stage --head dev \
+     --title "release: advance stage to dev for <version>" --body ""
+   gh pr merge <number> --merge
+   ```
+   `stage` is what gets promoted, so it must hold the release commit
+   and its release-notes file before the next step.
+5. Promote `stage` into this repository, dry run first:
+   ```bash
+   gh workflow run promote-public-overlay.yaml --ref stage \
+     --field source_ref=stage --field promote_branch=promote/v<version> \
+     --field dry_run=true
+   ```
+   The run overlays the paths the source `.gitpublic` lists onto this
+   repository's `dev`, inserts `.github/release-notes/<version>.md` into
+   `CHANGELOG.md`
+   directly below `[Unreleased]`, and runs a content leak-scan over the
+   result, the whole `CHANGELOG.md` included. It fails if the
+   release-notes file is missing and `CHANGELOG.md` has no entry for
+   `<version>` yet. Review the log, then re-run with `dry_run=false` to
+   open the promote PR here.
+6. Review and merge the promote PR into `dev`. The release workflow
+   extracts the `## [<version>]` section of this repository's
+   `CHANGELOG.md` — the curated entry — and uses it as the GitHub
+   Release body.
+7. Tag and push:
    ```bash
    git checkout dev && git pull
    git tag v0.6.2-1
    git push origin v0.6.2-1
    ```
-5. Watch the `release` workflow in GitHub Actions. The four
+8. Watch the `release` workflow in GitHub Actions. The four
    per-artifact jobs (`nuget`, `cli`, `oci`, plus release notes
    extraction) fan out in parallel; the final `publish-release`
    job creates a **draft** GitHub Release once they all succeed.
-6. Review the draft release — notes, assets, `checksums.txt` —
+9. Review the draft release — notes, assets, `checksums.txt` —
    and publish it from the GitHub UI (or `gh release edit <tag>
    --draft=false` with your own credentials). The workflow already
    sets the GitHub "pre-release" flag from the tag shape — on for
@@ -103,7 +141,7 @@ not let the release workflow commit back to `dev`. That keeps the
 default branch's permission surface minimal and avoids the
 typical "workflow rewrites history" sharp edge.
 
-Step 6 (publishing the draft) is manual by design too, for two
+Step 9 (publishing the draft) is manual by design too, for two
 reasons: GitHub suppresses workflow triggers for events created
 with a workflow's own `GITHUB_TOKEN`, so a release auto-published
 by `release.yml` would silently never reach nuget.org; and the
