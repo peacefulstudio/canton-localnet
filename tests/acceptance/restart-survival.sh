@@ -2,7 +2,7 @@
 # Copyright (c) 2026 Peaceful Studio OÜ
 # SPDX-License-Identifier: Apache-2.0
 #
-# Regression test for step 5 of issue #65: per-realm onboarding service-account
+# Regression test for step 5: per-realm onboarding service-account
 # clients (and the users they create) must survive a `canton-localnet down`
 # (volumes preserved) + `canton-localnet up` cycle.
 #

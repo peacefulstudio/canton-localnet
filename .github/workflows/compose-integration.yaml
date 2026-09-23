@@ -114,8 +114,7 @@ jobs:
         # ships a file we can docker-cp. A vendored binary doesn't work
         # either because Canton 0.6.2 strictly enforces Daml-LF 2.1..2.2.
         # Build a 5-line Noop.daml in-tree with the matching SDK so the
-        # DAR upload integration tests can actually run (which they
-        # hadn't been able to since #26). (#60)
+        # DAR upload integration tests can actually run.
         run: |
           set -euo pipefail
           export PATH="$HOME/.daml/bin:$PATH"
