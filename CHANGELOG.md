@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.3-2] - 2026-09-24
+
+PQS now projects contracts held by parties allocated after it starts.
+Drop-in from `0.8.3-1`: the vendored Splice stays at 0.8.3, no volume wipe,
+and no config you hold needs editing.
+
+### Changed
+
+- The C# package version moves to `0.8.3-2` (NuGet `0.8.3.2`); pin
+  `go/fixture` at `v0.8.3-2`.
+
+### Fixed
+
+- PQS on `a-validator-1`, `b-validator-1` and `c-validator-1` now streams
+  contracts for every party on its participant, including parties allocated
+  after PQS started.
+  - The onboarding scripts granted each PQS user `CanReadAs` on the validator
+    party only, so scribe's default `*` party filter resolved to that single
+    party at startup and never picked up contracts held by freshly allocated
+    parties.
+  - Each of those PQS users now also holds `CanReadAsAnyParty`, and scribe
+    logs `participant can access any party` on startup.
+  - The right is granted by the onboarding container, so an existing LocalNet
+    picks it up on the next `make down` / `make up PQS=true`. No volume wipe
+    is needed.
+  - The `sv-validator-1` PQS instance reads as the SV's validator user and is
+    unchanged by this release.
+
 ## [0.8.3-1] - 2026-09-22
 
 Vendored Splice moves 0.7.5 → 0.8.3, crossing upstream's 0.8.0, 0.8.1 and

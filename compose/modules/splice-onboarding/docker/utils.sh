@@ -124,6 +124,9 @@ function grant_rights() {
       "ReadAs")
         rightsArr+=('{"kind":{"CanReadAs":{"value":{"party":"'$partyId'"}}}}')
         ;;
+      "ReadAsAnyParty")
+        rightsArr+=('{"kind":{"CanReadAsAnyParty":{"value":{}}}}')
+        ;;
     esac
   done
 
