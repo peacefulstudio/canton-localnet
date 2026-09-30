@@ -29,6 +29,12 @@ const AdminKind = "ParticipantAdmin"
 // commands as. It is the kind integration suites grant and leak.
 const ActAsKind = "CanActAs"
 
+// ReadAsKind is the right kind carrying the party a user may read
+// transactions as. It is part of the "base rights" bundle a CI user is
+// onboarded with: ParticipantAdmin, CanReadAs(operator), and
+// CanActAs(operator).
+const ReadAsKind = "CanReadAs"
+
 // MaxRevoke is the default sanity bound on the size of a revoke list. It
 // sits at the participant's own per-user limit, so on a stock
 // participant it cannot fire: it exists to stop a runaway list, not to
@@ -116,23 +122,35 @@ func partyOf(body json.RawMessage) (string, error) {
 type Policy struct {
 	PartyPrefix string
 	MaxRevoke   int
+
+	// PreserveReadAs also preserves CanReadAs rights on PartyPrefix,
+	// alongside the always-preserved ParticipantAdmin and CanActAs. Set
+	// by --preserve-base, whose "base rights" bundle includes CanReadAs
+	// on the operator party.
+	PreserveReadAs bool
 }
 
 // NewPolicy builds a Policy, rejecting a non-empty partyPrefix that lacks
 // "::" — a bare hint would also match parties that merely start with it.
 // An empty partyPrefix is valid: it preserves nothing but the admin right.
-func NewPolicy(partyPrefix string, maxRevoke int) (Policy, error) {
+func NewPolicy(partyPrefix string, maxRevoke int, preserveReadAs bool) (Policy, error) {
 	if partyPrefix != "" && !strings.Contains(partyPrefix, "::") {
 		return Policy{}, fmt.Errorf("rights: party prefix %q must contain '::' — a bare hint also matches parties that merely start with it", partyPrefix)
 	}
-	return Policy{PartyPrefix: partyPrefix, MaxRevoke: maxRevoke}, nil
+	return Policy{PartyPrefix: partyPrefix, MaxRevoke: maxRevoke, PreserveReadAs: preserveReadAs}, nil
 }
 
 func (p Policy) preserves(r Right) bool {
 	if r.kind == AdminKind {
 		return true
 	}
-	return r.kind == ActAsKind && p.PartyPrefix != "" && strings.HasPrefix(r.party, p.PartyPrefix)
+	if p.PartyPrefix == "" || !strings.HasPrefix(r.party, p.PartyPrefix) {
+		return false
+	}
+	if r.kind == ActAsKind {
+		return true
+	}
+	return p.PreserveReadAs && r.kind == ReadAsKind
 }
 
 // Plan is the split Classify reached over a user's rights.

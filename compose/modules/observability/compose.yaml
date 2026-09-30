@@ -9,7 +9,7 @@ services:
     hostname: otel-collector
     mem_limit: 1gb
     ports:
-      - "${OTEL_COLLECTOR_FLUENTD_PORT}:${OTEL_COLLECTOR_FLUENTD_PORT}"
+      - "${HOST_BIND_IP:-127.0.0.1}:${OTEL_COLLECTOR_FLUENTD_PORT}:${OTEL_COLLECTOR_FLUENTD_PORT}"
     command:
       - --config=/etc/otel-collector/config.yaml
     environment:
@@ -87,7 +87,7 @@ services:
       PROMETHEUS_PORT: ${PROMETHEUS_HTTP_PORT}
       TEMPO_PORT: ${TEMPO_HTTP_PORT}
     ports:
-      - "3030:3000"
+      - "${HOST_BIND_IP:-127.0.0.1}:3030:3000"
     volumes:
       - ${MODULES_DIR}/observability/conf/grafana/dashboards:/var/lib/grafana/dashboards
       - ${MODULES_DIR}/observability/conf/grafana/provisioning:/etc/grafana/provisioning

@@ -297,6 +297,55 @@ production deployment. The `sv-validator-1` slot ships **no** OAuth2
 defaults — no SV realm is imported — so its token URL, client id, and secret
 must be supplied explicitly to drive it through this flow.
 
+## `canton-localnet env` — resolving the contract for you
+
+Rather than reading the tables above and wiring the variables by hand,
+`canton-localnet env --slot <slot>...` resolves the same contract from a
+running (or configured) stack and renders it in one of three formats.
+`--slot` is repeatable; the first one given becomes `CANTON_LOCALNET_PROFILE`
+for the C# fixture's default-slot selection.
+
+```bash
+canton-localnet env --slot a --slot b
+```
+
+- `--format sh` (the default) prints `export KEY='VALUE'` lines for `eval`.
+- `--format json` prints one JSON object, for `jq` or programmatic use.
+- `--format github` masks every secret value on stdout with GitHub Actions'
+  `::add-mask::` directive — one command per line of the secret, escaped
+  per the workflow-command rules, and before any network call this
+  invocation makes — then appends the whole snapshot — secret and
+  non-secret — to `$GITHUB_ENV` via a heredoc whose delimiter is checked
+  against every value first. It writes nothing to `$GITHUB_OUTPUT`, and it
+  requires `$GITHUB_ENV` to be set (i.e. running inside a GitHub Actions
+  step).
+
+**`sh` and `json` print every secret in clear on stdout — they mask
+nothing.** They're for a developer's own terminal or a script that
+consumes the output directly, never for a shared CI log; use
+`--format github` there.
+
+**`--slot sv` is refused in v1.** `canton-localnet env` is OAuth2-only:
+`sv-validator-1` has no OAuth2 client, and exporting its HS256 shared
+secret as a snapshot would produce a contract no fixture consumes.
+HS256 fixture support is tracked as a separate follow-up; until then,
+mint an SV token directly with `canton-localnet auth token --slot sv`.
+
+The credential contract — token URL, client id, client secret — is
+always exported for `a`/`b`/`c`/`d`; it never costs a network round
+trip. Each slot also exports its own
+`CANTON_LOCALNET_<SLOT>_AUTH_KIND` (`oauth2`; v1 has no other kind) and,
+with `--pqs`, its PQS Postgres connection details:
+`_PQS_HOST`/`_PQS_PORT`/`_PQS_DATABASE`/`_PQS_USER`/`_PQS_PASSWORD` plus a
+`_PQS_CONNECTION_STRING` in Npgsql keyword form
+(`Host=…;Port=…;Database=…;Username=…;Password=…`) — the form
+`canton-ledger-api-csharp`'s integration lane already builds by hand.
+
+A bearer token is minted, and the live participant id fetched with it, only
+when `--jwt` is passed — **`--jwt` off makes no token request at all**. Add
+`--offline` alongside `--jwt` to mint and export the token without the extra
+live participant-id lookup.
+
 ## CI wiring — two proven shapes
 
 Both shapes below are exactly how this repository and the components that

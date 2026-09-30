@@ -69,16 +69,23 @@ func Resolve(s Slot, repoRoot string, lookup EnvLookup) (Endpoints, error) {
 	host := envOr(lookup, "CANTON_LOCALNET_HOST", "localhost")
 	keycloakHostPort := envOr(lookup, "CANTON_LOCALNET_KEYCLOAK_PORT", "8082")
 	keycloakInternalHost := envOr(lookup, "CANTON_LOCALNET_KEYCLOAK_INTERNAL_HOST", "nginx-keycloak")
+	keycloakHost := envOr(lookup, "CANTON_LOCALNET_KEYCLOAK_HOST", host)
 
 	out := Endpoints{
 		Slot:                 s,
 		Host:                 host,
-		KeycloakHostBase:     fmt.Sprintf("http://%s:%s", host, keycloakHostPort),
+		KeycloakHostBase:     fmt.Sprintf("http://%s:%s", keycloakHost, keycloakHostPort),
 		KeycloakInternalBase: fmt.Sprintf("http://%s:%s", keycloakInternalHost, keycloakHostPort),
-		Audience:             envOr(lookup, "CANTON_LOCALNET_AUDIENCE", "https://canton.network.global"),
-		Scope:                envOr(lookup, "CANTON_LOCALNET_SCOPE", ""),
+		Audience:             envOr(lookup, "CANTON_LOCALNET_"+s.EnvPrefix()+"_AUDIENCE", envOr(lookup, "CANTON_LOCALNET_AUDIENCE", "https://canton.network.global")),
+		Scope:                envOr(lookup, "CANTON_LOCALNET_"+s.EnvPrefix()+"_SCOPE", envOr(lookup, "CANTON_LOCALNET_SCOPE", "")),
 	}
-	out.JSONLedgerAPIURL = fmt.Sprintf("http://%s:%s", host, envOr(lookup, "CANTON_LOCALNET_"+s.EnvPrefix()+"_JSON_PORT", s.JSONLedgerPort()))
+	jsonURLKey := "CANTON_LOCALNET_" + s.EnvPrefix() + "_JSON_API_URL"
+	if EnvIsSet(lookup, jsonURLKey) {
+		v, _ := lookup(jsonURLKey)
+		out.JSONLedgerAPIURL = v
+	} else {
+		out.JSONLedgerAPIURL = fmt.Sprintf("http://%s:%s", host, envOr(lookup, "CANTON_LOCALNET_"+s.EnvPrefix()+"_JSON_PORT", s.JSONLedgerPort()))
+	}
 	out.LedgerGrpcURL = fmt.Sprintf("%s:%s", host, s.LedgerGrpcPort())
 	out.AdminGrpcURL = fmt.Sprintf("%s:%s", host, s.AdminGrpcPort())
 	out.ValidatorAdminURL = fmt.Sprintf("%s:%s", host, s.ValidatorAdminPort())
@@ -86,7 +93,7 @@ func Resolve(s Slot, repoRoot string, lookup EnvLookup) (Endpoints, error) {
 	composeEnv := map[string]string{}
 	if repoRoot != "" && s.AuthKind == AuthKindOAuth2 {
 		path := filepath.Join(repoRoot, "compose", "modules", "keycloak", "env", s.Canonical, "on", "oauth2.env")
-		loaded, err := readEnvFile(path)
+		loaded, err := ReadEnvFile(path)
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return Endpoints{}, fmt.Errorf("slot: reading %s: %w", path, err)
 		}
@@ -96,7 +103,13 @@ func Resolve(s Slot, repoRoot string, lookup EnvLookup) (Endpoints, error) {
 	switch s.AuthKind {
 	case AuthKindOAuth2:
 		realm := s.Realm
-		out.TokenURLHost = fmt.Sprintf("%s/realms/%s/protocol/openid-connect/token", out.KeycloakHostBase, realm)
+		tokenURLKey := "CANTON_LOCALNET_" + s.EnvPrefix() + "_TOKEN_URL"
+		if EnvIsSet(lookup, tokenURLKey) {
+			v, _ := lookup(tokenURLKey)
+			out.TokenURLHost = v
+		} else {
+			out.TokenURLHost = fmt.Sprintf("%s/realms/%s/protocol/openid-connect/token", out.KeycloakHostBase, realm)
+		}
 		out.TokenURLInternal = fmt.Sprintf("%s/realms/%s/protocol/openid-connect/token", out.KeycloakInternalBase, realm)
 		out.ClientID = pick(
 			lookup, composeEnv,
@@ -110,21 +123,97 @@ func Resolve(s Slot, repoRoot string, lookup EnvLookup) (Endpoints, error) {
 			"AUTH_"+s.EnvPrefix()+"_VALIDATOR_CLIENT_SECRET",
 			"",
 		)
-		out.ValidatorUserID = pick(
-			lookup, composeEnv,
-			"CANTON_LOCALNET_"+s.EnvPrefix()+"_USER_ID",
-			"AUTH_"+s.EnvPrefix()+"_VALIDATOR_USER_ID",
-			s.ValidatorUserID,
-		)
+		validatorUserIDKey := "CANTON_LOCALNET_" + s.EnvPrefix() + "_VALIDATOR_USER_ID"
+		if EnvIsSet(lookup, validatorUserIDKey) {
+			v, _ := lookup(validatorUserIDKey)
+			out.ValidatorUserID = v
+		} else {
+			out.ValidatorUserID = pick(
+				lookup, composeEnv,
+				"CANTON_LOCALNET_"+s.EnvPrefix()+"_USER_ID",
+				"AUTH_"+s.EnvPrefix()+"_VALIDATOR_USER_ID",
+				s.ValidatorUserID,
+			)
+		}
 	case AuthKindHS256:
 		out.HS256Secret = envOr(lookup, "CANTON_LOCALNET_"+s.EnvPrefix()+"_HS256_SECRET", "unsafe")
 		out.HS256User = envOr(lookup, "CANTON_LOCALNET_"+s.EnvPrefix()+"_HS256_USER", "ledger-api-user")
-		out.ValidatorUserID = envOr(lookup, "CANTON_LOCALNET_"+s.EnvPrefix()+"_USER_ID", out.HS256User)
+		out.ValidatorUserID = envOr(lookup, "CANTON_LOCALNET_"+s.EnvPrefix()+"_VALIDATOR_USER_ID",
+			envOr(lookup, "CANTON_LOCALNET_"+s.EnvPrefix()+"_USER_ID", out.HS256User))
 	default:
 		return Endpoints{}, fmt.Errorf("slot: %s has unknown auth kind %q", s.Canonical, s.AuthKind)
 	}
 
 	out.PartyHint = envOr(lookup, "CANTON_LOCALNET_"+s.EnvPrefix()+"_PARTY_HINT", s.Canonical)
+	return out, nil
+}
+
+// CIUserCount is the number of shared-runner CI clients provisioned,
+// ci-1 through ci-4.
+const CIUserCount = 4
+
+type ciUser struct {
+	ClientID     string
+	ClientSecret string
+	UserID       string
+}
+
+// ciUserDefaults mirrors compose/modules/keycloak/env/a-validator-1/on/oauth2.env's
+// AUTH_A_VALIDATOR_1_CI_<N>_* triples, in the same public-default
+// convention as every other LocalNet demo credential.
+var ciUserDefaults = [CIUserCount]ciUser{
+	{ClientID: "a-validator-1-ci-1", ClientSecret: "VSLk2bzpSPKIY8qGsQuY4uYdkdoccUG6", UserID: "cfc83af9-a97e-4e5b-85a1-b0c4cc49323c"},
+	{ClientID: "a-validator-1-ci-2", ClientSecret: "TdlQDk2xcnLKOcRguN6GyqWUYwa2X0Wn", UserID: "33f30684-7067-4cd6-8dea-4c3230a69108"},
+	{ClientID: "a-validator-1-ci-3", ClientSecret: "Ar8crPYkvmVLgnUM2Jek2wo4UyLBdTLA", UserID: "432a9ded-d191-4472-acfc-7af32e4124b3"},
+	{ClientID: "a-validator-1-ci-4", ClientSecret: "WZmCWc4IWmIEKwWsZ97i7QRIMOUtZWkO", UserID: "69752f9d-ff24-4f23-a9ec-54fe687e1c1c"},
+}
+
+// ResolveCI overlays the CI-slot-scoped confidential client (ci-1..ci-4)
+// onto an already-Resolve'd a-validator-1 Endpoints, so each of the
+// shared runner's parallel CI slots authenticates as its own Ledger user
+// instead of contending for the interactive a-validator-1-validator
+// client. ciSlot is 1-indexed, matching CANTON_LOCALNET_CI_SLOT.
+//
+// Precedence mirrors Resolve: CANTON_LOCALNET_<SLOT>_* env var >
+// AUTH_<SLOT>_CI_<N>_* compose env entry > built-in default.
+func ResolveCI(out Endpoints, repoRoot string, ciSlot int, lookup EnvLookup) (Endpoints, error) {
+	if lookup == nil {
+		lookup = OSEnv
+	}
+	if out.Slot.Canonical != "a-validator-1" {
+		return Endpoints{}, fmt.Errorf("slot: --ci-slot is only supported for a-validator-1, got %s", out.Slot.Canonical)
+	}
+	if ciSlot < 1 || ciSlot > CIUserCount {
+		return Endpoints{}, fmt.Errorf("slot: --ci-slot must be between 1 and %d, got %d", CIUserCount, ciSlot)
+	}
+	defaults := ciUserDefaults[ciSlot-1]
+	composeKeyPrefix := fmt.Sprintf("AUTH_%s_CI_%d", out.Slot.EnvPrefix(), ciSlot)
+
+	composeEnv := map[string]string{}
+	if repoRoot != "" {
+		path := filepath.Join(repoRoot, "compose", "modules", "keycloak", "env", out.Slot.Canonical, "on", "oauth2.env")
+		loaded, err := ReadEnvFile(path)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return Endpoints{}, fmt.Errorf("slot: reading %s: %w", path, err)
+		}
+		composeEnv = loaded
+	}
+
+	out.ClientID = pick(lookup, composeEnv,
+		"CANTON_LOCALNET_"+out.Slot.EnvPrefix()+"_CLIENT_ID",
+		composeKeyPrefix+"_CLIENT_ID",
+		defaults.ClientID,
+	)
+	out.ClientSecret = pick(lookup, composeEnv,
+		"CANTON_LOCALNET_"+out.Slot.EnvPrefix()+"_CLIENT_SECRET",
+		composeKeyPrefix+"_CLIENT_SECRET",
+		defaults.ClientSecret,
+	)
+	out.ValidatorUserID = pick(lookup, composeEnv,
+		"CANTON_LOCALNET_"+out.Slot.EnvPrefix()+"_VALIDATOR_USER_ID",
+		composeKeyPrefix+"_USER_ID",
+		defaults.UserID,
+	)
 	return out, nil
 }
 
@@ -160,7 +249,13 @@ func pick(lookup EnvLookup, composeEnv map[string]string, envKey, composeKey, fa
 	return fallback
 }
 
-func readEnvFile(path string) (map[string]string, error) {
+// ReadEnvFile parses a KEY=VALUE env file (blank lines, "#" comments, and
+// paired quotes around a value all handled), as used across the vendored
+// compose env tree. It returns an error — including a *PathError wrapping
+// fs.ErrNotExist — when path can't be opened, so a caller that treats a
+// missing file as optional must check errors.Is(err, fs.ErrNotExist)
+// itself, same as Resolve does for compose/modules/keycloak/env/.
+func ReadEnvFile(path string) (map[string]string, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err

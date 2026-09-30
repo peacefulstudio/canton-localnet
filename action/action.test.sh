@@ -1,0 +1,493 @@
+#!/usr/bin/env bash
+# Copyright 2026 Peaceful Studio OÜ
+# SPDX-License-Identifier: Apache-2.0
+#
+# Unit-level tests for action/*.sh's own logic — validator/timeout
+# parsing, and the resolve-cli/down/diagnose failure branches — run with a
+# stub `canton-localnet` on PATH or no daemon at all, never a real LocalNet
+# boot. This is action-selftest.yaml's T1 job: it proves the shell logic
+# without paying for a multi-minute compose boot, following the same
+# plain-bash-test convention as scripts/gitpublic-paths.test.sh (this repo
+# has no bats dependency).
+#
+# Usage: action/action.test.sh
+
+set -uo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib.sh
+source "$here/lib.sh"
+
+failures=0
+tests_run=0
+
+assert_eq() {
+  local desc="$1" want="$2" got="$3"
+  tests_run=$((tests_run + 1))
+  if [ "$want" != "$got" ]; then
+    echo "FAIL: $desc: want [$want], got [$got]"
+    failures=$((failures + 1))
+  else
+    echo "ok: $desc"
+  fi
+}
+
+assert_status() {
+  local desc="$1" want_status="$2" got_status="$3"
+  tests_run=$((tests_run + 1))
+  if [ "$want_status" != "$got_status" ]; then
+    echo "FAIL: $desc: want exit $want_status, got $got_status"
+    failures=$((failures + 1))
+  else
+    echo "ok: $desc"
+  fi
+}
+
+assert_contains() {
+  local desc="$1" haystack="$2" needle="$3"
+  tests_run=$((tests_run + 1))
+  if [[ "$haystack" != *"$needle"* ]]; then
+    echo "FAIL: $desc: expected to find [$needle]"
+    failures=$((failures + 1))
+  else
+    echo "ok: $desc"
+  fi
+}
+
+## canton_localnet_normalize_validators
+
+got="$(canton_localnet_normalize_validators 'a,b, b ,a-validator-1')"
+assert_eq "normalize dedups and accepts canonical form" "a b" "$got"
+
+got="$(canton_localnet_normalize_validators 'a b c d')"
+assert_eq "normalize accepts the full set" "a b c d" "$got"
+
+if canton_localnet_normalize_validators 'sv' >/dev/null 2>&1; then
+  echo "FAIL: normalize should reject sv"
+  failures=$((failures + 1))
+else
+  echo "ok: normalize rejects sv"
+fi
+tests_run=$((tests_run + 1))
+
+if canton_localnet_normalize_validators 'e' >/dev/null 2>&1; then
+  echo "FAIL: normalize should reject an unknown slot"
+  failures=$((failures + 1))
+else
+  echo "ok: normalize rejects an unknown slot"
+fi
+tests_run=$((tests_run + 1))
+
+if canton_localnet_normalize_validators '' >/dev/null 2>&1; then
+  echo "FAIL: normalize should reject an empty list"
+  failures=$((failures + 1))
+else
+  echo "ok: normalize rejects an empty list"
+fi
+tests_run=$((tests_run + 1))
+
+## canton_localnet_has_leftover_containers
+
+if canton_localnet_has_leftover_containers " Container canton-localnet-postgres-1  Removed"; then
+  echo "ok: has_leftover_containers matches a literal compose down status line ending in the verb"
+else
+  echo "FAIL: has_leftover_containers should match a literal compose down status line ending in the verb"
+  failures=$((failures + 1))
+fi
+tests_run=$((tests_run + 1))
+
+if canton_localnet_has_leftover_containers " Network localnet  Removing"; then
+  echo "ok: has_leftover_containers matches an in-progress verb ending the line"
+else
+  echo "FAIL: has_leftover_containers should match an in-progress verb ending the line"
+  failures=$((failures + 1))
+fi
+tests_run=$((tests_run + 1))
+
+if canton_localnet_has_leftover_containers "no leftovers here"; then
+  echo "FAIL: has_leftover_containers should not match a line with no compose status verb"
+  failures=$((failures + 1))
+else
+  echo "ok: has_leftover_containers does not match a line with no compose status verb"
+fi
+tests_run=$((tests_run + 1))
+
+## canton_localnet_parse_duration
+
+assert_eq "parse_duration 15m" "900" "$(canton_localnet_parse_duration 15m)"
+assert_eq "parse_duration 90s" "90" "$(canton_localnet_parse_duration 90s)"
+assert_eq "parse_duration 1h" "3600" "$(canton_localnet_parse_duration 1h)"
+
+if canton_localnet_parse_duration '15' >/dev/null 2>&1; then
+  echo "FAIL: parse_duration should reject a bare number"
+  failures=$((failures + 1))
+else
+  echo "ok: parse_duration rejects a bare number"
+fi
+tests_run=$((tests_run + 1))
+
+## canton_localnet_deadline_remaining
+
+past="$(($(date +%s) - 10))"
+if canton_localnet_deadline_remaining "$past" "a test phase" >/dev/null 2>&1; then
+  echo "FAIL: deadline_remaining should fail once the deadline has passed"
+  failures=$((failures + 1))
+else
+  echo "ok: deadline_remaining fails once the deadline has passed"
+fi
+tests_run=$((tests_run + 1))
+
+future="$(($(date +%s) + 60))"
+got="$(canton_localnet_deadline_remaining "$future" "a test phase")"
+tests_run=$((tests_run + 1))
+if [ "$got" -lt 1 ] || [ "$got" -gt 60 ]; then
+  echo "FAIL: deadline_remaining: want 1..60, got $got"
+  failures=$((failures + 1))
+else
+  echo "ok: deadline_remaining returns the remaining budget"
+fi
+
+## resolve-cli.sh fails closed on cli: release with a non-tag ref, before any network call
+
+RUNNER_TEMP="$(mktemp -d)"
+export RUNNER_TEMP
+out="$(mktemp)"
+path_out="$(mktemp)"
+set +e
+CLI_MODE=release ACTION_PATH="$here/.." ACTION_REF="" GITHUB_OUTPUT="$out" GITHUB_PATH="$path_out" \
+  bash "$here/resolve-cli.sh" >/tmp/resolve-cli-release.log 2>&1
+status=$?
+set -e
+assert_status "resolve-cli: cli: release with a non-tag ref fails closed" "1" "$status"
+assert_contains "resolve-cli: cli: release error names the fix" "$(cat /tmp/resolve-cli-release.log)" "cli: source"
+
+## down.sh (STRICT=true) with no saved boot state fails closed
+
+RUNNER_TEMP="$(mktemp -d)"
+export RUNNER_TEMP
+out="$(mktemp)"
+set +e
+STRICT=true GITHUB_OUTPUT="$out" bash "$here/down.sh" >/tmp/down-no-state.log 2>&1
+status=$?
+set -e
+assert_status "down.sh (strict): no saved state fails closed" "1" "$status"
+assert_contains "down.sh (strict): no saved state sets failed=true" "$(cat "$out")" "failed=true"
+
+## down.sh (STRICT=true) with a stub canton-localnet whose `down` fails
+
+RUNNER_TEMP="$(mktemp -d)"
+export RUNNER_TEMP
+mkdir -p "$RUNNER_TEMP/canton-localnet"
+stub="$(mktemp -d)/canton-localnet"
+cat >"$stub" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = "down" ]; then
+  echo "stub: down always fails" >&2
+  exit 7
+fi
+exit 0
+EOF
+chmod +x "$stub"
+{
+  echo "CANTON_LOCALNET_ACTION_CLI_PATH=$stub"
+  echo "CANTON_LOCALNET_ACTION_REPO_ROOT=$here/.."
+  echo "CANTON_LOCALNET_ACTION_CONFIG_PATH=/dev/null"
+} >"$(canton_localnet_state_file)"
+out="$(mktemp)"
+set +e
+STRICT=true GITHUB_OUTPUT="$out" bash "$here/down.sh" >/tmp/down-strict-fail.log 2>&1
+status=$?
+set -e
+assert_status "down.sh (strict): a failing stub 'down' fails closed" "1" "$status"
+assert_contains "down.sh (strict): a failing stub 'down' sets failed=true" "$(cat "$out")" "failed=true"
+assert_contains "down.sh (strict): a failing stub 'down' logs ::error::" "$(cat /tmp/down-strict-fail.log)" "::error::"
+
+## down.sh (STRICT=false) with the same failing stub is non-fatal
+
+out="$(mktemp)"
+set +e
+STRICT=false GITHUB_OUTPUT="$out" bash "$here/down.sh" >/tmp/down-nonstrict-fail.log 2>&1
+status=$?
+set -e
+assert_status "down.sh (non-strict): a failing stub 'down' does not fail the step" "0" "$status"
+assert_contains "down.sh (non-strict): a failing stub 'down' logs ::warning::" "$(cat /tmp/down-nonstrict-fail.log)" "::warning::"
+
+## diagnose.sh never touches canton-localnet.yaml or an oauth2.env, and never fails the job
+
+RUNNER_TEMP="$(mktemp -d)"
+export RUNNER_TEMP
+set +e
+bash "$here/diagnose.sh" >/tmp/diagnose.log 2>&1
+status=$?
+set -e
+assert_status "diagnose.sh: runs to completion with no saved state" "0" "$status"
+if grep -qi "oauth2.env\|canton-localnet.yaml" "$RUNNER_TEMP/canton-localnet/diagnostics"/* 2>/dev/null; then
+  echo "FAIL: diagnose.sh output must never name a secret-bearing file's contents"
+  failures=$((failures + 1))
+else
+  echo "ok: diagnose.sh output carries no secret-bearing file's contents"
+fi
+tests_run=$((tests_run + 1))
+
+## canton_localnet_client_secret_overrides / canton_localnet_client_id_overrides
+## (the client-secret/client-id guard boot.sh fails closed on before ever
+## booting)
+
+fixed_a_secret="$(canton_localnet_fixed_client_secret "$here/.." A_VALIDATOR_1)"
+assert_eq "fixed_client_secret reads a-validator-1's real oauth2.env secret" \
+  "AL8648b9SfdTFImq7FV56Vd0KHifHBuC" "$fixed_a_secret"
+
+fixed_a_client_id="$(canton_localnet_fixed_client_id "$here/.." A_VALIDATOR_1)"
+assert_eq "fixed_client_id reads a-validator-1's real oauth2.env client id" \
+  "a-validator-1-validator" "$fixed_a_client_id"
+
+got="$(CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET="   " canton_localnet_client_secret_overrides "$here/..")"
+assert_eq "client_secret_overrides: a blank (whitespace-only) override is not rejected" "" "$got"
+
+got="$(CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET="$fixed_a_secret" canton_localnet_client_secret_overrides "$here/..")"
+assert_eq "client_secret_overrides: a value equal to the fixed demo secret is not rejected" "" "$got"
+
+got="$(CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET="totally-different-secret" canton_localnet_client_secret_overrides "$here/..")"
+assert_eq "client_secret_overrides: a differing value is rejected by name" \
+  "CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET" "$got"
+
+got="$(CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET="  ${fixed_a_secret}  " canton_localnet_client_secret_overrides "$here/..")"
+assert_eq "client_secret_overrides: the fixed secret padded with whitespace is rejected (the CLI would export the padded raw value, not the trimmed one)" \
+  "CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET" "$got"
+
+got="$(CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_ID="   " canton_localnet_client_id_overrides "$here/..")"
+assert_eq "client_id_overrides: a blank (whitespace-only) override is not rejected" "" "$got"
+
+got="$(CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_ID="$fixed_a_client_id" canton_localnet_client_id_overrides "$here/..")"
+assert_eq "client_id_overrides: a value equal to the fixed demo client id is not rejected" "" "$got"
+
+got="$(CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_ID="totally-different-client-id" canton_localnet_client_id_overrides "$here/..")"
+assert_eq "client_id_overrides: a differing value is rejected by name" \
+  "CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_ID" "$got"
+
+got="$(CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_ID="  ${fixed_a_client_id}  " canton_localnet_client_id_overrides "$here/..")"
+assert_eq "client_id_overrides: the fixed client id padded with whitespace is rejected" \
+  "CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_ID" "$got"
+
+## canton_localnet_endpoint_overrides (the URL/host guard boot.sh fails closed
+## on alongside client id/secret before ever booting)
+
+got="$(canton_localnet_endpoint_overrides)"
+assert_eq "endpoint_overrides: no overrides set — nothing printed" "" "$got"
+
+got="$(CANTON_LOCALNET_HOST="   " canton_localnet_endpoint_overrides)"
+assert_eq "endpoint_overrides: blank CANTON_LOCALNET_HOST is not rejected" "" "$got"
+
+got="$(CANTON_LOCALNET_HOST="localhost" canton_localnet_endpoint_overrides)"
+assert_eq "endpoint_overrides: CANTON_LOCALNET_HOST=localhost is not rejected" "" "$got"
+
+got="$(CANTON_LOCALNET_HOST="127.0.0.1" canton_localnet_endpoint_overrides)"
+assert_eq "endpoint_overrides: CANTON_LOCALNET_HOST=127.0.0.1 is not rejected" "" "$got"
+
+got="$(CANTON_LOCALNET_HOST="remote.example.com" canton_localnet_endpoint_overrides)"
+assert_eq "endpoint_overrides: non-localhost CANTON_LOCALNET_HOST is rejected by name" \
+  "CANTON_LOCALNET_HOST" "$got"
+
+got="$(CANTON_LOCALNET_A_VALIDATOR_1_JSON_API_URL="   " canton_localnet_endpoint_overrides)"
+assert_eq "endpoint_overrides: blank JSON_API_URL is not rejected" "" "$got"
+
+got="$(CANTON_LOCALNET_A_VALIDATOR_1_JSON_API_URL="http://localhost:7575" canton_localnet_endpoint_overrides)"
+assert_eq "endpoint_overrides: localhost JSON_API_URL (self-export value) is not rejected" "" "$got"
+
+got="$(CANTON_LOCALNET_A_VALIDATOR_1_JSON_API_URL="http://127.0.0.1:7575" canton_localnet_endpoint_overrides)"
+assert_eq "endpoint_overrides: 127.0.0.1 JSON_API_URL is not rejected" "" "$got"
+
+got="$(CANTON_LOCALNET_A_VALIDATOR_1_JSON_API_URL="https://proxy.example/canton" canton_localnet_endpoint_overrides)"
+assert_eq "endpoint_overrides: non-localhost JSON_API_URL is rejected by name" \
+  "CANTON_LOCALNET_A_VALIDATOR_1_JSON_API_URL" "$got"
+
+got="$(CANTON_LOCALNET_A_VALIDATOR_1_TOKEN_URL="http://localhost:8082/realms/a-validator-1/protocol/openid-connect/token" canton_localnet_endpoint_overrides)"
+assert_eq "endpoint_overrides: localhost TOKEN_URL (self-export value) is not rejected" "" "$got"
+
+got="$(CANTON_LOCALNET_A_VALIDATOR_1_TOKEN_URL="https://external-keycloak.example/token" canton_localnet_endpoint_overrides)"
+assert_eq "endpoint_overrides: non-localhost TOKEN_URL is rejected by name" \
+  "CANTON_LOCALNET_A_VALIDATOR_1_TOKEN_URL" "$got"
+
+got="$(CANTON_LOCALNET_KEYCLOAK_HOST="   " canton_localnet_endpoint_overrides)"
+assert_eq "endpoint_overrides: blank CANTON_LOCALNET_KEYCLOAK_HOST is not rejected" "" "$got"
+
+got="$(CANTON_LOCALNET_KEYCLOAK_HOST="localhost" canton_localnet_endpoint_overrides)"
+assert_eq "endpoint_overrides: CANTON_LOCALNET_KEYCLOAK_HOST=localhost is not rejected" "" "$got"
+
+got="$(CANTON_LOCALNET_KEYCLOAK_HOST="remote-keycloak.example.com" canton_localnet_endpoint_overrides)"
+assert_eq "endpoint_overrides: non-localhost CANTON_LOCALNET_KEYCLOAK_HOST is rejected by name" \
+  "CANTON_LOCALNET_KEYCLOAK_HOST" "$got"
+
+got="$(CANTON_LOCALNET_HOST="remote.example.com" CANTON_LOCALNET_KEYCLOAK_HOST="remote-keycloak.example.com" canton_localnet_endpoint_overrides)"
+assert_eq "endpoint_overrides: both HOST and KEYCLOAK_HOST set non-localhost are both rejected" \
+  "$(printf 'CANTON_LOCALNET_HOST\nCANTON_LOCALNET_KEYCLOAK_HOST')" "$got"
+
+## canton_localnet_config_has_credentials (the config-file credential guard
+## boot.sh fails closed on before ever booting)
+
+config_dir="$(mktemp -d)"
+
+cat >"$config_dir/no-auth.yaml" <<'EOF'
+schemaVersion: preview-1
+validators:
+  a-validator-1:
+    partyHint: featuredapp-validator-1
+EOF
+if canton_localnet_config_has_credentials "$config_dir/no-auth.yaml"; then
+  echo "FAIL: config_has_credentials should not match a config with no auth block"
+  failures=$((failures + 1))
+else
+  echo "ok: config_has_credentials does not match a config with no auth block"
+fi
+tests_run=$((tests_run + 1))
+
+cat >"$config_dir/block-style.yaml" <<'EOF'
+validators:
+  a-validator-1:
+    auth:
+      clientId: a-validator-1-validator
+      clientSecret: ${FEATUREDAPP_VALIDATOR_SECRET}
+EOF
+if canton_localnet_config_has_credentials "$config_dir/block-style.yaml"; then
+  echo "ok: config_has_credentials matches block-style clientId/clientSecret"
+else
+  echo "FAIL: config_has_credentials should match block-style clientId/clientSecret"
+  failures=$((failures + 1))
+fi
+tests_run=$((tests_run + 1))
+
+cat >"$config_dir/flow-style.yaml" <<'EOF'
+validators:
+  a-validator-1:
+    partyHint: featuredapp-validator-1
+    auth: { clientId: a-validator-1-validator, clientSecret: ${FEATUREDAPP_VALIDATOR_SECRET} }
+  c-validator-1: { enabled: false }
+EOF
+if canton_localnet_config_has_credentials "$config_dir/flow-style.yaml"; then
+  echo "ok: config_has_credentials matches README's documented flow-mapping style"
+else
+  echo "FAIL: config_has_credentials should match README's documented flow-mapping style"
+  failures=$((failures + 1))
+fi
+tests_run=$((tests_run + 1))
+
+cat >"$config_dir/flow-style-secret-only.yaml" <<'EOF'
+validators:
+  a-validator-1:
+    auth: { clientSecret: ${FEATUREDAPP_VALIDATOR_SECRET} }
+EOF
+if canton_localnet_config_has_credentials "$config_dir/flow-style-secret-only.yaml"; then
+  echo "ok: config_has_credentials matches a flow-mapping with clientSecret alone"
+else
+  echo "FAIL: config_has_credentials should match a flow-mapping with clientSecret alone"
+  failures=$((failures + 1))
+fi
+tests_run=$((tests_run + 1))
+
+cat >"$config_dir/comment-only.yaml" <<'EOF'
+# Set validators.a-validator-1.auth.clientId: and clientSecret: via CI secrets,
+# never inline in this file.
+validators:
+  a-validator-1:
+    partyHint: featuredapp-validator-1
+EOF
+if canton_localnet_config_has_credentials "$config_dir/comment-only.yaml"; then
+  echo "FAIL: config_has_credentials should not match clientId/clientSecret mentioned only in a comment"
+  failures=$((failures + 1))
+else
+  echo "ok: config_has_credentials does not match clientId/clientSecret mentioned only in a comment"
+fi
+tests_run=$((tests_run + 1))
+
+rm -rf "$config_dir"
+
+## canton_localnet_multi_sync_active (probes the booted compose project for
+## the multi-sync profile's services instead of re-parsing canton-localnet.yaml)
+
+stub_dir="$(mktemp -d)"
+cat >"$stub_dir/make" <<'EOF'
+#!/usr/bin/env bash
+cat <<'OUT'
+NAME                     IMAGE     SERVICE            STATUS
+multi-sync-startup       busybox   multi-sync-startup exited (0)
+multi-sync-ready         busybox   multi-sync-ready   exited (0)
+OUT
+EOF
+chmod +x "$stub_dir/make"
+set +e
+PATH="$stub_dir:$PATH" canton_localnet_multi_sync_active "$here/.."
+status=$?
+set -e
+assert_status "multi_sync_active: detects multi-sync-ready/-startup in a stubbed 'make status-all'" "0" "$status"
+rm -rf "$stub_dir"
+
+stub_dir="$(mktemp -d)"
+cat >"$stub_dir/make" <<'EOF'
+#!/usr/bin/env bash
+cat <<'OUT'
+NAME                        IMAGE     SERVICE                  STATUS
+a-validator-1-participant   canton    a-validator-1-participant running
+OUT
+EOF
+chmod +x "$stub_dir/make"
+set +e
+PATH="$stub_dir:$PATH" canton_localnet_multi_sync_active "$here/.."
+status=$?
+set -e
+assert_status "multi_sync_active: absent when the compose project has no multi-sync service" "1" "$status"
+rm -rf "$stub_dir"
+
+stub_dir="$(mktemp -d)"
+cat >"$stub_dir/make" <<'EOF'
+#!/usr/bin/env bash
+echo "make: *** No rule to make target 'status-all'." >&2
+exit 2
+EOF
+chmod +x "$stub_dir/make"
+set +e
+probe_output="$(PATH="$stub_dir:$PATH" canton_localnet_multi_sync_active "$here/.." 2>&1)"
+status=$?
+set -e
+assert_status "multi_sync_active: a failing 'make status-all' reads as not-active" "1" "$status"
+assert_eq "multi_sync_active: a failing probe logs a ::warning:: instead of failing silently" \
+  "1" "$(grep -c '^::warning::' <<<"$probe_output")"
+rm -rf "$stub_dir"
+
+## T4: `canton-localnet env --format github` masks a synthetic secret set
+## through the documented per-slot override (CANTON_LOCALNET_A_VALIDATOR_1_
+## CLIENT_SECRET), before it ever writes $GITHUB_ENV. Needs a real build of
+## the CLI — action-selftest.yaml's T1 job sets CANTON_LOCALNET_BIN; a bare
+## local run of this script skips it rather than failing.
+
+if [ -n "${CANTON_LOCALNET_BIN:-}" ]; then
+  probe_secret="SELFTEST-SYNTHETIC-SECRET-9f3c7e21"
+  probe_env_file="$(mktemp)"
+  probe_out="$(CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET="$probe_secret" \
+    GITHUB_ENV="$probe_env_file" \
+    "$CANTON_LOCALNET_BIN" env --format github --slot a --repo-root "$here/.." 2>&1)"
+
+  tests_run=$((tests_run + 1))
+  if grep -qF "::add-mask::${probe_secret}" <<<"$probe_out"; then
+    echo "ok: env --format github emits ::add-mask:: for the synthetic client-secret override"
+  else
+    echo "FAIL: expected ::add-mask::${probe_secret} in env --format github's own stdout"
+    echo "--- actual stdout ---"
+    echo "$probe_out"
+    failures=$((failures + 1))
+  fi
+
+  tests_run=$((tests_run + 1))
+  if grep -vF "::add-mask::${probe_secret}" <<<"$probe_out" | grep -qF "$probe_secret"; then
+    echo "FAIL: the raw synthetic secret appears somewhere in stdout outside its own ::add-mask:: line"
+    failures=$((failures + 1))
+  else
+    echo "ok: the raw synthetic secret appears only on its own ::add-mask:: line, nowhere else in stdout"
+  fi
+else
+  echo "skip: CANTON_LOCALNET_BIN not set — action-selftest.yaml's T1 job builds the CLI and sets it; run this script from there to exercise the masking assertion"
+fi
+
+echo
+echo "$tests_run tests run, $failures failed"
+if [ "$failures" -ne 0 ]; then
+  exit 1
+fi

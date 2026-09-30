@@ -50,7 +50,8 @@ public class PartyAllocatorTests
     [Fact]
     public async Task AllocateAsync_posts_party_hint_in_consumer_prefix_dash_instance_suffix_format()
     {
-        var handler = new RecordingHandler((_, _) => Task.FromResult(AllocateResponse("globex-abcdef::namespace")));
+        var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers(
+            (_, _) => Task.FromResult(AllocateResponse("globex-abcdef::namespace"))));
         using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
         var allocator = new PartyAllocator(http, StaticTokenProvider("tok"), instanceSuffix: "abcdef");
 
@@ -58,8 +59,7 @@ public class PartyAllocatorTests
 
         Assert.Equal("globex-abcdef::namespace", party.PartyId);
         Assert.Equal("globex-abcdef", party.PartyIdHint);
-        var recorded = Assert.Single(handler.Requests);
-        Assert.Equal(HttpMethod.Post, recorded.Method);
+        var recorded = Assert.Single(handler.Requests, r => r.Method == HttpMethod.Post);
         Assert.Equal(new Uri(JsonApiBase, "v2/parties"), recorded.Uri);
         using var bodyDoc = JsonDocument.Parse(recorded.Body);
         Assert.Equal("globex-abcdef", bodyDoc.RootElement.GetProperty("partyIdHint").GetString());
@@ -69,16 +69,50 @@ public class PartyAllocatorTests
     [Fact]
     public async Task AllocateAsync_uses_explicit_display_name_when_provided()
     {
-        var handler = new RecordingHandler((_, _) => Task.FromResult(AllocateResponse("initech-deadbe::n")));
+        var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers(
+            (_, _) => Task.FromResult(AllocateResponse("initech-deadbe::n"))));
         using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
         var allocator = new PartyAllocator(http, StaticTokenProvider("tok"), instanceSuffix: "deadbe");
 
         await allocator.AllocateAsync("initech", displayName: "Ledger API Party");
 
-        var recorded = Assert.Single(handler.Requests);
+        var recorded = Assert.Single(handler.Requests, r => r.Method == HttpMethod.Post);
         using var bodyDoc = JsonDocument.Parse(recorded.Body);
         Assert.Equal("initech-deadbe", bodyDoc.RootElement.GetProperty("partyIdHint").GetString());
         Assert.Equal("Ledger API Party", bodyDoc.RootElement.GetProperty("displayName").GetString());
+    }
+
+    [Fact]
+    public async Task AllocateAsync_defaults_synchronizerId_to_global_alias_resolved_via_discovery()
+    {
+        var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers(
+            (_, _) => Task.FromResult(AllocateResponse("globex-abcdef::namespace")),
+            ("global", "global::122a"),
+            ("app-synchronizer", "app-synchronizer::122b")));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var allocator = new PartyAllocator(http, StaticTokenProvider("tok"), instanceSuffix: "abcdef");
+
+        await allocator.AllocateAsync("globex");
+
+        var recorded = Assert.Single(handler.Requests, r => r.Method == HttpMethod.Post);
+        using var bodyDoc = JsonDocument.Parse(recorded.Body);
+        Assert.Equal("global::122a", bodyDoc.RootElement.GetProperty("synchronizerId").GetString());
+        Assert.Single(handler.Requests, r => r.Method == HttpMethod.Get);
+    }
+
+    [Fact]
+    public async Task AllocateOnSynchronizerAsync_with_explicit_synchronizerId_skips_discovery_and_sends_it_verbatim()
+    {
+        var handler = new RecordingHandler((_, _) => Task.FromResult(AllocateResponse("globex-abcdef::namespace")));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var allocator = new PartyAllocator(http, StaticTokenProvider("tok"), instanceSuffix: "abcdef");
+
+        await allocator.AllocateOnSynchronizerAsync("globex", displayName: null, synchronizerId: "app-synchronizer::122b");
+
+        var recorded = Assert.Single(handler.Requests);
+        Assert.Equal(HttpMethod.Post, recorded.Method);
+        using var bodyDoc = JsonDocument.Parse(recorded.Body);
+        Assert.Equal("app-synchronizer::122b", bodyDoc.RootElement.GetProperty("synchronizerId").GetString());
     }
 
     [Fact]
@@ -135,10 +169,10 @@ public class PartyAllocatorTests
     [Fact]
     public async Task AllocateAsync_throws_JsonLedgerApiException_on_non_success_status()
     {
-        var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Conflict)
+        var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Conflict)
         {
             Content = new StringContent("""{"cause":"PARTY_ALREADY_EXISTS"}""", Encoding.UTF8, "application/json"),
-        }));
+        })));
         using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
         var allocator = new PartyAllocator(http, StaticTokenProvider("tok"), instanceSuffix: "abc");
 
@@ -150,10 +184,10 @@ public class PartyAllocatorTests
     [Fact]
     public async Task AllocateAsync_throws_when_response_has_no_party_field()
     {
-        var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent("""{"somethingElse":"x"}""", Encoding.UTF8, "application/json"),
-        }));
+        })));
         using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
         var allocator = new PartyAllocator(http, StaticTokenProvider("tok"), instanceSuffix: "abc");
 
@@ -163,13 +197,14 @@ public class PartyAllocatorTests
     [Fact]
     public async Task AllocateAsync_sends_bearer_token()
     {
-        var handler = new RecordingHandler((_, _) => Task.FromResult(AllocateResponse("globex-x::n")));
+        var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers(
+            (_, _) => Task.FromResult(AllocateResponse("globex-x::n"))));
         using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
         var allocator = new PartyAllocator(http, StaticTokenProvider("tok-bearer-x"), instanceSuffix: "x");
 
         await allocator.AllocateAsync("globex");
 
-        var recorded = Assert.Single(handler.Requests);
+        var recorded = Assert.Single(handler.Requests, r => r.Method == HttpMethod.Post);
         Assert.Equal("Bearer tok-bearer-x", recorded.Headers["Authorization"]);
     }
 

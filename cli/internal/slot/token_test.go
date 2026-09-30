@@ -57,11 +57,11 @@ func TestMintTokenOAuth2PostsClientCredentials(t *testing.T) {
 	}
 }
 
-func TestMintTokenOAuth2SurfacesErrorBody(t *testing.T) {
+func TestMintTokenOAuth2SurfacesStatusAndEndpointNotBody(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(`{"error":"invalid_client"}`))
+		_, _ = w.Write([]byte(`{"error":"invalid_client","error_description":"s"}`))
 	}))
 	defer srv.Close()
 
@@ -75,8 +75,11 @@ func TestMintTokenOAuth2SurfacesErrorBody(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on 401")
 	}
-	if !strings.Contains(err.Error(), "401") || !strings.Contains(err.Error(), "invalid_client") {
-		t.Errorf("expected error to surface status + body, got %q", err.Error())
+	if !strings.Contains(err.Error(), "401") || !strings.Contains(err.Error(), srv.URL) {
+		t.Errorf("expected error to surface status + endpoint, got %q", err.Error())
+	}
+	if strings.Contains(err.Error(), "invalid_client") {
+		t.Errorf("error must not echo the response body, got %q", err.Error())
 	}
 }
 

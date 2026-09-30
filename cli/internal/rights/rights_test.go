@@ -78,6 +78,56 @@ func TestClassifyRevokesNonActAsKindsOnTheValidatorParty(t *testing.T) {
 	}
 }
 
+func TestClassifyPreserveReadAsAlsoKeepsCanReadAsOnThePreservedParty(t *testing.T) {
+	t.Parallel()
+	held := decodeRights(t,
+		adminRight,
+		actAs(validatorPrefix+"1220abcd"),
+		readAs(validatorPrefix+"1220abcd"),
+		readAs("alice-4f2a9c31::1220abcd"),
+	)
+
+	policy := Policy{PartyPrefix: validatorPrefix, MaxRevoke: MaxRevoke, PreserveReadAs: true}
+	plan := Classify(held, policy)
+
+	if len(plan.Keep) != 3 {
+		t.Fatalf("kept %d rights, want 3 (admin, act-as, read-as on the preserved party): %+v", len(plan.Keep), plan.Keep)
+	}
+	if len(plan.Revoke) != 1 || plan.Revoke[0].Party() != "alice-4f2a9c31::1220abcd" {
+		t.Errorf("revoke list = %+v, want only the read-as right on the unrelated party", plan.Revoke)
+	}
+}
+
+func TestClassifyPreserveReadAsStillRevokesReadAsOffThePreservedParty(t *testing.T) {
+	t.Parallel()
+	held := decodeRights(t,
+		adminRight,
+		actAs(validatorPrefix+"1220abcd"),
+		readAs("alice-4f2a9c31::1220abcd"),
+	)
+
+	policy := Policy{PartyPrefix: validatorPrefix, MaxRevoke: MaxRevoke, PreserveReadAs: true}
+	plan := Classify(held, policy)
+
+	if len(plan.Keep) != 2 {
+		t.Errorf("kept %+v, want only admin and the preserved party's act-as", plan.Keep)
+	}
+	if len(plan.Revoke) != 1 {
+		t.Errorf("revoke list = %+v, want the off-party read-as right", plan.Revoke)
+	}
+}
+
+func TestNewPolicyThreadsPreserveReadAs(t *testing.T) {
+	t.Parallel()
+	policy, err := NewPolicy(validatorPrefix, MaxRevoke, true)
+	if err != nil {
+		t.Fatalf("NewPolicy: %v", err)
+	}
+	if !policy.PreserveReadAs {
+		t.Error("NewPolicy did not thread preserveReadAs through to the Policy")
+	}
+}
+
 func TestClassifyWithoutPartyPrefixPreservesNothingButAdmin(t *testing.T) {
 	t.Parallel()
 	held := decodeRights(t, adminRight, actAs("a-validator-1::1220abcd"))

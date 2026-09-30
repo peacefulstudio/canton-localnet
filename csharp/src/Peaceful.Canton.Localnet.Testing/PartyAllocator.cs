@@ -17,6 +17,9 @@ namespace Peaceful.Canton.Localnet.Testing;
 /// random suffix at construction time; party hints are composed as
 /// <c>&lt;consumer-prefix&gt;-&lt;instance-suffix&gt;</c> so concurrent
 /// test runs and reruns against a long-lived stack don't collide.
+/// Unless a caller passes an explicit synchronizer id, the party is
+/// allocated on the global synchronizer, resolved by alias — this works
+/// unchanged on both single-sync and multi-sync stacks.
 /// </summary>
 public sealed class PartyAllocator
 {
@@ -26,6 +29,7 @@ public sealed class PartyAllocator
     private readonly OAuth2TokenProvider _tokenProvider;
     private readonly ILogger<PartyAllocator> _logger;
     private readonly string _instanceSuffix;
+    private readonly JsonLedgerAdminClient _adminClient;
 
     /// <summary>
     /// Creates an allocator bound to a JSON Ledger API <see cref="HttpClient"/>.
@@ -62,6 +66,8 @@ public sealed class PartyAllocator
                 "HttpClient must have a BaseAddress set to the JSON Ledger API root (e.g. http://localhost:11975/).",
                 nameof(httpClient));
         }
+
+        _adminClient = new JsonLedgerAdminClient(_httpClient, _tokenProvider);
     }
 
     /// <summary>
@@ -84,9 +90,14 @@ public sealed class PartyAllocator
     }
 
     /// <summary>
-    /// Allocates a party with hint <c>&lt;consumerPrefix&gt;-&lt;instanceSuffix&gt;</c>.
-    /// Returns the fully-qualified party id (<c>partyIdHint::&lt;namespace&gt;</c>).
+    /// Allocates a party with hint <c>&lt;consumerPrefix&gt;-&lt;instanceSuffix&gt;</c>
+    /// on the global synchronizer, resolved by
+    /// <see cref="JsonLedgerAdminClient.GlobalSynchronizerAlias"/>. Returns the
+    /// fully-qualified party id (<c>partyIdHint::&lt;namespace&gt;</c>).
     /// </summary>
+    /// <param name="consumerPrefix">Caller-chosen prefix for the party hint.</param>
+    /// <param name="displayName">Optional display name; defaults to the hint.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task<AllocatedParty> AllocateAsync(
         string consumerPrefix,
         string? displayName = null,
@@ -97,13 +108,56 @@ public sealed class PartyAllocator
     }
 
     /// <summary>
-    /// Lower-level overload that POSTs the supplied hint verbatim. Prefer
-    /// <see cref="AllocateAsync(string, string?, CancellationToken)"/> in tests
-    /// so the random suffix is applied.
+    /// Allocates a party with hint <c>&lt;consumerPrefix&gt;-&lt;instanceSuffix&gt;</c>
+    /// on <paramref name="synchronizerId"/> instead of the global synchronizer
+    /// default. Returns the fully-qualified party id (<c>partyIdHint::&lt;namespace&gt;</c>).
     /// </summary>
+    /// <param name="consumerPrefix">Caller-chosen prefix for the party hint.</param>
+    /// <param name="displayName">Display name; pass <see langword="null"/> to default to the hint.</param>
+    /// <param name="synchronizerId">Synchronizer to allocate the party on.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task<AllocatedParty> AllocateOnSynchronizerAsync(
+        string consumerPrefix,
+        string? displayName,
+        string synchronizerId,
+        CancellationToken cancellationToken = default)
+    {
+        var hint = ComposeHint(consumerPrefix);
+        return await AllocateWithHintOnSynchronizerAsync(hint, displayName ?? hint, synchronizerId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Lower-level overload that POSTs the supplied hint verbatim on the
+    /// global synchronizer, resolved by
+    /// <see cref="JsonLedgerAdminClient.GlobalSynchronizerAlias"/>. Prefer
+    /// <see cref="AllocateAsync(string, string?, CancellationToken)"/> in
+    /// tests so the random suffix is applied.
+    /// </summary>
+    /// <param name="partyIdHint">Party hint sent verbatim.</param>
+    /// <param name="displayName">Display name.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task<AllocatedParty> AllocateWithHintAsync(
         string partyIdHint,
         string displayName,
+        CancellationToken cancellationToken = default)
+        => await AllocateWithHintOnSynchronizerAsync(partyIdHint, displayName, synchronizerId: null, cancellationToken)
+            .ConfigureAwait(false);
+
+    /// <summary>
+    /// Lower-level overload that POSTs the supplied hint verbatim on
+    /// <paramref name="synchronizerId"/> instead of the global synchronizer
+    /// default. Prefer
+    /// <see cref="AllocateOnSynchronizerAsync(string, string?, string, CancellationToken)"/>
+    /// in tests so the random suffix is applied.
+    /// </summary>
+    /// <param name="partyIdHint">Party hint sent verbatim.</param>
+    /// <param name="displayName">Display name.</param>
+    /// <param name="synchronizerId">Synchronizer to allocate the party on.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task<AllocatedParty> AllocateWithHintOnSynchronizerAsync(
+        string partyIdHint,
+        string displayName,
+        string? synchronizerId,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(partyIdHint))
@@ -115,11 +169,15 @@ public sealed class PartyAllocator
             throw new ArgumentException("Display name must be non-empty.", nameof(displayName));
         }
 
+        var resolvedSynchronizerId = string.IsNullOrWhiteSpace(synchronizerId)
+            ? await _adminClient.GetGlobalSynchronizerIdAsync(cancellationToken: cancellationToken).ConfigureAwait(false)
+            : synchronizerId;
+
         var token = await _tokenProvider.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
 
         using var request = new HttpRequestMessage(HttpMethod.Post, AllocatePath)
         {
-            Content = JsonContent.Create(new AllocatePartyRequest(partyIdHint, displayName, string.Empty)),
+            Content = JsonContent.Create(new AllocatePartyRequest(partyIdHint, displayName, string.Empty, resolvedSynchronizerId)),
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
@@ -167,7 +225,8 @@ public sealed class PartyAllocator
     private sealed record AllocatePartyRequest(
         [property: JsonPropertyName("partyIdHint")] string PartyIdHint,
         [property: JsonPropertyName("displayName")] string DisplayName,
-        [property: JsonPropertyName("identityProviderId")] string IdentityProviderId);
+        [property: JsonPropertyName("identityProviderId")] string IdentityProviderId,
+        [property: JsonPropertyName("synchronizerId")] string SynchronizerId);
 
     private sealed record AllocatePartyResponse(
         [property: JsonPropertyName("partyDetails")] AllocatedPartyDetails? PartyDetails);

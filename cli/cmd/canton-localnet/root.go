@@ -38,6 +38,7 @@ func newRootCommandWithDeps(makeRunner runnerFactory, vm vmDeps, rights rightsDe
 	cmd.AddCommand(newVMCommand(vm))
 	cmd.AddCommand(newAuthCommand())
 	cmd.AddCommand(newInfoCommand())
+	cmd.AddCommand(newEnvCommand())
 	cmd.AddCommand(newRightsCommand(rights))
 	return cmd
 }

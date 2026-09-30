@@ -728,3 +728,63 @@ func TestRightsPruneDefaultsMaxRevokeToTheParticipantCap(t *testing.T) {
 		t.Errorf("--max-revoke default = %s, want 1000 — a lower bound would abort the saturated-participant recovery this tool exists for", flag.DefValue)
 	}
 }
+
+func TestRightsPruneUserFlagTargetsAnArbitraryUserInsteadOfTheSlotValidator(t *testing.T) {
+	const ciUserID = "a-validator-1-ci-1-user"
+	participant := participantHolding(validatorParty, adminRight, actAs(validatorParty), actAs("alice-4f2a9c31::1220abcd"))
+	startFakeSlotA(t, participant)
+
+	run := runRights(t, "rights", "prune", "--slot", "a", "--user", ciUserID, "--dry-run")
+
+	if run.err != nil {
+		t.Fatalf("execute: %v", run.err)
+	}
+	if !strings.Contains(run.stdout, "user             "+ciUserID) {
+		t.Errorf("stdout should report the overridden user, not the slot's own validator user:\n%s", run.stdout)
+	}
+	for _, call := range participant.recorded() {
+		if strings.Contains(call.path, rightsTestUserID) {
+			t.Errorf("a --user override must not address the slot's own validator user id: %+v", call)
+		}
+	}
+}
+
+func TestRightsPrunePreserveBaseAlsoPreservesReadAsOnThePreservedParty(t *testing.T) {
+	participant := participantHolding(validatorParty,
+		adminRight,
+		actAs(validatorParty),
+		readAs(validatorParty),
+		actAs("alice-4f2a9c31::1220abcd"),
+	)
+	startFakeSlotA(t, participant)
+
+	run := runRights(t, "rights", "prune", "--slot", "a", "--preserve-base", "--dry-run")
+
+	if run.err != nil {
+		t.Fatalf("execute: %v", run.err)
+	}
+	if !strings.Contains(run.stdout, "preserving       ParticipantAdmin, and CanActAs on "+validatorParty+"*, and CanReadAs on "+validatorParty+"*") {
+		t.Errorf("stdout should announce CanReadAs is also preserved:\n%s", run.stdout)
+	}
+	if !strings.Contains(run.stdout, "preserved        3") {
+		t.Errorf("CanReadAs on the preserved party should count as kept, not revoked:\n%s", run.stdout)
+	}
+}
+
+func TestRightsPruneWithoutPreserveBaseRevokesReadAsOnThePreservedParty(t *testing.T) {
+	participant := participantHolding(validatorParty,
+		adminRight,
+		actAs(validatorParty),
+		readAs(validatorParty),
+	)
+	startFakeSlotA(t, participant)
+
+	run := runRights(t, "rights", "prune", "--slot", "a", "--yes")
+
+	if run.err != nil {
+		t.Fatalf("execute: %v", run.err)
+	}
+	if len(participant.patches()) != 1 || !strings.Contains(participant.patches()[0].body, "CanReadAs") {
+		t.Errorf("without --preserve-base, CanReadAs on the validator's own party must still be revoked: %+v", participant.patches())
+	}
+}

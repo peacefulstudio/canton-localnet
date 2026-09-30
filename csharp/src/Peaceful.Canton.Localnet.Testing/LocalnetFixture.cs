@@ -174,6 +174,15 @@ public sealed class LocalnetFixture : IAsyncDisposable
         => DarUploader.UploadAsync(darPath, cancellationToken);
 
     /// <summary>
+    /// Convenience pass-through to <see cref="DarUploader.UploadAndVerifyAsync(string, string?, CancellationToken)"/>.
+    /// </summary>
+    public Task<DarUploadOutcome> UploadAndVerifyDarAsync(
+        string darPath,
+        string? expectedMainPackageId,
+        CancellationToken cancellationToken = default)
+        => DarUploader.UploadAndVerifyAsync(darPath, expectedMainPackageId, cancellationToken);
+
+    /// <summary>
     /// Convenience pass-through to <see cref="DarUploader.UploadManyAsync"/>.
     /// </summary>
     public Task<IReadOnlyList<DarUploadResult>> UploadDarsAsync(
@@ -182,13 +191,25 @@ public sealed class LocalnetFixture : IAsyncDisposable
         => DarUploader.UploadManyAsync(darPaths, cancellationToken);
 
     /// <summary>
-    /// Convenience pass-through to <see cref="PartyAllocator.AllocateAsync"/>.
+    /// Convenience pass-through to
+    /// <see cref="PartyAllocator.AllocateAsync(string, string?, CancellationToken)"/>.
     /// </summary>
     public Task<AllocatedParty> AllocatePartyAsync(
         string consumerPrefix,
         string? displayName = null,
         CancellationToken cancellationToken = default)
         => PartyAllocator.AllocateAsync(consumerPrefix, displayName, cancellationToken);
+
+    /// <summary>
+    /// Convenience pass-through to
+    /// <see cref="PartyAllocator.AllocateOnSynchronizerAsync(string, string?, string, CancellationToken)"/>.
+    /// </summary>
+    public Task<AllocatedParty> AllocatePartyOnSynchronizerAsync(
+        string consumerPrefix,
+        string? displayName,
+        string synchronizerId,
+        CancellationToken cancellationToken = default)
+        => PartyAllocator.AllocateOnSynchronizerAsync(consumerPrefix, displayName, synchronizerId, cancellationToken);
 
     /// <summary>
     /// Convenience pass-through to <see cref="UserBuilder.CreateAsync"/>.

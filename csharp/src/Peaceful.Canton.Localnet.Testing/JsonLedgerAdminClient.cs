@@ -98,21 +98,23 @@ public sealed class JsonLedgerAdminClient
     /// <summary>The stable alias of the app-provider synchronizer.</summary>
     public const string AppSynchronizerAlias = "app-synchronizer";
 
+    /// <summary>The stable alias of the global synchronizer.</summary>
+    public const string GlobalSynchronizerAlias = "global";
+
     /// <summary>
-    /// Lists the synchronizers the participant is connected to for <paramref name="party"/>,
-    /// via <c>GET /v2/state/connected-synchronizers</c>.
+    /// Lists the synchronizers the participant is connected to, via
+    /// <c>GET /v2/state/connected-synchronizers</c>. Pass <paramref name="party"/>
+    /// to scope the result to that party; omit it (or pass <c>null</c>/empty) for
+    /// the participant-wide list.
     /// </summary>
     public async Task<IReadOnlyList<ConnectedSynchronizer>> GetConnectedSynchronizersAsync(
-        string party,
+        string? party = null,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(party))
-        {
-            throw new ArgumentException("party must be a non-empty party id.", nameof(party));
-        }
-
         var token = await _tokenProvider.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
-        var requestUri = $"v2/state/connected-synchronizers?party={Uri.EscapeDataString(party)}";
+        var requestUri = string.IsNullOrWhiteSpace(party)
+            ? "v2/state/connected-synchronizers"
+            : $"v2/state/connected-synchronizers?party={Uri.EscapeDataString(party)}";
 
         using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -182,6 +184,70 @@ public sealed class JsonLedgerAdminClient
         }
 
         return app.Id;
+    }
+
+    /// <summary>
+    /// Returns the id of the connected synchronizer whose alias is
+    /// <see cref="GlobalSynchronizerAlias"/>. Every LocalNet profile connects to
+    /// this synchronizer, single-sync or multi-sync, so it is the default
+    /// target for party allocation (see <see cref="PartyAllocator"/>). Throws
+    /// if no such synchronizer is connected.
+    /// </summary>
+    public async Task<string> GetGlobalSynchronizerIdAsync(
+        string? party = null,
+        CancellationToken cancellationToken = default)
+    {
+        var synchronizers = await GetConnectedSynchronizersAsync(party, cancellationToken).ConfigureAwait(false);
+        var global = synchronizers.FirstOrDefault(s => string.Equals(s.Alias, GlobalSynchronizerAlias, StringComparison.Ordinal));
+        if (global is null)
+        {
+            var aliases = string.Join(", ", synchronizers.Select(s => s.Alias));
+            throw new JsonLedgerApiException(
+                $"No connected synchronizer with alias '{GlobalSynchronizerAlias}'. Connected: [{aliases}].",
+                System.Net.HttpStatusCode.NotFound,
+                string.Empty);
+        }
+
+        return global.Id;
+    }
+
+    /// <summary>
+    /// Checks whether the participant holds package <paramref name="packageId"/>,
+    /// via <c>GET /v2/packages/{package-id}</c>. Used by <see cref="DarUploader"/>
+    /// to read back and confirm a package the upload reported as already known.
+    /// Throws <see cref="JsonLedgerApiException"/> for any response other than
+    /// success (present) or 404 (absent).
+    /// </summary>
+    public async Task<bool> PackageExistsAsync(string packageId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(packageId))
+        {
+            throw new ArgumentException("packageId must be non-empty.", nameof(packageId));
+        }
+
+        var token = await _tokenProvider.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
+        var requestUri = $"v2/packages/{Uri.EscapeDataString(packageId)}";
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        _logger.LogDebug("GET {Uri}", new Uri(_httpClient.BaseAddress!, requestUri));
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        if (response.IsSuccessStatusCode)
+        {
+            return true;
+        }
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return false;
+        }
+
+        var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        throw new JsonLedgerApiException(
+            $"GET {requestUri} returned {(int)response.StatusCode} {response.ReasonPhrase}: {body}",
+            response.StatusCode,
+            body);
     }
 
     private sealed record ParticipantIdResponse(

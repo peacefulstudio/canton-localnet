@@ -67,6 +67,11 @@ ifeq ($(MULTI_SYNC),true)
 PROFILES += --profile multi-sync
 endif
 
+SWAGGER_UI ?=
+ifeq ($(SWAGGER_UI),true)
+PROFILES += --profile swagger-ui
+endif
+
 # `DOCKER_COMPOSE_APP` is the application stack alone — used by stop-app /
 # clean-app to leave the observability stack running across iterations.
 DOCKER_COMPOSE_APP := docker compose $(COMPOSE_FILES) $(ENV_FILES) $(PROFILES)
@@ -123,9 +128,17 @@ clean-app: ## Like `clean`, but leave observability running
 status: ## Show container status
 	$(DOCKER_COMPOSE) ps
 
+.PHONY: status-all
+status-all: ## Show container status, including stopped containers (for diagnostics collection)
+	$(DOCKER_COMPOSE) ps -a
+
 .PHONY: logs
 logs: ## Tail logs
 	$(DOCKER_COMPOSE) logs -f
+
+.PHONY: logs-recent
+logs-recent: ## Print recent logs without following (for diagnostics collection)
+	$(DOCKER_COMPOSE) logs --tail=500
 
 .PHONY: wait-ready
 wait-ready: ## Poll JSON Ledger API until participant accepts requests
@@ -142,6 +155,14 @@ config: ## Print the resolved compose configuration (debugging)
 .PHONY: check-party-hints
 check-party-hints: ## Assert every resolved slot party hint equals its slot name
 	@bash -eo pipefail -c '$(DOCKER_COMPOSE) config | $(COMPOSE_DIR)/scripts/check-party-hints.sh'
+
+.PHONY: check-port-bind-ip
+check-port-bind-ip: ## Assert every published port is bound to HOST_BIND_IP (default 127.0.0.1)
+	@bash -eo pipefail -c '$(DOCKER_COMPOSE) config --format json | $(COMPOSE_DIR)/scripts/check-port-bind-ip.sh "$${HOST_BIND_IP:-127.0.0.1}"'
+
+.PHONY: check-docker-version
+check-docker-version: ## Warn (or, with STRICT=true, fail) if the local Docker server is below the loopback-safe minimum
+	@$(COMPOSE_DIR)/scripts/check-docker-version.sh $(if $(filter true,$(STRICT)),--strict,)
 
 .PHONY: prune-rights
 prune-rights: ## Revoke the leaked ledger rights on SLOT's validator user. Destructive, and SLOT defaults to a: prints the plan and asks before revoking, unless YES is set to anything other than 0
