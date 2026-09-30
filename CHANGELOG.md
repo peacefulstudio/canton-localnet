@@ -7,6 +7,181 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.4-1] - 2026-09-30
+
+Vendored Splice moves 0.8.3 → 0.8.4, which brings Canton 3.5.19 inside the
+images, and LocalNet host ports now bind to `127.0.0.1` by default instead of
+every interface. This release also adds `canton-localnet env`, a pair of
+composite GitHub Actions that boot and tear down LocalNet in a workflow,
+synchronizer-aware party allocation and DAR upload in the C# fixture, and
+dedicated CI clients on `a-validator-1`. Drop-in from `0.8.3-2` with no
+volume wipe; the one config to edit is a `POSTGRES_HOST_PORT` that pins a host
+IP (see Security). Set `HOST_BIND_IP=0.0.0.0` if the stack must be reachable
+from other hosts.
+
+### Security
+
+- Every host-published port now binds to `127.0.0.1` by default instead of
+  all interfaces.
+  - This covers the participant ledger, admin and JSON API ports, the Splice
+    validator admin ports, Postgres `5432`, Keycloak `8082`, swagger-ui, the
+    OpenTelemetry collector and Grafana `3030`. Until this release, anyone on
+    the same network could reach them, including Keycloak and Postgres with
+    their well-known LocalNet credentials.
+  - The bind address comes from `HOST_BIND_IP`. If the stack must be reached
+    from other hosts (a shared VM, a remote CI runner, a teammate's machine),
+    run it with `HOST_BIND_IP=0.0.0.0` to restore the old all-interfaces
+    behaviour, and firewall it yourself.
+  - `POSTGRES_HOST_PORT=<host>:<container>` and `TEST_PORT` keep working
+    unchanged; the bind address is prefixed for you. A three-part
+    `POSTGRES_HOST_PORT=<ip>:<host>:<container>` no longer works, since the
+    prefixed address makes it an invalid mapping: drop the IP and set
+    `HOST_BIND_IP=<ip>` instead.
+  - On Docker Engine older than 28.0.0, a port published to `127.0.0.1` can
+    still be reachable from other hosts on the same network segment. Upgrade
+    Docker Engine to 28 or later. `make check-docker-version` warns when the
+    local server is too old, and fails with `STRICT=true`.
+  - `make check-port-bind-ip` renders the compose config and fails if any
+    published port is not bound to the expected address.
+- The GitHub Action's diagnostics no longer dump every container on the
+  Docker daemon when a boot or teardown fails.
+  - A self-hosted runner shares its daemon with other jobs, so a whole-daemon
+    `docker ps -a` in an uploaded diagnostics artifact could name and show
+    the commands of containers that belong to someone else's job. The dump
+    is now scoped to this LocalNet's own compose project.
+- The Action now fails closed, before booting, if a per-slot
+  `CANTON_LOCALNET_*_CLIENT_SECRET` or `CANTON_LOCALNET_*_CLIENT_ID`
+  override is set in the job environment.
+  - The Action always boots its own Keycloak with the fixed LocalNet demo
+    credentials; a leaked override would previously have been exported by
+    `canton-localnet env` anyway, as a client secret or client id Keycloak
+    silently rejects. Those overrides are `canton-localnet env`'s own
+    escape hatch for running it by hand against a LocalNet you manage
+    yourself — not this Action.
+  - The `CLIENT_SECRET` guard now compares the override's raw value
+    instead of trimming it first, matching what `canton-localnet env`
+    actually exports: a secret that only matches the fixed one after
+    trimming surrounding whitespace is still rejected, rather than
+    passing the guard and then failing against the booted Keycloak.
+
+### Added
+
+- `canton-localnet env` prints the endpoints and credentials of one or more
+  LocalNet `--slot`s, as `sh` exports, `json`, or `github` (appended to
+  `$GITHUB_ENV`).
+  - The OAuth2 credential contract (token URL, client id and secret) is
+    always exported and needs no network call, alongside each slot's JSON
+    API, gRPC and validator API URLs.
+  - `--jwt` also mints a bearer token per slot and fetches the live
+    participant id; `--offline` skips the participant-id lookup.
+  - `--pqs` adds the PQS Postgres connection details of slots `a`, `b` and
+    `c`, including an Npgsql-style `_PQS_CONNECTION_STRING`; slot `d` has no
+    PQS database and is refused. For slot `a` it exports the
+    read-only `pqs-a-validator-1-reader` role rather than the `cnadmin`
+    superuser, so a write path (DDL, `INSERT`) against that database needs
+    `DB_USER` / `DB_PASSWORD` explicitly.
+  - With `--format github`, every secret is masked with `::add-mask::`
+    before anything reaches `$GITHUB_ENV`, and `$GITHUB_OUTPUT` is never
+    written.
+  - `env` covers the OAuth2 slots `a` to `d`. `--slot sv` is refused with an
+    error, since `sv-validator-1` has no OAuth2 client.
+- `peacefulstudio/canton-localnet@<tag>` boots LocalNet in a GitHub Actions
+  job, with no checkout of this repository and no App token.
+  - It cleans up any leftover stack, runs `up` with one retry and
+    `wait-ready`, then exports every enabled OAuth2 slot's endpoints and
+    credentials into `$GITHUB_ENV` through `canton-localnet env --format
+    github`, masked.
+  - `validators`, `pqs`, `observability`, `multi-sync` and `jwt` choose what
+    to boot and export; `config` takes your own `canton-localnet.yaml`
+    instead.
+  - `cli: source` (the default) builds the CLI from the action's own
+    checkout. `cli: release` downloads and checksum-verifies the release
+    binary instead; it needs the action's `uses:` pinned to a literal release
+    tag, and fails closed on a commit-SHA pin.
+- `peacefulstudio/canton-localnet/teardown@<tag>` tears LocalNet down.
+  - Call it with `if: always()` after your test steps. It runs
+    `down --volumes`, uploads bounded diagnostics on failure, and exits
+    non-zero when teardown fails instead of reading green.
+  - `docs/public/github-action.md` has the full inputs and outputs contract
+    and a minimal consumer workflow.
+- `a-validator-1` gains six confidential CI clients in its `AValidator1`
+  Keycloak realm, so parallel CI jobs sharing one LocalNet can each act as a
+  separate ledger user.
+  - The clients are `a-validator-1-ci-1` to `a-validator-1-ci-4`,
+    `a-validator-1-ci-provider` and `a-validator-1-ci-app`, each with its own
+    fixed-UUID service-account user. Onboarding grants each one
+    `ParticipantAdmin` plus `CanActAs` and `CanReadAs` on the validator
+    party.
+  - `canton-localnet env --slot a --ci-slot <1-4>` exports one of the four
+    numbered clients in place of the interactive validator client, under
+    the same `CANTON_LOCALNET_A_VALIDATOR_1_*` variable names the fixtures
+    already read.
+  - An existing LocalNet gets them on its next `up`: onboarding adds them to
+    the already-imported realm through Keycloak's admin API.
+- `canton-localnet rights prune` gains `--user <id>` and `--preserve-base`.
+  - `--user` prunes an arbitrary ledger user, such as one of the CI clients,
+    instead of the slot's own validator user.
+  - `--preserve-base` also keeps `CanReadAs` on the preserved party, next to
+    the always-kept `ParticipantAdmin` and `CanActAs`, so pruning a CI user
+    returns it to exactly the rights it was onboarded with.
+- Postgres gains a read-only login role, `pqs-a-validator-1-reader`, that can
+  connect to the `pqs-a-validator-1` database and to no other LocalNet service
+  database.
+  - It reads every table Scribe has created or creates later. Postgres now
+    revokes the default `PUBLIC` connect right on each LocalNet service
+    database; `cnadmin` is a superuser, so every existing service is
+    unaffected.
+
+### Fixed
+
+- The GitHub Action's multi-synchronizer readiness wait now also triggers
+  when a `config` file you supply enables `multiSync`, not only when the
+  `multi-sync` input is set.
+  - Previously, a `config` input with `multiSync: true` booted the
+    multi-sync profile — the CLI already honors it — but the Action still
+    skipped waiting for the app-synchronizer to come up unless `multi-sync`
+    was also passed as an input.
+
+### Changed
+
+- `PartyAllocator` and `DarUploader` in `Peaceful.Canton.Localnet.Testing`
+  now work on a multi-synchronizer LocalNet as well as a single-sync one.
+  - `AllocateAsync` and `AllocateWithHintAsync` keep allocating on the
+    global synchronizer by default, resolved by alias through the new
+    `JsonLedgerAdminClient.GetGlobalSynchronizerIdAsync`. New
+    `AllocateOnSynchronizerAsync` and `AllocateWithHintOnSynchronizerAsync`
+    overloads take a `synchronizerId` to allocate elsewhere, and
+    `LocalnetFixture.AllocatePartyOnSynchronizerAsync` and
+    `ValidatorFixture.AllocatePartyOnSynchronizerAsync` expose the same
+    overload.
+  - `DarUploader.UploadAsync` now vets the DAR on every connected
+    synchronizer, and behaves as before on a single-sync stack.
+  - New `UploadAndVerifyAsync` and `UploadAndVerifyDarAsync` overloads take
+    an `expectedMainPackageId`. When every target answers
+    `KNOWN_PACKAGE_VERSION`, the uploader reads the package back and
+    throws, naming the id, if it is not really there; an identical
+    re-upload with no expected id still returns `AlreadyKnown`
+    unconditionally. `JsonLedgerAdminClient.PackageExistsAsync` backs that
+    check.
+  - `JsonLedgerAdminClient.GetConnectedSynchronizersAsync`'s `party`
+    parameter is now optional; omit it to query participant-wide.
+- Upgrade the vendored Splice / Canton LocalNet from 0.8.3 to 0.8.4.
+  - The pin is upstream `hyperledger-labs/splice`
+    `fa6b029f2563423f3f612302cfdc84986366479d`, in `compose/splice.sha` and
+    `compose/links.csv`. `SPLICE_VERSION=0.8.4` in `compose/.env.defaults`
+    moves the `canton`, `splice-app` and web-ui image tags.
+  - The `0.8.4` images carry Canton 3.5.19, up from 3.5.18.
+  - Upstream's 0.8.3 → 0.8.4 diff touches nothing in the compose tree, so
+    the upgrade changes no file under `compose/modules/localnet/`. Its other
+    changes — web UI backports, Istio and Cloud Armor cluster config, and
+    observability dashboards — reach this stack only through the new image
+    tags, if at all.
+  - Existing volumes keep working: the `POSTGRES_VERSION=18` and
+    `NGINX_VERSION=1.30.0` pins, the postgres `/var/lib/postgresql` mount
+    path and the 5-validator topology are unchanged.
+- The C# package version moves to `0.8.4-1` (NuGet `0.8.4.1`); pin
+  `go/fixture` at `v0.8.4-1`.
+
 ## [0.8.3-2] - 2026-09-24
 
 PQS now projects contracts held by parties allocated after it starts.

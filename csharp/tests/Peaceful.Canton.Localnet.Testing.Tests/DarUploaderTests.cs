@@ -32,6 +32,20 @@ public class DarUploaderTests
         return new OAuth2TokenProvider(http, options);
     }
 
+    private static string? SynchronizerIdFromQuery(Uri uri)
+    {
+        var query = uri.Query.TrimStart('?');
+        foreach (var pair in query.Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = pair.Split('=', 2);
+            if (parts[0] == "synchronizerId")
+            {
+                return Uri.UnescapeDataString(parts[1]);
+            }
+        }
+        return null;
+    }
+
     private static DarUploader NoSleepUploader(HttpClient http, OAuth2TokenProvider tokenProvider) =>
         new(http, tokenProvider, options: new DarUploaderRetryOptions(
             MaxAttempts: 6,
@@ -43,12 +57,12 @@ public class DarUploaderTests
     public async Task UploadAsync_retries_transient_503_then_succeeds()
     {
         var calls = 0;
-        var handler = new RecordingHandler((_, _) =>
+        var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers((_, _) =>
         {
             calls++;
             var status = calls < 3 ? HttpStatusCode.ServiceUnavailable : HttpStatusCode.OK;
             return Task.FromResult(new HttpResponseMessage(status));
-        });
+        }));
         using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
         var uploader = NoSleepUploader(http, StaticTokenProvider("tok"));
 
@@ -62,14 +76,14 @@ public class DarUploaderTests
     public async Task UploadAsync_throws_503_with_body_preserved_after_budget_exhausted()
     {
         var calls = 0;
-        var handler = new RecordingHandler((_, _) =>
+        var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers((_, _) =>
         {
             calls++;
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
             {
                 Content = new StringContent("""{"cause":"still warming up"}""", Encoding.UTF8, "application/json"),
             });
-        });
+        }));
         using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
         var uploader = NoSleepUploader(http, StaticTokenProvider("tok"));
 
@@ -87,14 +101,14 @@ public class DarUploaderTests
     public async Task UploadAsync_does_not_retry_non_503_failure(HttpStatusCode status)
     {
         var calls = 0;
-        var handler = new RecordingHandler((_, _) =>
+        var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers((_, _) =>
         {
             calls++;
             return Task.FromResult(new HttpResponseMessage(status)
             {
                 Content = new StringContent("""{"cause":"no token"}""", Encoding.UTF8, "application/json"),
             });
-        });
+        }));
         using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
         var uploader = NoSleepUploader(http, StaticTokenProvider("tok"));
 
@@ -169,11 +183,11 @@ public class DarUploaderTests
     public async Task UploadAsync_passes_capped_exponential_delays_to_Delay_delegate()
     {
         var capturedDelays = new List<TimeSpan>();
-        var handler = new RecordingHandler((_, _) =>
+        var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers((_, _) =>
             Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
             {
                 Content = new StringContent("""{"cause":"still warming up"}""", Encoding.UTF8, "application/json"),
-            }));
+            })));
         using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
         var uploader = new DarUploader(http, StaticTokenProvider("tok"), options: new DarUploaderRetryOptions(
             MaxAttempts: 6,
@@ -204,12 +218,12 @@ public class DarUploaderTests
     public async Task UploadAsync_logs_a_warning_for_each_503_retry()
     {
         var calls = 0;
-        var handler = new RecordingHandler((_, _) =>
+        var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers((_, _) =>
         {
             calls++;
             var status = calls < 3 ? HttpStatusCode.ServiceUnavailable : HttpStatusCode.OK;
             return Task.FromResult(new HttpResponseMessage(status));
-        });
+        }));
         using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
         var logger = new RecordingLogger<DarUploader>();
         var uploader = new DarUploader(http, StaticTokenProvider("tok"), logger,
@@ -226,12 +240,12 @@ public class DarUploaderTests
     {
         byte[]? capturedBytes = null;
         string? capturedContentType = null;
-        var handler = new RecordingHandler(async (req, ct) =>
+        var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers(async (req, ct) =>
         {
             capturedBytes = req.Content is null ? null : await req.Content.ReadAsByteArrayAsync(ct);
             capturedContentType = req.Content?.Headers.ContentType?.MediaType;
             return new HttpResponseMessage(HttpStatusCode.OK);
-        });
+        }));
         using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
         var uploader = new DarUploader(http, StaticTokenProvider("tok-1"));
         var bytes = new byte[] { 0x50, 0x4B, 0x03, 0x04, 0xDE, 0xAD };
@@ -239,9 +253,11 @@ public class DarUploaderTests
         var outcome = await uploader.UploadAsync(bytes, "fixture.dar");
 
         Assert.Equal(DarUploadOutcome.Uploaded, outcome);
-        var recorded = Assert.Single(handler.Requests);
-        Assert.Equal(HttpMethod.Post, recorded.Method);
-        Assert.Equal(new Uri(JsonApiBase, "v2/packages"), recorded.Uri);
+        var recorded = Assert.Single(handler.Requests, r => r.Method == HttpMethod.Post);
+        Assert.Equal("/v2/packages", recorded.Uri.AbsolutePath);
+        Assert.Equal(
+            $"synchronizerId={Uri.EscapeDataString(SynchronizerDiscoveryResponder.DefaultGlobalSynchronizerId)}",
+            recorded.Uri.Query.TrimStart('?'));
         Assert.Equal("Bearer tok-1", recorded.Headers["Authorization"]);
         Assert.Equal("application/octet-stream", capturedContentType);
         Assert.Equal(bytes, capturedBytes);
@@ -250,13 +266,13 @@ public class DarUploaderTests
     [Fact]
     public async Task UploadAsync_treats_known_package_version_400_as_success()
     {
-        var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+        var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
         {
             Content = new StringContent(
                 """{"cause":"KNOWN_PACKAGE_VERSION(8,abcdef): package already uploaded"}""",
                 Encoding.UTF8,
                 "application/json"),
-        }));
+        })));
         using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
         var uploader = new DarUploader(http, StaticTokenProvider("tok"));
 
@@ -268,10 +284,10 @@ public class DarUploaderTests
     [Fact]
     public async Task UploadAsync_throws_for_genuine_server_failure()
     {
-        var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)
+        var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)
         {
             Content = new StringContent("""{"cause":"boom"}""", Encoding.UTF8, "application/json"),
-        }));
+        })));
         using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
         var uploader = new DarUploader(http, StaticTokenProvider("tok"));
 
@@ -284,10 +300,10 @@ public class DarUploaderTests
     [Fact]
     public async Task UploadAsync_throws_for_non_known_package_400()
     {
-        var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+        var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
         {
             Content = new StringContent("""{"cause":"INVALID_ARGUMENT"}""", Encoding.UTF8, "application/json"),
-        }));
+        })));
         using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
         var uploader = new DarUploader(http, StaticTokenProvider("tok"));
 
@@ -310,7 +326,7 @@ public class DarUploaderTests
 
             var calls = 0;
             var requestUris = new List<Uri>();
-            var handler = new RecordingHandler((req, _) =>
+            var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers((req, _) =>
             {
                 calls++;
                 requestUris.Add(req.RequestUri!);
@@ -328,7 +344,7 @@ public class DarUploaderTests
                 {
                     Content = new StringContent(body, Encoding.UTF8, "application/json"),
                 });
-            });
+            }));
             using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
             var uploader = new DarUploader(http, StaticTokenProvider("tok"));
 
@@ -360,14 +376,14 @@ public class DarUploaderTests
             await File.WriteAllBytesAsync(second, new byte[] { 2 });
 
             var calls = 0;
-            var handler = new RecordingHandler((_, _) =>
+            var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers((_, _) =>
             {
                 calls++;
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)
                 {
                     Content = new StringContent("oops", Encoding.UTF8, "text/plain"),
                 });
-            });
+            }));
             using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
             var uploader = new DarUploader(http, StaticTokenProvider("tok"));
 
@@ -379,6 +395,105 @@ public class DarUploaderTests
         {
             directory.Delete(recursive: true);
         }
+    }
+
+    [Fact]
+    public async Task UploadAsync_vets_on_every_connected_synchronizer()
+    {
+        var postedSynchronizerIds = new List<string?>();
+        var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers(
+            (req, _) =>
+            {
+                postedSynchronizerIds.Add(SynchronizerIdFromQuery(req.RequestUri!));
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+            },
+            ("global", "global::122a"),
+            ("app-synchronizer", "app-synchronizer::122b")));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var uploader = new DarUploader(http, StaticTokenProvider("tok"));
+
+        var outcome = await uploader.UploadAsync(new byte[] { 1, 2, 3 }, "multi-sync.dar");
+
+        Assert.Equal(DarUploadOutcome.Uploaded, outcome);
+        Assert.Equal(new[] { "global::122a", "app-synchronizer::122b" }, postedSynchronizerIds);
+    }
+
+    [Fact]
+    public async Task UploadAsync_falls_back_to_no_synchronizerId_when_none_connected()
+    {
+        var handler = new RecordingHandler((req, _) =>
+        {
+            if (req.Method == HttpMethod.Get)
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""{"connectedSynchronizers":[]}""", Encoding.UTF8, "application/json"),
+                });
+            }
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+        });
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var uploader = new DarUploader(http, StaticTokenProvider("tok"));
+
+        var outcome = await uploader.UploadAsync(new byte[] { 1, 2, 3 }, "no-sync.dar");
+
+        Assert.Equal(DarUploadOutcome.Uploaded, outcome);
+        var recorded = Assert.Single(handler.Requests, r => r.Method == HttpMethod.Post);
+        Assert.Equal(new Uri(JsonApiBase, "v2/packages"), recorded.Uri);
+    }
+
+    [Fact]
+    public async Task UploadAndVerifyAsync_reads_back_and_throws_when_expected_package_absent_after_known_package_version()
+    {
+        var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers((req, _) =>
+        {
+            if (req.Method == HttpMethod.Get && req.RequestUri!.AbsolutePath.Contains("v2/packages/"))
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+            }
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(
+                    """{"cause":"KNOWN_PACKAGE_VERSION(8,abcdef): package already uploaded"}""",
+                    Encoding.UTF8,
+                    "application/json"),
+            });
+        }));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var uploader = new DarUploader(http, StaticTokenProvider("tok"));
+
+        var exception = await Assert.ThrowsAsync<JsonLedgerApiException>(
+            () => uploader.UploadAndVerifyAsync(new byte[] { 1, 2, 3 }, "mismatched.dar", expectedMainPackageId: "pkg-expected-123"));
+
+        Assert.Contains("pkg-expected-123", exception.Message);
+    }
+
+    [Fact]
+    public async Task UploadAndVerifyAsync_returns_already_known_when_read_back_confirms_expected_package_present()
+    {
+        var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers((req, _) =>
+        {
+            if (req.Method == HttpMethod.Get && req.RequestUri!.AbsolutePath.Contains("v2/packages/"))
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent([1, 2, 3]),
+                });
+            }
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(
+                    """{"cause":"KNOWN_PACKAGE_VERSION(8,abcdef): package already uploaded"}""",
+                    Encoding.UTF8,
+                    "application/json"),
+            });
+        }));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var uploader = new DarUploader(http, StaticTokenProvider("tok"));
+
+        var outcome = await uploader.UploadAndVerifyAsync(new byte[] { 1, 2, 3 }, "identical-reupload.dar", expectedMainPackageId: "pkg-expected-123");
+
+        Assert.Equal(DarUploadOutcome.AlreadyKnown, outcome);
     }
 
     [Fact]

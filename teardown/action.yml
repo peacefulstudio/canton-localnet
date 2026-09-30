@@ -1,0 +1,59 @@
+# Copyright 2026 Peaceful Studio OÜ
+# SPDX-License-Identifier: Apache-2.0
+
+name: canton-localnet teardown
+description: >-
+  Tears down the LocalNet stack booted by peacefulstudio/canton-localnet in
+  this job: `down --volumes --remove-orphans`. On failure it collects and
+  uploads bounded, sanitised diagnostics and — unlike the
+  `down || echo ::error::` pattern this replaces — exits non-zero, so a
+  failed teardown fails the job instead of reading green. Call it with
+  `if: always()` right after the boot action's step(s).
+author: Peaceful Studio OÜ
+
+runs:
+  using: composite
+  steps:
+    - name: canton-localnet down --volumes
+      id: down
+      # Explicit always(): a step's default condition is success(), which
+      # a composite action's own embedded steps evaluate against the WHOLE
+      # calling job's history, not just this composite's own steps — so
+      # without this, a consumer's own `if: always()` on the call to this
+      # action does not stop THIS step from being skipped after their
+      # test step already failed, which is exactly the case this action
+      # exists for.
+      if: always()
+      shell: bash
+      continue-on-error: true
+      env:
+        STRICT: 'true'
+      run: bash "${{ github.action_path }}/../action/down.sh"
+
+    - name: Collect diagnostics (teardown failed)
+      # always() is required here too: an `if:` with no status-check
+      # function is implicitly ANDed with success(), which would still
+      # skip this after an earlier job-step failure even though its own
+      # condition is independently true. steps.down.outcome (not just
+      # outputs.failed) is checked too, so a crash in down.sh before it
+      # writes its output — e.g. the saved-state file being unreadable —
+      # still reads as a failure here instead of silently skipping.
+      if: always() && (steps.down.outcome == 'failure' || steps.down.outputs.failed == 'true')
+      shell: bash
+      run: bash "${{ github.action_path }}/../action/diagnose.sh"
+
+    - name: Upload diagnostics (teardown failed)
+      if: always() && (steps.down.outcome == 'failure' || steps.down.outputs.failed == 'true')
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: canton-localnet-teardown-diagnostics-${{ github.job }}
+        path: ${{ runner.temp }}/canton-localnet/diagnostics
+        if-no-files-found: warn
+        retention-days: 7
+
+    - name: Fail the job (teardown failed)
+      if: always() && (steps.down.outcome == 'failure' || steps.down.outputs.failed == 'true')
+      shell: bash
+      run: |
+        echo "::error::canton-localnet teardown failed — see the 'canton-localnet down --volumes' step above and the uploaded diagnostics artifact"
+        exit 1

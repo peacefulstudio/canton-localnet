@@ -38,7 +38,7 @@ func FetchParticipantID(ctx context.Context, ep Endpoints, token string, client 
 		return "", fmt.Errorf("slot: read participant-id response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("slot: participant-id endpoint %s returned HTTP %d: %s", url, resp.StatusCode, strings.TrimSpace(string(body)))
+		return "", fmt.Errorf("slot: participant-id endpoint %s returned HTTP %d", url, resp.StatusCode)
 	}
 	var out struct {
 		ParticipantID string `json:"participantId"`

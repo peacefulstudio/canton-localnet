@@ -133,7 +133,7 @@ func TestReadEnvFileStripsInlineComments(t *testing.T) {
 	if err := os.WriteFile(path, []byte("FOO=bar  # trailing comment\nBAZ=qux\n# leading comment\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got, err := readEnvFile(path)
+	got, err := ReadEnvFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,6 +145,20 @@ func TestReadEnvFileStripsInlineComments(t *testing.T) {
 	}
 }
 
+func TestResolveHonoursTokenURLOverride(t *testing.T) {
+	t.Parallel()
+	a, _ := Parse("a")
+	got, err := Resolve(a, "", envFrom(map[string]string{
+		"CANTON_LOCALNET_A_VALIDATOR_1_TOKEN_URL": "https://idp.example.com/oauth2/token",
+	}))
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got.TokenURLHost != "https://idp.example.com/oauth2/token" {
+		t.Errorf("TokenURLHost: got %q, want https://idp.example.com/oauth2/token", got.TokenURLHost)
+	}
+}
+
 func TestReadEnvFileRejectsMalformedLine(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -152,7 +166,7 @@ func TestReadEnvFileRejectsMalformedLine(t *testing.T) {
 	if err := os.WriteFile(path, []byte("FOO bar\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err := readEnvFile(path)
+	_, err := ReadEnvFile(path)
 	if err == nil {
 		t.Fatal("expected error for KEY VALUE without '='")
 	}
@@ -190,6 +204,53 @@ func TestResolveSurfacesReadEnvFileError(t *testing.T) {
 	_, err := Resolve(a, root, emptyEnv)
 	if err == nil {
 		t.Fatal("expected error when oauth2.env path is a directory")
+	}
+}
+
+func TestResolveHonoursKeycloakHostOverride(t *testing.T) {
+	t.Parallel()
+	a, _ := Parse("a")
+	got, err := Resolve(a, "", envFrom(map[string]string{
+		"CANTON_LOCALNET_KEYCLOAK_HOST": "keycloak.example.com",
+	}))
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got.KeycloakHostBase != "http://keycloak.example.com:8082" {
+		t.Errorf("KeycloakHostBase: got %q, want http://keycloak.example.com:8082", got.KeycloakHostBase)
+	}
+	if got.Host != "localhost" {
+		t.Errorf("Host should remain localhost when only KEYCLOAK_HOST is overridden, got %q", got.Host)
+	}
+}
+
+func TestResolveHonoursPerSlotAudienceOverride(t *testing.T) {
+	t.Parallel()
+	a, _ := Parse("a")
+	got, err := Resolve(a, "", envFrom(map[string]string{
+		"CANTON_LOCALNET_AUDIENCE":             "https://global.audience",
+		"CANTON_LOCALNET_A_VALIDATOR_1_AUDIENCE": "https://slot.audience",
+	}))
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got.Audience != "https://slot.audience" {
+		t.Errorf("Audience: got %q, want per-slot override https://slot.audience", got.Audience)
+	}
+}
+
+func TestResolveHonoursPerSlotScopeOverride(t *testing.T) {
+	t.Parallel()
+	a, _ := Parse("a")
+	got, err := Resolve(a, "", envFrom(map[string]string{
+		"CANTON_LOCALNET_SCOPE":             "global-scope",
+		"CANTON_LOCALNET_A_VALIDATOR_1_SCOPE": "slot-scope",
+	}))
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got.Scope != "slot-scope" {
+		t.Errorf("Scope: got %q, want per-slot override slot-scope", got.Scope)
 	}
 }
 

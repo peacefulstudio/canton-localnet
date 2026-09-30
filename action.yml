@@ -1,0 +1,143 @@
+# Copyright 2026 Peaceful Studio OÜ
+# SPDX-License-Identifier: Apache-2.0
+
+name: canton-localnet
+description: >-
+  Boots the Canton LocalNet compose stack (pre-boot cleanup, up with one
+  retry, wait-ready), then exports a resolved endpoint and credential
+  snapshot for the enabled slots as masked `CANTON_LOCALNET_*` job
+  environment variables. Needs no checkout of this repository. Pair with
+  `peacefulstudio/canton-localnet/teardown` called with `if: always()`; see
+  docs/public/github-action.md for the full consumer contract.
+author: Peaceful Studio OÜ
+
+inputs:
+  validators:
+    description: >-
+      Space- or comma-separated validator slots to bring up, from a, b, c,
+      d (sv-validator-1 is always on and cannot be listed here).
+    default: 'a'
+  pqs:
+    description: Enable the Participant Query Store module and export each enabled slot's PQS Postgres connection details.
+    default: 'false'
+  observability:
+    description: Enable the observability stack (Grafana/otel).
+    default: 'false'
+  multi-sync:
+    description: Enable the multi-synchronizer profile and wait for the app-synchronizer to connect.
+    default: 'false'
+  dialect:
+    description: >-
+      Exported variable dialect. Only 'native' (CANTON_LOCALNET_*) ships in
+      this release of the action; 'devkit' is not yet supported and fails
+      the step rather than exporting a wrong or partial contract.
+    default: 'native'
+  roles:
+    description: >-
+      Devkit-dialect role mapping (e.g. "a=app-provider,b=app-user"). Only
+      meaningful with dialect: devkit, which is not yet supported — leave
+      this unset.
+    default: ''
+  jwt:
+    description: >-
+      Mint a bearer token per enabled slot and export it plus the live
+      participant id. Off by default, in which case the step makes no
+      token-minting network call at all; the token URL, client id and
+      client secret are exported either way.
+    default: 'false'
+  timeout:
+    description: >-
+      Total deadline shared by pre-boot cleanup, up (with its one retry)
+      and wait-ready together — not a per-slot timeout.
+    default: '15m'
+  cli:
+    description: >-
+      How to obtain the canton-localnet binary. 'source' (default) builds
+      it with `go build` from the action's own checkout (github.action_path;
+      measured ~9s with a warm Go module cache). 'release' downloads the
+      release asset matching this action's pinned ref and verifies it
+      against that release's checksums.txt; it is valid only when the
+      action's own `uses:` is pinned to a literal release tag, not its
+      commit SHA (e.g. `uses: peacefulstudio/canton-localnet@v0.8.4-1`) and
+      fails closed — never silently — on a non-tag ref, a missing asset, a
+      download error or a checksum mismatch.
+    default: 'source'
+  config:
+    description: >-
+      Path (relative to the caller's workspace) to a canton-localnet.yaml
+      to use verbatim. When unset, the action generates one from
+      validators/pqs/observability/multi-sync.
+    default: ''
+
+outputs:
+  cli-path:
+    description: Absolute path to the resolved canton-localnet binary, for a later step that wants to call it directly.
+    value: ${{ steps.boot.outputs.cli-path }}
+  profile:
+    description: The canonical name of the primary exported slot (the first entry of 'validators'; also CANTON_LOCALNET_PROFILE in $GITHUB_ENV).
+    value: ${{ steps.boot.outputs.profile }}
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Go
+      if: inputs.cli == 'source'
+      uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+      with:
+        go-version-file: ${{ github.action_path }}/cli/go.mod
+        # cache: false, deliberately. cache-dependency-path can't safely
+        # point at the action's own cli/go.sum: on a local `uses: ./`
+        # invocation github.action_path resolves to "<workspace>/.", and
+        # joining that with "/cli/go.sum" is an invalid glob pattern to
+        # @actions/glob ("relative pathing '.' and '..' is not allowed").
+        # Falling back to setup-go's own default (a workspace-root go.sum)
+        # is wrong too: a non-Go consumer's workspace has no go.sum at all.
+        cache: false
+
+    - name: Resolve the canton-localnet CLI
+      id: resolve-cli
+      shell: bash
+      env:
+        CLI_MODE: ${{ inputs.cli }}
+        ACTION_PATH: ${{ github.action_path }}
+        ACTION_REF: ${{ github.action_ref }}
+      run: bash "${{ github.action_path }}/action/resolve-cli.sh"
+
+    - name: Boot LocalNet and export its endpoint/credential snapshot
+      id: boot
+      shell: bash
+      env:
+        CLI_PATH: ${{ steps.resolve-cli.outputs.cli-path }}
+        ACTION_PATH: ${{ github.action_path }}
+        RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        VALIDATORS: ${{ inputs.validators }}
+        PQS: ${{ inputs.pqs }}
+        OBSERVABILITY: ${{ inputs.observability }}
+        MULTI_SYNC: ${{ inputs.multi-sync }}
+        DIALECT: ${{ inputs.dialect }}
+        ROLES: ${{ inputs.roles }}
+        JWT: ${{ inputs.jwt }}
+        TIMEOUT: ${{ inputs.timeout }}
+        CONFIG_INPUT: ${{ inputs.config }}
+      run: bash "${{ github.action_path }}/action/boot.sh"
+
+    - name: Collect diagnostics (boot failed)
+      if: failure()
+      shell: bash
+      run: bash "${{ github.action_path }}/action/diagnose.sh"
+
+    - name: Upload diagnostics (boot failed)
+      if: failure()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: canton-localnet-diagnostics-${{ github.job }}
+        path: ${{ runner.temp }}/canton-localnet/diagnostics
+        if-no-files-found: warn
+        retention-days: 7
+
+    - name: Tear down (boot failed; best-effort — the strict retry is calling .../teardown with if-always())
+      if: failure()
+      shell: bash
+      env:
+        STRICT: 'false'
+      run: bash "${{ github.action_path }}/action/down.sh"

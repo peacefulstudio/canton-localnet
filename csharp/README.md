@@ -11,12 +11,22 @@ xUnit fixtures for Canton LocalNet integration tests. Sub-modules:
 
 - `EndpointDiscovery` — env vars to URLs (JSON Ledger API, Keycloak token endpoint).
 - `OAuth2TokenProvider` — `client_credentials` grant with in-memory cache + refresh.
-- `JsonLedgerAdminClient` — thin `HttpClient` wrapper. Currently surfaces `GET /v2/parties/participant-id`.
-- `DarUploader` — `POST /v2/packages` for one DAR or many; idempotent: a
-  `KNOWN_PACKAGE_VERSION` 400 response is treated as success.
+- `JsonLedgerAdminClient` — thin `HttpClient` wrapper: `GET /v2/parties/participant-id`,
+  `GET /v2/state/connected-synchronizers` (participant-wide when no party is
+  given), alias lookups for the global and app-provider synchronizers, and
+  `GET /v2/packages/{package-id}` to check whether a package is present.
+- `DarUploader` — `POST /v2/packages` for one DAR or many, once per
+  connected synchronizer (`?synchronizerId=`), so vetting keeps working on
+  both single-sync and multi-sync stacks; idempotent: a
+  `KNOWN_PACKAGE_VERSION` 400 response is treated as success. Pass
+  `expectedMainPackageId` to have a `KNOWN_PACKAGE_VERSION` result read back
+  (`GET /v2/packages/{package-id}`) and throw if that package is not really
+  present.
 - `PartyAllocator` — `POST /v2/parties` with hint
   `<consumer-prefix>-<instance-suffix>` where the suffix is a 12-hex
-  cryptographic random per fixture instance.
+  cryptographic random per fixture instance. Allocates on the global
+  synchronizer by default, resolved by alias, unless a `synchronizerId` is
+  passed explicitly.
 - `UserBuilder` — `POST /v2/users` followed by `POST /v2/users/{id}/rights`
   to grant `CanActAs` / `CanReadAs`, `PATCH /v2/users/{id}/rights` to revoke
   them again, and `GrantRightsLeaseAsync` for a grant that hands the rights

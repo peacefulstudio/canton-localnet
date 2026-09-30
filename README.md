@@ -35,7 +35,7 @@ topology.
 
 ## Quickstart
 
-Boot a complete Canton LocalNet (Splice 0.8.3) on your machine:
+Boot a complete Canton LocalNet (Splice 0.8.4) on your machine:
 
 ```bash
 make up           # docker compose up -d, OAuth2 mode by default
@@ -57,6 +57,20 @@ Slot ports follow the 5-digit two-digit-prefix scheme (`<prefix><suffix>`):
 each slot's participant ledger / admin / JSON / Splice validator admin ports
 share the same two-digit prefix as the JSON Ledger API port shown above.
 
+Every host-published port (participant ledger / admin / JSON, Splice
+validator admin, Postgres `5432`, Keycloak `8082`, swagger-ui, otel and
+Grafana `3030`) binds to `HOST_BIND_IP`, which defaults to `127.0.0.1`. Set
+`HOST_BIND_IP=0.0.0.0` (e.g. on the shared Hetzner LocalNet VM, whose cloud
+firewall is SSH-only) to publish on all interfaces:
+
+```bash
+make up HOST_BIND_IP=0.0.0.0
+```
+
+On Docker server versions below 28.0.0, a port published to `127.0.0.1` can
+still be reachable from other hosts on the same network segment — see
+`make check-docker-version` (`STRICT=true` turns that into a hard failure).
+
 Optional layers via Make flags (shortcuts — the canonical config layer is
 `canton-localnet.yaml`, see **Configuration** below):
 
@@ -77,24 +91,18 @@ For consumers that prefer running LocalNet on a shared EC2 instance, the
 `vm` subcommand wraps the `terraform/` stack and an ssh tunnel:
 
 ```bash
-canton-localnet vm provision        # terraform apply, prints public IP + ssh command
-canton-localnet vm tunnel           # ssh -L 11901, 7575, 8082 to the VM (Ctrl-C to close)
+canton-localnet vm provision        # terraform apply, prints instance ID + public IP
+canton-localnet vm tunnel           # ssh -L 10975–14975, 11901, 7575, 8082 to the VM (Ctrl-C to close)
 canton-localnet vm destroy --yes    # terraform destroy (interactive prompt without --yes)
 ```
 
-The tunnel forwards the same port set the legacy `tunnel.sh` scripts in
-downstream consumers and `terraform-provider-canton` open: `11901` (a-validator-1
-participant gRPC ledger API), `7575` (legacy in-container Splice JSON
-Ledger API), and `8082` (Keycloak). `vm provision` is idempotent —
-re-running on an already-applied state is a no-op refresh.
-
-> The 5-digit port renumbering applies to the host-exposed
-> port set on the local stack (`10975`/`11975`/… for JSON Ledger API).
-> The `vm tunnel` default port set is unchanged for backwards
-> compatibility with the legacy tunnel scripts and is documented as
-> such in [`cli/internal/tunnel`](cli/internal/tunnel/tunnel.go). If
-> you connect to JSON Ledger API on the VM, forward the corresponding
-> host port (`11975` for `a-validator-1`, etc.) explicitly.
+The tunnel forwards the host-side JSON Ledger API port of every slot
+(`10975`–`14975`), plus the port set the legacy `tunnel.sh` scripts in
+downstream consumers and `terraform-provider-canton` open: `11901`
+(a-validator-1 participant gRPC ledger API), `7575` (legacy in-container
+Splice JSON Ledger API), and `8082` (Keycloak). The set is documented in
+[`cli/internal/tunnel`](cli/internal/tunnel/tunnel.go). `vm provision` is
+idempotent — re-running on an already-applied state is a no-op refresh.
 
 Prerequisites: Docker ≥ 27, Docker Compose ≥ 2.27. The compose stack is
 vendored into `compose/modules/` from `hyperledger-labs/splice` at the SHA
@@ -384,7 +392,7 @@ curl -s -X GET http://localhost:8082/admin/realms/BValidator1/users \
 ## Project stewardship
 
 `canton-localnet` is currently developed and maintained by **Peaceful Studio
-OÜ** (Estonia, VAT EE102232996). The project is licensed under Apache-2.0
+OÜ** (Estonia). The project is licensed under Apache-2.0
 with the explicit intent of community ownership: if and when adoption
 warrants neutral governance, Peaceful Studio commits to transferring this
 repository to a community-led organisation under the same license terms.

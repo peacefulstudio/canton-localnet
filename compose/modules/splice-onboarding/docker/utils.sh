@@ -37,6 +37,56 @@ get_admin_token() {
     -d 'scope=openid' | jq -r .access_token
 }
 
+# Idempotently adds a realm's clients and their service-account users
+# whose id starts with clientPrefix, when they are missing.
+#
+# `keycloak --import-realm` only imports a realm the first time its
+# Postgres volume is created; a realm that already exists (as it does on
+# every subsequent boot against the shared VM's persisted volume) is left
+# untouched, so file-based additions to an existing realm's export JSON
+# never reach it. The Keycloak Admin
+# REST API's partialImport endpoint is the supported way to add resources
+# to an already-imported realm; `ifResourceExists: SKIP` makes repeat
+# calls a no-op once a client and its user exist.
+migrate_realm_clients() {
+  local masterTokenUrl=$1
+  local adminApiUrl=$2
+  local realm=$3
+  local clientPrefix=$4
+  local realmExportFile=$5
+  local usersExportFile=$6
+
+  echo "migrate_realm_clients $realm $clientPrefix" >&2
+
+  # admin/admin is Keycloak's own LocalNet demo default
+  # (compose/modules/keycloak/env/keycloak.env's KEYCLOAK_ADMIN /
+  # KEYCLOAK_ADMIN_PASSWORD) — a public, well-known credential valid only
+  # against an ephemeral local Keycloak, never a production deployment.
+  local adminToken
+  adminToken=$(curl -f -s -S "${masterTokenUrl}" \
+    -H 'Content-Type: application/x-www-form-urlencoded' \
+    -d 'client_id=admin-cli' \
+    -d 'username=admin' \
+    -d 'password=admin' \
+    -d 'grant_type=password' | jq -r .access_token)
+
+  local payload
+  payload=$(jq -n \
+    --slurpfile realmDoc "$realmExportFile" \
+    --slurpfile usersDoc "$usersExportFile" \
+    --arg prefix "$clientPrefix" \
+    '{
+      ifResourceExists: "SKIP",
+      clients: [$realmDoc[0].clients[] | select(.clientId | startswith($prefix))],
+      users: [$usersDoc[0].users[] | select((.serviceAccountClientId // "") | startswith($prefix))]
+    }')
+
+  curl -f -s -S -X POST "${adminApiUrl}/admin/realms/${realm}/partialImport" \
+    -H "Authorization: Bearer ${adminToken}" \
+    -H 'Content-Type: application/json' \
+    -d "${payload}" > /dev/null
+}
+
 get_user_token() {
   local user=$1
   local password=$2

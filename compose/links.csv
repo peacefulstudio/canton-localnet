@@ -1,2 +1,2 @@
 #REPO,COMMIT_SHA,SOURCE_PATH,DEST_PATH
-https://github.com/hyperledger-labs/splice.git,8460154135f39019b8bb370c9c1321ff13c9bb10,cluster/compose/localnet,modules
+https://github.com/hyperledger-labs/splice.git,fa6b029f2563423f3f612302cfdc84986366479d,cluster/compose/localnet,modules

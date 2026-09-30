@@ -34,19 +34,22 @@ func TestFetchParticipantIDSendsBearer(t *testing.T) {
 	}
 }
 
-func TestFetchParticipantIDSurfaces401(t *testing.T) {
+func TestFetchParticipantIDSurfacesStatusAndEndpointNotBody(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte("unauthorized"))
+		_, _ = w.Write([]byte("unauthorized-response-marker"))
 	}))
 	defer srv.Close()
 	_, err := FetchParticipantID(context.Background(), Endpoints{JSONLedgerAPIURL: srv.URL}, "tok", srv.Client())
 	if err == nil {
 		t.Fatal("expected error on 401")
 	}
-	if !strings.Contains(err.Error(), "401") {
-		t.Errorf("expected 401 in error, got %q", err.Error())
+	if !strings.Contains(err.Error(), "401") || !strings.Contains(err.Error(), srv.URL) {
+		t.Errorf("expected error to surface status + endpoint, got %q", err.Error())
+	}
+	if strings.Contains(err.Error(), "unauthorized-response-marker") {
+		t.Errorf("error must not echo the response body, got %q", err.Error())
 	}
 }
 

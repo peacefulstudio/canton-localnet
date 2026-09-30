@@ -52,7 +52,7 @@ func newRightsListCommand() *cobra.Command {
 		Long: "Splits the rights the slot's validator user holds into the ones a prune would preserve and the ones it would revoke. Preserved rights are listed individually; revocable ones are summarised by right kind and party family, so a user carrying hundreds of leaked grants reads as a handful of counted lines. Pass --full to list every revocable right individually instead, which is how the parties behind a leak get named.\n\n" +
 			"Reads only. Run it before 'rights prune' to see what a prune would do.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			target, err := resolveRightsTarget(cmd, slotFlag, preserveParty, rights.MaxRevoke)
+			target, err := resolveRightsTarget(cmd, slotFlag, preserveParty, rights.MaxRevoke, "", false)
 			if err != nil {
 				return err
 			}
@@ -74,6 +74,8 @@ func newRightsPruneCommand(deps rightsDeps) *cobra.Command {
 	var (
 		slotFlag      string
 		preserveParty string
+		userFlag      string
+		preserveBase  bool
 		assumeYes     bool
 		dryRun        bool
 		full          bool
@@ -83,13 +85,14 @@ func newRightsPruneCommand(deps rightsDeps) *cobra.Command {
 		Use:   "prune",
 		Short: "Revoke the accumulated ledger rights on a slot's validator user",
 		Long: "Revokes the rights that integration suites leaked onto the slot's validator user, freeing room under the participant's 1000-right cap.\n\n" +
-			"DESTRUCTIVE. It preserves exactly two things, by name: the ParticipantAdmin right, and every CanActAs right on the validator's own party. EVERYTHING else is revoked — including every other right kind (CanReadAs, CanReadAsAnyParty, CanExecuteAs*, IdentityProviderAdmin), even on the validator's own party. Point it only at a user whose non-admin rights are all disposable.\n\n" +
+			"DESTRUCTIVE. By default it preserves exactly two things, by name: the ParticipantAdmin right, and every CanActAs right on the validator's own party. EVERYTHING else is revoked — including every other right kind (CanReadAs, CanReadAsAnyParty, CanExecuteAs*, IdentityProviderAdmin), even on the validator's own party. Pass --preserve-base to also preserve CanReadAs on that same party — the bundle a shared CI user is onboarded with — so pruning a CI user restores it to exactly its onboarded base rights instead of stripping CanReadAs too. Point it only at a user whose non-base rights are all disposable.\n\n" +
+			"--user targets an arbitrary ledger user id instead of the slot's own validator user — the shared VM's per-CI-slot users, for example. The token is still minted with the slot's validator credentials, which is a ParticipantAdmin able to manage any user's rights on that participant.\n\n" +
 			"The preserved party is read from the participant, as the target user's primary party, so it is right for the slot without being guessed. Override it with --preserve-party when the participant reports none; the named party must still be one the user holds an act-as right on.\n\n" +
 			"Two refusals stop a prune aimed at the wrong user, because both marks are on every validator user and on nothing else: no ParticipantAdmin right, and no CanActAs right on the preserved party. Neither can be waived when there is anything to revoke; a user with nothing to revoke is reported as such, with a warning when the preserved party looks wrong. A user this tool has already stripped of its own act-as right fails the second refusal; the repair for that is to re-grant the right, not to run this against the state it produced.\n\n" +
 			"Nothing changes without consent: by default the plan is printed and no write is made. Pass --yes to revoke, or answer the prompt when stdin is a terminal. The rights are re-read live immediately before the revoke, and the revoke proceeds only if that live set is contained in the plan that was consented to — if new rights appeared, it aborts and asks you to re-run rather than revoke more than was agreed.\n\n" +
 			"Exit status. 2 means the sweep was not authorised: the prompt was declined, or --yes was withheld from a non-interactive run. 0 means there was nothing to revoke, the revoke succeeded, or --dry-run planned a run that passes every check. 1 is everything else — a refusal, a live set that drifted past what was consented to, a failed call, or an invocation rejected before any ledger call. Only 2 guarantees nothing was changed: a partial revoke and a failed read-back both exit 1 with rights already gone, so on 1 re-run 'rights list' before assuming the state.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			target, err := resolveRightsTarget(cmd, slotFlag, preserveParty, maxRevoke)
+			target, err := resolveRightsTarget(cmd, slotFlag, preserveParty, maxRevoke, userFlag, preserveBase)
 			if err != nil {
 				return err
 			}
@@ -119,6 +122,8 @@ func newRightsPruneCommand(deps rightsDeps) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&slotFlag, "slot", "", "Slot whose validator user to prune (sv|a|b|c|d, or canonical sv-validator-1 .. d-validator-1)")
 	cmd.Flags().StringVar(&preserveParty, "preserve-party", "", "Party whose act-as rights to preserve, instead of the one the participant reports (must contain '::'; the user must hold an act-as right on it)")
+	cmd.Flags().StringVar(&userFlag, "user", "", "Ledger user id to prune, instead of the slot's own validator user (e.g. one of the shared VM's per-CI-slot users)")
+	cmd.Flags().BoolVar(&preserveBase, "preserve-base", false, "Also preserve CanReadAs on the preserved party, alongside ParticipantAdmin and CanActAs — the base rights bundle a CI user is onboarded with")
 	cmd.Flags().BoolVar(&assumeYes, "yes", false, "Revoke without asking; required to make any change from a non-interactive shell")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the plan, check it, and exit 0 without writing")
 	cmd.Flags().BoolVar(&full, "full", false, "List every right to be revoked individually instead of summarising by party family")
@@ -135,13 +140,16 @@ type rightsTarget struct {
 	preserveSource string
 }
 
-func resolveRightsTarget(cmd *cobra.Command, slotFlag, preserveParty string, maxRevoke int) (rightsTarget, error) {
+func resolveRightsTarget(cmd *cobra.Command, slotFlag, preserveParty string, maxRevoke int, userOverride string, preserveBase bool) (rightsTarget, error) {
 	ep, err := resolveSlotEndpoints(cmd, slotFlag)
 	if err != nil {
 		return rightsTarget{}, err
 	}
+	if userOverride != "" {
+		ep.ValidatorUserID = userOverride
+	}
 	if ep.ValidatorUserID == "" {
-		return rightsTarget{}, fmt.Errorf("rights: %s: validator user id not resolved — set CANTON_LOCALNET_%s_USER_ID", ep.Slot.Canonical, ep.Slot.EnvPrefix())
+		return rightsTarget{}, fmt.Errorf("rights: %s: validator user id not resolved — set CANTON_LOCALNET_%s_USER_ID, or pass --user", ep.Slot.Canonical, ep.Slot.EnvPrefix())
 	}
 	httpClient := &http.Client{Timeout: 30 * time.Second}
 	token, err := slot.MintToken(cmd.Context(), ep, httpClient)
@@ -156,7 +164,7 @@ func resolveRightsTarget(cmd *cobra.Command, slotFlag, preserveParty string, max
 	if err != nil {
 		return rightsTarget{}, err
 	}
-	policy, err := rights.NewPolicy(prefix, maxRevoke)
+	policy, err := rights.NewPolicy(prefix, maxRevoke, preserveBase)
 	if err != nil {
 		return rightsTarget{}, err
 	}
@@ -240,11 +248,15 @@ func (t rightsTarget) revoke(cmd *cobra.Command, consented rights.Plan) error {
 
 func (t rightsTarget) writePlan(cmd *cobra.Command, plan rights.Plan, full bool) error {
 	out := cmd.OutOrStdout()
+	preserving := rights.AdminKind + ", and " + rights.ActAsKind + " on " + t.policy.PartyPrefix + "*"
+	if t.policy.PreserveReadAs {
+		preserving += ", and " + rights.ReadAsKind + " on " + t.policy.PartyPrefix + "*"
+	}
 	for _, line := range [][2]string{
 		{"slot", t.endpoints.Slot.Canonical},
 		{"json_api", t.endpoints.JSONLedgerAPIURL},
 		{"user", t.endpoints.ValidatorUserID},
-		{"preserving", rights.AdminKind + ", and " + rights.ActAsKind + " on " + t.policy.PartyPrefix + "*"},
+		{"preserving", preserving},
 		{"preserve source", t.preserveSource},
 		{"total rights", fmt.Sprint(len(plan.Keep) + len(plan.Revoke))},
 		{"preserved", fmt.Sprint(len(plan.Keep))},

@@ -15,7 +15,7 @@ func TestOAuth2SlotsDefaultTheValidatorUserIDToTheComposeEnvFile(t *testing.T) {
 			continue
 		}
 		path := filepath.Join(root, "compose", "modules", "keycloak", "env", s.Canonical, "on", "oauth2.env")
-		composeEnv, err := readEnvFile(path)
+		composeEnv, err := ReadEnvFile(path)
 		if err != nil {
 			t.Fatalf("reading %s: %v", path, err)
 		}
@@ -61,5 +61,75 @@ func TestResolvePrefersTheUserIDEnvOverride(t *testing.T) {
 	}
 	if ep.ValidatorUserID != "override-user" {
 		t.Errorf("validator user id = %q, want the env override", ep.ValidatorUserID)
+	}
+}
+
+func TestResolveHonoursTheValidatorUserIDEnvOverrideForOAuth2Slots(t *testing.T) {
+	s, err := Parse("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lookup := func(key string) (string, bool) {
+		if key == "CANTON_LOCALNET_A_VALIDATOR_1_VALIDATOR_USER_ID" {
+			return "fixture-configured-user", true
+		}
+		return "", false
+	}
+
+	ep, err := Resolve(s, "", lookup)
+
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if ep.ValidatorUserID != "fixture-configured-user" {
+		t.Errorf("validator user id = %q, want the _VALIDATOR_USER_ID env override — this is the exact variable name `canton-localnet env` exports, and the C# fixture (EndpointDiscovery.cs) reads it back under that name", ep.ValidatorUserID)
+	}
+}
+
+func TestResolveValidatorUserIDEnvOverrideBeatsTheLegacyUserIDOverride(t *testing.T) {
+	s, err := Parse("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lookup := func(key string) (string, bool) {
+		switch key {
+		case "CANTON_LOCALNET_A_VALIDATOR_1_VALIDATOR_USER_ID":
+			return "new-name-wins", true
+		case "CANTON_LOCALNET_A_VALIDATOR_1_USER_ID":
+			return "legacy-name-loses", true
+		default:
+			return "", false
+		}
+	}
+
+	ep, err := Resolve(s, "", lookup)
+
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if ep.ValidatorUserID != "new-name-wins" {
+		t.Errorf("validator user id = %q, want %q", ep.ValidatorUserID, "new-name-wins")
+	}
+}
+
+func TestResolveHonoursTheValidatorUserIDEnvOverrideForTheHS256SVSlot(t *testing.T) {
+	s, err := Parse("sv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lookup := func(key string) (string, bool) {
+		if key == "CANTON_LOCALNET_SV_VALIDATOR_1_VALIDATOR_USER_ID" {
+			return "sv-fixture-user", true
+		}
+		return "", false
+	}
+
+	ep, err := Resolve(s, "", lookup)
+
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if ep.ValidatorUserID != "sv-fixture-user" {
+		t.Errorf("validator user id = %q, want the _VALIDATOR_USER_ID env override, not the HS256 subject fallback", ep.ValidatorUserID)
 	}
 }

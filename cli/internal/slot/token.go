@@ -75,7 +75,7 @@ func mintOAuth2(ctx context.Context, ep Endpoints, client *http.Client) (string,
 		return "", fmt.Errorf("slot: read token response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("slot: token endpoint %s returned HTTP %d: %s", ep.TokenURLHost, resp.StatusCode, strings.TrimSpace(string(body)))
+		return "", fmt.Errorf("slot: token endpoint %s returned HTTP %d", ep.TokenURLHost, resp.StatusCode)
 	}
 	var tr struct {
 		AccessToken string `json:"access_token"`

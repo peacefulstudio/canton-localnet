@@ -163,6 +163,24 @@ The CLI binary embeds the version via `-ldflags "-X main.version=<version>"`;
 
 ## Hardening notes
 
+- The public twin runs the `public-gate` check (leak-check +
+  no-AI-workflows audit, from the promoted
+  `.github/workflows/public-gate.yaml`; the job id is `gate`, but the
+  job carries `name: public-gate`, so the check-run context is
+  `public-gate`) on every PR, including the promote PR from step 6 —
+  the twin's own backstop against anything the promotion step's
+  leak-scan missed. As of this writing the twin's `dev` branch
+  protection does not yet mark it required
+  (`required_status_checks.contexts` is empty); until an owner runs
+  the call below, the check runs and reports but does not block a
+  merge on its own:
+
+  ```bash
+  gh api --method PATCH repos/peacefulstudio/canton-localnet/branches/dev/protection/required_status_checks \
+    --input - <<'EOF'
+  { "strict": true, "checks": [ { "context": "public-gate" } ] }
+  EOF
+  ```
 - The workflow trigger is `push` of `v*` tags only — there is no
   `pull_request` path, so the usual fork-PR token-guard rule does
   not apply here.

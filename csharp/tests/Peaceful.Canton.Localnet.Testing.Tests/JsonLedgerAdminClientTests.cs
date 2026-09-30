@@ -176,4 +176,113 @@ public class JsonLedgerAdminClientTests
         var ex = await Assert.ThrowsAsync<JsonLedgerApiException>(() => client.GetConnectedSynchronizersAsync("alice::122a"));
         Assert.Contains("connectedSynchronizers", ex.Message);
     }
+
+    [Fact]
+    public async Task GetConnectedSynchronizersAsync_omits_party_query_segment_when_none_supplied()
+    {
+        var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"connectedSynchronizers":[{"synchronizerAlias":"global","synchronizerId":"global::122a"}]}""",
+                Encoding.UTF8, "application/json"),
+        }));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var client = new JsonLedgerAdminClient(http, StaticTokenProvider("tok"));
+
+        var result = await client.GetConnectedSynchronizersAsync();
+
+        Assert.Single(result);
+        var recorded = Assert.Single(handler.Requests);
+        Assert.Equal(new Uri(JsonApiBase, "v2/state/connected-synchronizers"), recorded.Uri);
+    }
+
+    [Fact]
+    public async Task GetGlobalSynchronizerIdAsync_returns_id_for_global_alias()
+    {
+        var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"connectedSynchronizers":[{"synchronizerAlias":"global","synchronizerId":"global::122a"},{"synchronizerAlias":"app-synchronizer","synchronizerId":"app-synchronizer::122b"}]}""",
+                Encoding.UTF8, "application/json"),
+        }));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var client = new JsonLedgerAdminClient(http, StaticTokenProvider("tok"));
+
+        var id = await client.GetGlobalSynchronizerIdAsync();
+
+        Assert.Equal("global::122a", id);
+        var recorded = Assert.Single(handler.Requests);
+        Assert.Equal(new Uri(JsonApiBase, "v2/state/connected-synchronizers"), recorded.Uri);
+    }
+
+    [Fact]
+    public async Task GetGlobalSynchronizerIdAsync_throws_when_no_synchronizer_connected()
+    {
+        var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"connectedSynchronizers":[]}""", Encoding.UTF8, "application/json"),
+        }));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var client = new JsonLedgerAdminClient(http, StaticTokenProvider("tok"));
+
+        var ex = await Assert.ThrowsAsync<JsonLedgerApiException>(() => client.GetGlobalSynchronizerIdAsync());
+        Assert.Equal(HttpStatusCode.NotFound, ex.StatusCode);
+        Assert.Contains("global", ex.Message);
+    }
+
+    [Fact]
+    public async Task PackageExistsAsync_returns_true_when_get_succeeds()
+    {
+        var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent([1, 2, 3]),
+        }));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var client = new JsonLedgerAdminClient(http, StaticTokenProvider("tok"));
+
+        var exists = await client.PackageExistsAsync("pkg-id-123");
+
+        Assert.True(exists);
+        var recorded = Assert.Single(handler.Requests);
+        Assert.Equal(HttpMethod.Get, recorded.Method);
+        Assert.Equal(new Uri(JsonApiBase, "v2/packages/pkg-id-123"), recorded.Uri);
+        Assert.Equal("Bearer tok", recorded.Headers["Authorization"]);
+    }
+
+    [Fact]
+    public async Task PackageExistsAsync_returns_false_on_404()
+    {
+        var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var client = new JsonLedgerAdminClient(http, StaticTokenProvider("tok"));
+
+        var exists = await client.PackageExistsAsync("pkg-id-missing");
+
+        Assert.False(exists);
+    }
+
+    [Fact]
+    public async Task PackageExistsAsync_throws_on_unexpected_status()
+    {
+        var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)
+        {
+            Content = new StringContent("boom", Encoding.UTF8, "text/plain"),
+        }));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var client = new JsonLedgerAdminClient(http, StaticTokenProvider("tok"));
+
+        var ex = await Assert.ThrowsAsync<JsonLedgerApiException>(() => client.PackageExistsAsync("pkg-id-123"));
+        Assert.Equal(HttpStatusCode.InternalServerError, ex.StatusCode);
+        Assert.Contains("boom", ex.ResponseBody);
+    }
+
+    [Fact]
+    public async Task PackageExistsAsync_rejects_empty_packageId()
+    {
+        using var http = new HttpClient(new RecordingHandler((_, _) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)))) { BaseAddress = JsonApiBase };
+        var client = new JsonLedgerAdminClient(http, StaticTokenProvider("tok"));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => client.PackageExistsAsync(""));
+    }
 }

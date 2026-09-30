@@ -1,0 +1,137 @@
+<!-- Copyright 2026 Peaceful Studio OÜ -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
+# The canton-localnet GitHub Action
+
+Two composite actions boot and tear down the LocalNet compose stack in a
+GitHub Actions job, without a checkout of this repository and without any
+App token:
+
+- `peacefulstudio/canton-localnet@<tag>` — boot: pre-boot cleanup, `up`
+  with one retry, `wait-ready`, then a single
+  `canton-localnet env --format github` call that exports every enabled
+  slot's endpoints and credential contract into `$GITHUB_ENV`, masked.
+- `peacefulstudio/canton-localnet/teardown@<tag>` — teardown: `down --volumes`.
+  Call it with `if: always()` right after your test steps. On failure it
+  uploads bounded diagnostics and **exits non-zero** — unlike the
+  `down || echo ::error::` pattern some lanes used before this action,
+  which always read green even when teardown actually failed.
+
+Pin the action to a release tag or its commit SHA (never a moving ref);
+see [`RELEASE.md`](../../RELEASE.md) for this repository's version scheme.
+Note the one exception: `cli: release` resolves the binary from
+`github.action_ref`, which is only ever a literal tag when the action's
+own `uses:` is pinned to that tag — a SHA-pinned `uses:` resolves
+`action_ref` to the SHA, not the tag it points at, so `cli: release`
+fails closed on a SHA pin. If you SHA-pin (the safer default), use
+`cli: source` (the default); reserve `cli: release` for a tag-pinned
+`uses:`.
+
+Run one LocalNet per Docker daemon. The stack uses fixed container names,
+a fixed `localnet` network, and fixed host ports, so two concurrent
+LocalNets on the same daemon collide. The action's own pre-boot cleanup
+only removes the `localnet` compose project on the daemon it runs
+against — it does not, and cannot, guard against a second, independent
+job racing it on the same self-hosted runner.
+
+## Minimal consumer example
+
+```yaml
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Boot LocalNet
+        id: localnet
+        uses: peacefulstudio/canton-localnet@<sha> # v<ver>
+        with:
+          validators: a
+
+      - name: Run your tests against the exported endpoint/credentials
+        run: your-test-command
+        # CANTON_LOCALNET_A_VALIDATOR_1_JSON_API_URL, _TOKEN_URL, _CLIENT_ID
+        # and _CLIENT_SECRET (masked) are already in the job environment —
+        # read them from there, don't `echo` or otherwise print them.
+
+      - name: Tear down
+        if: always()
+        uses: peacefulstudio/canton-localnet/teardown@<sha> # v<ver>
+```
+
+**Never `echo`, `printenv`, or otherwise print an exported `_CLIENT_SECRET`,
+`_JWT` or `_PQS_CONNECTION_STRING` value in your own step.**
+GitHub Actions masks the literal value in the raw log once it has seen it
+via `::add-mask::`, but that masking does not follow the value into
+anything your own step captures and writes somewhere else — a file it
+uploads as an artifact, a step summary it composes by hand, or an
+in-process log line. Read the variable straight from the environment at
+the point you need it, and let your test tooling do the same.
+
+This action boots its own Keycloak with the fixed LocalNet demo client ids
+and secrets (`compose/modules/keycloak/env/<slot>/on/oauth2.env`) and does
+not reconfigure it to match a `CANTON_LOCALNET_<SLOT>_CLIENT_ID` or
+`CANTON_LOCALNET_<SLOT>_CLIENT_SECRET` override — those overrides are
+`canton-localnet env`'s own per-slot credential escape hatch for running it
+by hand against an externally managed LocalNet stack. If either is set in
+the job environment to a non-blank value that differs from the fixed demo
+value when this action runs, it fails closed before booting rather than
+exporting a client id or secret Keycloak would reject. A blank override, or
+one already equal to the fixed demo value — for example because a prior
+`uses:` of this action in the same job already exported it — is not an
+error.
+
+## Inputs
+
+| Input | Default | Meaning |
+|---|---|---|
+| `validators` | `a` | Space- or comma-separated slots to bring up, from `a`, `b`, `c`, `d`. `sv-validator-1` is always on and cannot be listed. |
+| `pqs` | `false` | Enable the Participant Query Store module; adds each enabled slot's PQS connection details to the export. Only `a` and `c` actually get a running PQS pipeline (`cli/internal/compose/compose.go`) — a `b` connection string points at a database no pipeline writes to, and the action warns if you combine `pqs: true` with a `b` slot. Slot `d` is rejected outright by the CLI. |
+| `observability` | `false` | Enable the observability stack (Grafana/otel). |
+| `multi-sync` | `false` | Enable the multi-synchronizer profile and wait for the app-synchronizer to connect. Requires `a`, `b` and `d` all present in `validators` — the app-synchronizer console script waits on all three — and the action fails closed if any are missing. A `config` file whose top-level `multiSync` is truthy also enables this wait, even when this input is left at its default. |
+| `dialect` | `native` | Exported variable dialect. Only `native` (`CANTON_LOCALNET_*`) ships today; `devkit` is not yet supported and the action fails the step rather than exporting a wrong or partial contract. |
+| `roles` | *(empty)* | Devkit-dialect role mapping. Only meaningful with `dialect: devkit`, which is not yet supported — leave unset. |
+| `jwt` | `false` | Mint a bearer token per enabled slot and export it plus the live participant id. Off by default: no token-minting network call happens at all. The token URL, client id and client secret are exported either way. |
+| `timeout` | `15m` | One total deadline shared by pre-boot cleanup, `up` (with its one retry) and `wait-ready` together — not a per-slot timeout. |
+| `cli` | `source` | `source` builds the CLI with `go build` from the action's own checkout (~9s measured with a warm Go module cache). `release` downloads the release asset matching the action's pinned ref and verifies it against that release's `checksums.txt`; valid only when the action's own `uses:` is pinned to a literal release tag (not its commit SHA — `github.action_ref` resolves to whichever form the pin used), and it fails closed — never falls back silently — on a non-tag ref, a missing asset, a download error, or a checksum mismatch. |
+| `config` | *(empty)* | Path (relative to your workspace) to a `canton-localnet.yaml` to use verbatim, instead of the one generated from `validators`/`pqs`/`observability`/`multi-sync`. When set, also set `validators` (and `pqs`) to match what that file actually enables — `wait-ready` and the env export still key off `validators`, not off parsing your file. |
+
+## Outputs
+
+| Output | Meaning |
+|---|---|
+| `cli-path` | Absolute path to the resolved `canton-localnet` binary. |
+| `profile` | Canonical name of the primary exported slot (the first entry of `validators`; also `CANTON_LOCALNET_PROFILE` in `$GITHUB_ENV`). |
+
+Everything else — endpoints, ports, the credential contract, and (with
+`pqs: true`) PQS connection details — is exported only as `$GITHUB_ENV`
+variables, never as action outputs, because action outputs are visible in
+the job's API-readable metadata and several of these values are secrets.
+See [`integration-testing.md`](integration-testing.md) for the full
+per-slot variable contract `canton-localnet env` renders.
+
+## Credentials and their lifetime
+
+The action exports the OAuth2 credential contract (token URL, client id,
+client secret) for every enabled OAuth2 slot (`a`, `b`, `c`, `d`) — always,
+with no network call. `sv-validator-1` is booted and waited on like any
+other slot, but `canton-localnet env` is OAuth2-only in v1 and SV has no
+OAuth2 client, so the action exports no credential contract for it; mint
+an SV token directly with `canton-localnet auth token --slot sv` if your
+test needs one. `jwt: true` additionally mints a bearer token per enabled
+OAuth2 slot: it lives 300 seconds (Keycloak's configured
+`accessTokenLifespan`). A test run that outlives it should refresh via the
+credentials (a `client_credentials` grant against `_TOKEN_URL`) rather than
+assume a single minted token survives the whole run — every fixture and
+live test suite in this repository's own consumers already does this.
+
+## What the action does not do
+
+- It does not check out this repository — the runner already has the
+  pinned action's tree at `github.action_path`.
+- It never mints or exports a devkit-dialect variable, an admin-gRPC
+  endpoint, or a live `_PARTY` in this release.
+- It never writes a secret to `$GITHUB_OUTPUT`, an on-disk dotenv file, or
+  a diagnostics artifact. Diagnostics collection never reads back the
+  rendered env, `canton-localnet.yaml`, or a compose `oauth2.env` file.
