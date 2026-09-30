@@ -1,0 +1,529 @@
+# Copyright 2026 Peaceful Studio OÜ
+# SPDX-License-Identifier: Apache-2.0
+#
+# Self-test for the composite Action (/action.yml, /teardown/action.yml).
+# Runs on the same free ubuntu-latest runner as compose-integration.yaml
+# and integration-tests.yaml — this repo's own boot/teardown self-test
+# never needs a persistent self-hosted runner.
+#
+# T1 unit: shell-logic tests for action/*.sh with no docker daemon
+#   involved (plain bash, following scripts/gitpublic-paths.test.sh's own
+#   convention rather than adding a bats dependency), plus an in-process
+#   check that `env --format github` emits ::add-mask:: for a synthetic
+#   secret set through the documented per-slot override, with the raw
+#   value appearing nowhere else in that invocation's own stdout.
+# T2 boot: a real end-to-end boot via `uses: ./`, reading the exported
+#   env, an authenticated JSON API call, and a scoped-teardown probe.
+# T3 pinned-literal-contract: no `uses:` line in this action or this
+#   workflow takes an expression — the runner schema types a regular
+#   step's `uses:` as a plain non-empty string with no expression
+#   context, unlike `run:`, so an expression there is invalid, not
+#   merely unwise.
+# T4 masking-probe / masking-log-check: a real, log-level masking check.
+#   masking-probe does a plain, un-overridden real boot (validators a,c +
+#   pqs: true, so both slots have a real client secret and a real PQS
+#   password to check for — no synthetic secret is injected; a
+#   step-level env: override on the `uses: ./` step would itself leak
+#   into the runner's own step-header dump before boot.sh's masking ever
+#   runs, which is the false pass this replaced), then uploads and
+#   downloads its own diagnostics artifact and asserts none of those real
+#   secrets appear in it. masking-log-check then fetches masking-probe's
+#   own job log through the REST API in a later job, reads the same real
+#   secrets from the repo's own compose env files (never hardcoded here),
+#   and asserts each is masked (never raw, `***` where the CLI's own
+#   `::add-mask::` call replaces it): a regression that stops
+#   `::add-mask::` firing turns this job red.
+# T5 boot-failure-injection: a stubbed `wait-ready` gives a deterministic
+#   failure, and the job asserts the failure came from the wait-ready
+#   phase specifically, not just any failure.
+# T6 teardown-failure-injection: a stubbed `down` proves teardown uploads
+#   diagnostics and exits non-zero, replacing the
+#   `down || echo ::error::` pattern that always read green. The job
+#   itself passes only when teardown failed loudly with diagnostics
+#   attached — it does not rely on job-level continue-on-error to stay
+#   green, so a regression where teardown wrongly succeeds turns the run
+#   red.
+
+name: action-selftest
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'action.yml'
+      - 'action/**'
+      - 'teardown/**'
+      - 'cli/**'
+      - 'compose/**'
+      - 'Makefile'
+      - 'canton-localnet.yaml'
+      - '.github/workflows/action-selftest.yaml'
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'action.yml'
+      - 'action/**'
+      - 'teardown/**'
+      - 'cli/**'
+      - 'compose/**'
+      - 'Makefile'
+      - 'canton-localnet.yaml'
+      - '.github/workflows/action-selftest.yaml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  unit:
+    name: T1 unit (action/*.sh, no docker) + in-process masking check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: cli/go.sum
+
+      - name: Build canton-localnet (for the in-process masking assertion)
+        working-directory: cli
+        run: go build -o "${RUNNER_TEMP}/canton-localnet" ./cmd/canton-localnet
+
+      - name: Run action/*.sh unit tests, including the in-process masking assertion
+        env:
+          CANTON_LOCALNET_BIN: ${{ runner.temp }}/canton-localnet
+        run: bash action/action.test.sh
+
+  pinned-literal-contract:
+    name: T3 pinned-literal contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: No expression in any 'uses:' line
+        run: |
+          set -euo pipefail
+          bad="$(grep -rnE '^\s*uses:\s*.*\$\{\{' action.yml teardown/action.yml .github/workflows/action-selftest.yaml || true)"
+          if [ -n "$bad" ]; then
+            echo "::error::found an expression in a 'uses:' line — uses: only accepts a literal string:"
+            echo "$bad"
+            exit 1
+          fi
+          echo "ok: every 'uses:' line in action.yml, teardown/action.yml and this workflow is a literal"
+
+  boot:
+    name: T2 boot end-to-end (validators a,c + pqs)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Start an unrelated container (scoped-teardown probe)
+        run: docker run -d --name selftest-scoped-probe busybox:1.36 sleep 900
+
+      - name: Boot LocalNet
+        id: boot
+        uses: ./
+        with:
+          # 'a,c', not 'a,b': compose only starts the PQS pipeline for
+          # a-validator-1 and c-validator-1 (cli/internal/compose/compose.go)
+          # — pqs: true with a 'b' slot would export a connection string to
+          # a database no pipeline ever writes to (see boot.sh's warning).
+          validators: 'a,c'
+          pqs: 'true'
+
+      - name: Hit the JSON API with client-credentials from the exported token
+        run: |
+          set -euo pipefail
+          prefix="CANTON_LOCALNET_$(echo "${{ steps.boot.outputs.profile }}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')"
+          token_url_var="${prefix}_TOKEN_URL"
+          client_id_var="${prefix}_CLIENT_ID"
+          client_secret_var="${prefix}_CLIENT_SECRET"
+          audience_var="${prefix}_AUDIENCE"
+          json_api_var="${prefix}_JSON_API_URL"
+          access_token="$(curl -sf -X POST "${!token_url_var}" \
+            -d grant_type=client_credentials \
+            -d client_id="${!client_id_var}" \
+            -d client_secret="${!client_secret_var}" \
+            -d audience="${!audience_var}" | jq -r .access_token)"
+          if [ -z "$access_token" ] || [ "$access_token" = "null" ]; then
+            echo "::error::client-credentials grant against \$${token_url_var} did not return an access_token"
+            exit 1
+          fi
+          echo "::add-mask::${access_token}"
+          participant_id_response="$(curl -sf -H "Authorization: Bearer ${access_token}" "${!json_api_var}/v2/parties/participant-id")"
+          echo "GET /v2/parties/participant-id -> ${participant_id_response}"
+
+      - name: Assert the second enabled validator's PQS connection string is exported
+        run: |
+          set -euo pipefail
+          if [ -z "${CANTON_LOCALNET_C_VALIDATOR_1_PQS_CONNECTION_STRING:-}" ]; then
+            echo "::error::CANTON_LOCALNET_C_VALIDATOR_1_PQS_CONNECTION_STRING is not set; pqs: true should export it"
+            exit 1
+          fi
+          echo "ok: PQS connection string exported for c-validator-1"
+
+      - name: Tear down
+        if: always()
+        uses: ./teardown
+
+      - name: Assert teardown was scoped (the unrelated container survives)
+        if: always()
+        run: |
+          set -euo pipefail
+          if ! docker ps --filter name=^selftest-scoped-probe$ --format '{{.Names}}' | grep -q selftest-scoped-probe; then
+            echo "::error::teardown removed a container it does not own — it must be scoped to the LocalNet compose project"
+            exit 1
+          fi
+          echo "ok: the unrelated container survived teardown"
+
+      - name: Clean up the scoped-teardown probe
+        if: always()
+        run: docker rm -f selftest-scoped-probe || true
+
+  masking-probe:
+    name: T4 masking-probe (real boot, real exported secrets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Boot LocalNet
+        id: boot
+        uses: ./
+        with:
+          # No secret override here on purpose: a step-level env: on this
+          # `uses: ./` step would itself leak into the runner's own
+          # step-header dump before boot.sh's masking ever runs — that
+          # was this job's earlier false pass. 'a' and 'c' each have a
+          # real, non-overridden client secret to check for below. sv is
+          # booted and waited on but never exported (env is OAuth2-only
+          # in v1 and sv has no OAuth2 client), so there is no sv secret
+          # to account for here. pqs: true so a real PQS
+          # password/connection-string is exported for both slots too.
+          validators: 'a,c'
+          pqs: 'true'
+
+      - name: Collect diagnostics (always, to exercise the masking-sensitive path even on a clean boot)
+        run: bash action/diagnose.sh
+
+      - name: Upload the masking-probe diagnostics artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: canton-localnet-masking-probe-diagnostics-${{ github.job }}
+          path: ${{ runner.temp }}/canton-localnet/diagnostics
+          if-no-files-found: warn
+          retention-days: 1
+
+      - name: Download the masking-probe diagnostics artifact back down
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: canton-localnet-masking-probe-diagnostics-${{ github.job }}
+          path: downloaded-masking-probe-diagnostics
+
+      - name: Assert the diagnostics artifact carries none of the real secrets this boot exported
+        run: |
+          set -euo pipefail
+
+          # Build the "known secret" grep target from the environment
+          # (the CLI's own real, non-overridden value), not by retyping
+          # the literal in this script: that would introduce a fresh raw
+          # occurrence of the literal in THIS step's own echoed script
+          # source, which masking-log-check (a different job, scanning
+          # this job's log) would otherwise have to account for too.
+          #
+          # Every check below fails closed (exit 1) on an EMPTY variable,
+          # rather than silently skipping — an empty value never proves
+          # the diagnostics artifact is clean; it just means we didn't
+          # check anything.
+          assert_not_leaked() {
+            local var_name="$1" value="${!1:-}"
+            if [ -z "$value" ]; then
+              echo "::error::$var_name is empty — cannot verify it does not leak into diagnostics"
+              exit 1
+            fi
+            if grep -rqF "$value" downloaded-masking-probe-diagnostics; then
+              echo "::error::$var_name appears in the downloaded diagnostics artifact"
+              exit 1
+            fi
+          }
+
+          assert_not_leaked CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET
+          assert_not_leaked CANTON_LOCALNET_C_VALIDATOR_1_CLIENT_SECRET
+          assert_not_leaked CANTON_LOCALNET_A_VALIDATOR_1_PQS_PASSWORD
+          assert_not_leaked CANTON_LOCALNET_C_VALIDATOR_1_PQS_PASSWORD
+          echo "ok: the diagnostics artifact carries none of the real client secrets or PQS passwords this boot exported"
+
+      - name: Tear down
+        if: always()
+        uses: ./teardown
+
+  masking-log-check:
+    name: T4 masking-log-check (fetches masking-probe's own raw log via REST)
+    needs: [masking-probe]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Resolve the real secrets masking-probe's boot should have masked
+        id: secrets
+        run: |
+          set -euo pipefail
+          # Read the same fixed demo values the CLI itself resolves
+          # (cli/cmd/canton-localnet/env.go, cli/internal/slot/resolve.go)
+          # from the repo's own compose env files, rather than hardcoding
+          # a literal here — this job's runner never sets any of the env
+          # vars those files' ${KEY:-default} shapes could be overridden
+          # by, so the file's own default is always what the CLI used.
+          client_secret() {
+            local slot="$1" env_prefix="$2"
+            grep -E "^AUTH_${env_prefix}_VALIDATOR_CLIENT_SECRET=" \
+              "compose/modules/keycloak/env/${slot}/on/oauth2.env" | tail -n1 | cut -d= -f2-
+          }
+          shell_default() {
+            local key="$1"
+            grep -E "^${key}=" compose/modules/localnet/env/common.env | tail -n1 \
+              | sed -E "s/^${key}=\\\$\\{${key}:-(.*)\\}\$/\\1/"
+          }
+          {
+            echo "a-client-secret=$(client_secret a-validator-1 A_VALIDATOR_1)"
+            echo "c-client-secret=$(client_secret c-validator-1 C_VALIDATOR_1)"
+            echo "a-pqs-password=$(shell_default PQS_A_VALIDATOR_1_READER_PASSWORD)"
+            echo "c-pqs-password=$(shell_default DB_PASSWORD)"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Fetch and grep the masking-probe job's own raw log for those real secrets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          A_CLIENT_SECRET: ${{ steps.secrets.outputs.a-client-secret }}
+          C_CLIENT_SECRET: ${{ steps.secrets.outputs.c-client-secret }}
+          A_PQS_PASSWORD: ${{ steps.secrets.outputs.a-pqs-password }}
+          C_PQS_PASSWORD: ${{ steps.secrets.outputs.c-pqs-password }}
+        run: |
+          set -euo pipefail
+          # jq's first(...) stops after one match, rather than piping every
+          # match into `head -1` — a downstream `head` truncating early
+          # would SIGPIPE gh api and, under pipefail, that broken-pipe
+          # exit code (not "no match") would fail this assignment under
+          # set -e (the same SIGPIPE-under-pipefail class of bug as
+          # d251f3c, avoided here at the source instead of downstream).
+          job_id="$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs" --paginate \
+            --jq 'first(.jobs[] | select(.name == "T4 masking-probe (real boot, real exported secrets)") | .id) // empty')"
+          if [ -z "$job_id" ]; then
+            echo "::error::could not find the masking-probe job's id in this run's job list"
+            exit 1
+          fi
+          # Workaround for gh CLI 2.97.0+: `gh api` refuses to write a body
+          # containing terminal escape sequences (the raw job log keeps its
+          # ANSI colour codes) unless passed --allow-escape-sequences, a
+          # flag gh 2.96.0 and older reject. curl writes the bytes verbatim
+          # on any runner image.
+          curl --fail --silent --show-error --location \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            --output masking-probe.log \
+            "${{ github.api_url }}/repos/${{ github.repository }}/actions/jobs/${job_id}/logs"
+
+          # masking-probe's boot has no step-level env: override (that was
+          # the earlier false pass this replaced — a step-level env: leaks
+          # into the runner's own step-header dump before boot.sh's
+          # masking ever runs), so none of these real secrets has any
+          # legitimate raw occurrence anywhere in this log: every export
+          # of them goes through the CLI's own `::add-mask::` call first.
+          assert_masked() {
+            local var_name="$1" value="$2"
+            if [ -z "$value" ]; then
+              echo "::error::$var_name resolved empty — cannot verify it was masked"
+              exit 1
+            fi
+            if grep -qF "$value" masking-probe.log; then
+              echo "::error::$var_name appears RAW in the masking-probe job's log — a real leak or add-mask regression"
+              exit 1
+            fi
+          }
+          assert_masked A_CLIENT_SECRET "$A_CLIENT_SECRET"
+          assert_masked C_CLIENT_SECRET "$C_CLIENT_SECRET"
+          assert_masked A_PQS_PASSWORD "$A_PQS_PASSWORD"
+          assert_masked C_PQS_PASSWORD "$C_PQS_PASSWORD"
+
+          # Positive assertion that masking actually ran (replaces the old
+          # "never appeared anywhere" floor, which the earlier synthetic
+          # literal in this script trivially satisfied on its own):
+          # GitHub renders every masked occurrence as the literal string
+          # "***", so at least one must show up, or nothing was ever
+          # registered with ::add-mask:: in the first place.
+          if ! grep -qF '***' masking-probe.log; then
+            echo "::error::the masking-probe job's log shows no '***' anywhere — ::add-mask:: does not appear to have run"
+            exit 1
+          fi
+          echo "ok: none of the real client secrets or PQS passwords appear raw in the masking-probe job's log, and masking visibly ran"
+
+  boot-failure-injection:
+    name: T5 injected readiness failure
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Stub canton-localnet whose wait-ready never succeeds
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/stub-cli"
+          cat > "$RUNNER_TEMP/stub-cli/canton-localnet" <<'EOF'
+          #!/usr/bin/env bash
+          case "$1" in
+            wait-ready)
+              echo "stub: wait-ready never succeeds" >&2
+              exit 1
+              ;;
+            *)
+              exit 0
+              ;;
+          esac
+          EOF
+          chmod +x "$RUNNER_TEMP/stub-cli/canton-localnet"
+          echo "cli-path=$RUNNER_TEMP/stub-cli/canton-localnet" >> "$GITHUB_OUTPUT"
+        id: stub
+
+      - name: Run action/boot.sh directly against the stub (deterministic failure, not timeout:1s)
+        id: boot
+        continue-on-error: true
+        env:
+          CLI_PATH: ${{ steps.stub.outputs.cli-path }}
+          ACTION_PATH: ${{ github.workspace }}
+          VALIDATORS: 'a'
+          PQS: 'false'
+          OBSERVABILITY: 'false'
+          MULTI_SYNC: 'false'
+          DIALECT: 'native'
+          ROLES: ''
+          JWT: 'false'
+          TIMEOUT: '2m'
+          CONFIG_INPUT: ''
+        run: bash action/boot.sh >"$RUNNER_TEMP/boot-failure.log" 2>&1
+
+      - name: Assert boot.sh failed (this IS the expected outcome)
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.boot.outcome }}" != "failure" ]; then
+            echo "::error::expected action/boot.sh to fail against a wait-ready stub that never succeeds"
+            exit 1
+          fi
+          echo "ok: boot.sh failed deterministically on injected readiness failure"
+
+      - name: Assert the failure came from the wait-ready step, not some other phase
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/boot-failure.log"
+          if ! grep -qF "stub: wait-ready never succeeds" "$log"; then
+            echo "::error::expected boot.sh's failure to come from the stub's wait-ready branch — marker 'stub: wait-ready never succeeds' not found in its output"
+            cat "$log"
+            exit 1
+          fi
+          if grep -qF "canton-localnet env --format github" "$log"; then
+            echo "::error::boot.sh got past wait-ready to the env export — the injected failure did not stop it where expected"
+            exit 1
+          fi
+          echo "ok: boot.sh's failure came from the wait-ready phase, not some later or earlier one"
+
+      - name: Run the on-failure diagnose + teardown chain, matching action.yml's own if-failure() steps
+        env:
+          STRICT: 'false'
+        run: |
+          set -euo pipefail
+          bash action/diagnose.sh
+          bash action/down.sh
+          echo "ok: the boot action's own on-failure chain completed without itself failing"
+
+  teardown-failure-injection:
+    name: T6 injected teardown failure
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Save boot state pointing at a stub canton-localnet whose down always fails
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/stub-cli" "$RUNNER_TEMP/canton-localnet"
+          cat > "$RUNNER_TEMP/stub-cli/canton-localnet" <<'EOF'
+          #!/usr/bin/env bash
+          case "$1" in
+            down)
+              echo "stub: down always fails" >&2
+              exit 1
+              ;;
+            *)
+              exit 0
+              ;;
+          esac
+          EOF
+          chmod +x "$RUNNER_TEMP/stub-cli/canton-localnet"
+          {
+            echo "CANTON_LOCALNET_ACTION_CLI_PATH=$RUNNER_TEMP/stub-cli/canton-localnet"
+            echo "CANTON_LOCALNET_ACTION_REPO_ROOT=$GITHUB_WORKSPACE"
+            echo "CANTON_LOCALNET_ACTION_CONFIG_PATH=/dev/null"
+          } > "$RUNNER_TEMP/canton-localnet/state.env"
+
+      - name: Simulate the consumer's own test step failing
+        # step-level continue-on-error, not job-level: this step's real
+        # failure must not propagate to the job by itself — only the
+        # inverted assertions below decide whether this job passes.
+        id: fake_test_failure
+        continue-on-error: true
+        run: exit 1
+
+      - name: canton-localnet teardown (expected to fail)
+        # Called with if: always() after a failed preceding step, exactly
+        # the documented consumer usage. continue-on-error at step level
+        # lets the inverted assertion below be the thing that decides the
+        # job's fate, instead of this step's own real failure doing so.
+        if: always()
+        id: teardown
+        continue-on-error: true
+        uses: ./teardown
+
+      - name: Assert teardown failed non-zero — a regression where it wrongly succeeds must fail this job
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.teardown.outcome }}" != "failure" ]; then
+            echo "::error::expected .../teardown to exit non-zero when down --volumes fails — the pre-Action 'down || echo ::error::' pattern always read green, this must not"
+            exit 1
+          fi
+          echo "ok: teardown exited non-zero on a failing down"
+
+      - name: Download the teardown diagnostics artifact
+        if: always()
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: canton-localnet-teardown-diagnostics-${{ github.job }}
+          path: downloaded-diagnostics
+
+      - name: Assert diagnostics were actually uploaded and non-empty — a regression here must fail this job too
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -z "$(find downloaded-diagnostics -type f -size +0c 2>/dev/null)" ]; then
+            echo "::error::expected the teardown diagnostics artifact to carry at least one non-empty file"
+            exit 1
+          fi
+          echo "ok: teardown uploaded a non-empty diagnostics artifact"
