@@ -1,0 +1,48 @@
+# Copyright (c) 2026 Peaceful Studio OÜ
+# SPDX-License-Identifier: Apache-2.0
+
+name: public-gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: public-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+
+      - name: Resolve scan mode from the trusted base ref, not the PR's own tree
+        id: scan-mode
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ] && [ -n "${GITHUB_BASE_REF:-}" ]; then
+            if git cat-file -e "origin/${GITHUB_BASE_REF}:.gitpublic" 2>/dev/null; then
+              echo "extra_args=" >> "$GITHUB_OUTPUT"
+            else
+              echo "extra_args=--whole-tree" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "extra_args=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Leak check
+        run: bash .github/scripts/leak-check.sh ${{ steps.scan-mode.outputs.extra_args }} .
+
+      - name: No-AI-workflows audit
+        run: bash .github/scripts/no-ai-workflows-audit.sh ${{ steps.scan-mode.outputs.extra_args }} .

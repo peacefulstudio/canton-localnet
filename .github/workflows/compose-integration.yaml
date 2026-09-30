@@ -66,11 +66,20 @@ jobs:
           docker version
           docker compose version
 
+      - name: Check Docker server version supports loopback-only publishing
+        run: make check-docker-version
+
       - name: Check resolved party hints are domain-neutral
         run: make check-party-hints
 
       - name: Check resolved party hints are domain-neutral (secret auth mode)
         run: make check-party-hints AUTH_MODE=secret
+
+      - name: Check every published port binds to 127.0.0.1 by default
+        run: make check-port-bind-ip OBS=true PQS=true SWAGGER_UI=true
+
+      - name: Check every published port binds to HOST_BIND_IP override
+        run: make check-port-bind-ip OBS=true PQS=true SWAGGER_UI=true HOST_BIND_IP=0.0.0.0
 
       - name: Build canton-localnet binary
         working-directory: cli
