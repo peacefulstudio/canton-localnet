@@ -142,6 +142,7 @@ jobs:
           # a database no pipeline ever writes to (see boot.sh's warning).
           validators: 'a,c'
           pqs: 'true'
+          party: 'true'
 
       - name: Hit the JSON API with client-credentials from the exported token
         run: |
@@ -165,6 +166,42 @@ jobs:
           participant_id_response="$(curl -sf -H "Authorization: Bearer ${access_token}" "${!json_api_var}/v2/parties/participant-id")"
           echo "GET /v2/parties/participant-id -> ${participant_id_response}"
 
+      - name: Assert the validator party is exported and is not the participant id
+        run: |
+          set -euo pipefail
+          party="${CANTON_LOCALNET_A_VALIDATOR_1_PARTY:-}"
+          if [ -z "$party" ]; then
+            echo "::error::CANTON_LOCALNET_A_VALIDATOR_1_PARTY is not set; party: true should export it"
+            exit 1
+          fi
+          if [ -n "${CANTON_LOCALNET_A_VALIDATOR_1_JWT:-}" ]; then
+            echo "::error::party: true alone must not export a JWT"
+            exit 1
+          fi
+          access_token="$(curl -sf -X POST "${CANTON_LOCALNET_A_VALIDATOR_1_TOKEN_URL}" \
+            -d grant_type=client_credentials \
+            -d client_id="${CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_ID}" \
+            -d client_secret="${CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET}" \
+            -d audience="${CANTON_LOCALNET_A_VALIDATOR_1_AUDIENCE}" | jq -r .access_token)"
+          echo "::add-mask::${access_token}"
+          participant_id="$(curl -sf -H "Authorization: Bearer ${access_token}" \
+            "${CANTON_LOCALNET_A_VALIDATOR_1_JSON_API_URL}/v2/parties/participant-id" | jq -r .participantId)"
+          if [ -z "$participant_id" ] || [ "$participant_id" = "null" ] || [ "$party" = "$participant_id" ]; then
+            echo "::error::party [$party] must be set and differ from participant id [$participant_id]"
+            exit 1
+          fi
+          echo "ok: validator party exported and distinct from the participant id"
+
+      - name: Assert the Scan registry URL resolves and serves the registry
+        run: |
+          set -euo pipefail
+          status="$(curl -s -o /dev/null -w '%{http_code}' "${CANTON_LOCALNET_SCAN_URL}/registry/metadata/v1/info")"
+          if [ "$status" != "200" ]; then
+            echo "::error::GET ${CANTON_LOCALNET_SCAN_URL}/registry/metadata/v1/info returned HTTP ${status}, want 200"
+            exit 1
+          fi
+          echo "ok: ${CANTON_LOCALNET_SCAN_URL} serves the token-standard registry"
+
       - name: Assert the second enabled validator's PQS connection string is exported
         run: |
           set -euo pipefail
@@ -173,6 +210,16 @@ jobs:
             exit 1
           fi
           echo "ok: PQS connection string exported for c-validator-1"
+
+      - name: Tap Amulet into slot a and assert a contract id comes back
+        run: |
+          set -euo pipefail
+          contract_id="$(canton-localnet tap --slot a --amount 1)"
+          if [ -z "$contract_id" ]; then
+            echo "::error::canton-localnet tap --slot a --amount 1 exited 0 but printed no contract id"
+            exit 1
+          fi
+          echo "ok: tapped Amulet into a-validator-1, contract id ${contract_id:0:12}..."
 
       - name: Tear down
         if: always()
