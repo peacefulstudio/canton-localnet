@@ -265,6 +265,9 @@ with the canonical slot in `SCREAMING_SNAKE_CASE`. For `a-validator-1`:
 | `CANTON_LOCALNET_A_VALIDATOR_1_AUDIENCE` | `https://canton.network.global` | Expected `aud` claim. |
 | `CANTON_LOCALNET_A_VALIDATOR_1_SCOPE` | `openid` | OAuth2 scope. |
 | `CANTON_LOCALNET_A_VALIDATOR_1_VALIDATOR_USER_ID` | slot default | Ledger user id the slot's token authenticates as. |
+| `CANTON_LOCALNET_A_VALIDATOR_1_ADMIN_GRPC_URL` | `http://localhost:11902` | Participant admin gRPC endpoint (`canton-localnet env` export). |
+| `CANTON_LOCALNET_A_VALIDATOR_1_PARTY` | none | Validator user's primary party; exported by `canton-localnet env --party` only. |
+| `CANTON_LOCALNET_SCAN_URL` | `http://scan.localhost:10000` | Token-standard registry / Scan; global, needs `*.localhost` to resolve to loopback. |
 
 The C# fixture also honours the un-namespaced `CANTON_LOCALNET_JSON_API_URL` /
 `_TOKEN_URL` / `_CLIENT_ID` / `_CLIENT_SECRET` globals and selects its default
@@ -342,9 +345,15 @@ with `--pqs`, its PQS Postgres connection details:
 `canton-ledger-api-csharp`'s integration lane already builds by hand.
 
 A bearer token is minted, and the live participant id fetched with it, only
-when `--jwt` is passed — **`--jwt` off makes no token request at all**. Add
+when `--jwt` is passed — **with `--jwt` and `--party` both off, no token
+request is made at all**. Add
 `--offline` alongside `--jwt` to mint and export the token without the extra
 live participant-id lookup.
+
+`--party` mints a token for one `GET /v2/users/{validator user id}` and
+exports the user's `primaryParty` as `_PARTY`; the token is exported only
+alongside `--jwt`. `canton-localnet info --json` returns the same party as
+`validator_primary_party`.
 
 ## CI wiring — two proven shapes
 

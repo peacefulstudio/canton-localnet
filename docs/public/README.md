@@ -12,7 +12,7 @@ follow the guide that matches your task.
 | Capability | What ships today |
 |---|---|
 | Declarative config | Single-file `canton-localnet.yaml` (topology, slots, parties, auth) |
-| CLI lifecycle | `up` / `down` / `wait-ready` / `auth token` / `info` / `vm` |
+| CLI lifecycle | `up` / `down` / `wait-ready` / `auth token` / `tap` / `info` / `vm` |
 | Flexible topology | 1 SV + N validators across 5 named slots; SV-only → all-five |
 | Programmatic fixtures | C# `LocalnetFixture` + Go `fixture`: query + mutate a live ledger |
 | Observability & PQS | Grafana/Prometheus/Loki/Tempo + per-slot Participant Query Store |

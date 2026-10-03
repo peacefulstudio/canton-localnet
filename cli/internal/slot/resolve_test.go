@@ -269,3 +269,42 @@ func TestResolveClientIDPrefersComposeFileOverDefault(t *testing.T) {
 		t.Errorf("ClientID: got %q, want rotated-client-id", got.ClientID)
 	}
 }
+
+func TestResolveOAuth2WalletLoginDefaultsToTheSlotsOnboardedUser(t *testing.T) {
+	t.Parallel()
+	b, _ := Parse("b")
+	got, err := Resolve(b, "", emptyEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.WalletClientID != "b-validator-1-unsafe" || got.WalletUser != "b-validator-1" || got.WalletPassword != "abc123" {
+		t.Fatalf("wallet login = %q / %q / %q, want b-validator-1-unsafe / b-validator-1 / abc123", got.WalletClientID, got.WalletUser, got.WalletPassword)
+	}
+}
+
+func TestResolveOAuth2WalletLoginReadsComposeEnvFileThenEnvOverrides(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeComposeEnvFile(t, root, "a-validator-1", "AUTH_A_VALIDATOR_1_AUTO_CONFIG_CLIENT_ID=file-client\nAUTH_A_VALIDATOR_1_WALLET_ADMIN_USER_NAME=file-user\nAUTH_A_VALIDATOR_1_WALLET_ADMIN_USER_PASSWORD=file-password\n")
+	a, _ := Parse("a")
+
+	fromFile, err := Resolve(a, root, emptyEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fromFile.WalletClientID != "file-client" || fromFile.WalletUser != "file-user" || fromFile.WalletPassword != "file-password" {
+		t.Fatalf("from file = %q / %q / %q", fromFile.WalletClientID, fromFile.WalletUser, fromFile.WalletPassword)
+	}
+
+	overridden, err := Resolve(a, root, envFrom(map[string]string{
+		"CANTON_LOCALNET_A_VALIDATOR_1_WALLET_CLIENT_ID": "env-client",
+		"CANTON_LOCALNET_A_VALIDATOR_1_WALLET_USER":      "env-user",
+		"CANTON_LOCALNET_A_VALIDATOR_1_WALLET_PASSWORD":  "env-password",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overridden.WalletClientID != "env-client" || overridden.WalletUser != "env-user" || overridden.WalletPassword != "env-password" {
+		t.Fatalf("overridden = %q / %q / %q", overridden.WalletClientID, overridden.WalletUser, overridden.WalletPassword)
+	}
+}

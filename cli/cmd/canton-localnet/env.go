@@ -29,6 +29,8 @@ const (
 	githubEnvDelimiterPrefix = "canton_localnet_env_"
 	githubEnvDelimiterBytes  = 16
 	githubEnvDelimiterTries  = 8
+
+	scanRegistryVhost = "scan.localhost"
 )
 
 // envVar is one resolved KEY=VALUE pair in an `env` snapshot. Secret marks
@@ -45,6 +47,7 @@ type envOptions struct {
 	jwt     bool
 	offline bool
 	pqs     bool
+	party   bool
 	ciSlot  int
 }
 
@@ -55,19 +58,20 @@ func newEnvCommand() *cobra.Command {
 		jwt     bool
 		offline bool
 		pqs     bool
+		party   bool
 		ciSlot  int
 	)
 	cmd := &cobra.Command{
 		Use:   "env",
 		Short: "Export a resolved LocalNet endpoint and credential snapshot",
 		Long: "Resolves one snapshot — endpoints, ports, and the OAuth2 credential contract — for every --slot given, and renders it once in the requested --format. --slot is repeatable; the first one given becomes CANTON_LOCALNET_PROFILE. v1 is OAuth2-only: --slot sv is refused, since sv-validator-1 has no OAuth2 client and no fixture consumes its HS256 contract yet.\n\n" +
-			"The credential contract is the token URL plus client id and secret: always exported, never network-fetched. A bearer token is minted, and the live participant id fetched with it, only when --jwt is passed — --jwt off makes no token request at all. Pass --offline with --jwt to mint the token but skip the live participant-id lookup.\n\n" +
+			"The credential contract is the token URL plus client id and secret: always exported, never network-fetched. A bearer token is minted, and the live participant id fetched with it, only when --jwt is passed — with --jwt and --party both off, no token request is made at all. Pass --offline with --jwt to mint the token but skip the live participant-id lookup. --party mints a token for one lookup of the validator user's primary party and exports it as _PARTY; the token itself is exported only with --jwt.\n\nEvery run also exports each slot's participant admin gRPC endpoint (_ADMIN_GRPC_URL) and the global CANTON_LOCALNET_SCAN_URL, the token-standard registry that nginx serves only under the scan.localhost vhost of sv-validator-1's web UI port.\n\n" +
 			"format sh prints shell `export KEY='VALUE'` lines and format json prints one JSON object — both print secrets in clear, so reserve them for a developer's own terminal or a non-shared log. format github masks every Secret value with `::add-mask::` on stdout — every known secret before any network call, and a minted JWT immediately after minting and before the participant-id lookup — then appends every variable, secret and not, to $GITHUB_ENV using a heredoc delimiter checked against every value; it writes nothing to $GITHUB_OUTPUT and needs $GITHUB_ENV set (i.e. running inside a GitHub Actions step).",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := validateEnvFormat(format); err != nil {
 				return err
 			}
-			opts := envOptions{jwt: jwt, offline: offline, pqs: pqs, ciSlot: ciSlot}
+			opts := envOptions{jwt: jwt, offline: offline, pqs: pqs, party: party, ciSlot: ciSlot}
 			switch format {
 			case envFormatSh:
 				vars, err := resolveEnvVars(cmd, slots, opts, nil)
@@ -96,9 +100,10 @@ func newEnvCommand() *cobra.Command {
 	}
 	cmd.Flags().StringArrayVar(&slots, "slot", nil, "Slot to export (a|b|c|d, or canonical a-validator-1 .. d-validator-1); repeatable. sv/sv-validator-1 is refused in v1 (OAuth2-only)")
 	cmd.Flags().StringVar(&format, "format", envFormatSh, "Output format: sh, json, or github")
-	cmd.Flags().BoolVar(&jwt, "jwt", false, "Mint a bearer token per slot and export it plus the live participant id (off by default; makes no token request when unset)")
+	cmd.Flags().BoolVar(&jwt, "jwt", false, "Mint a bearer token per slot and export it plus the live participant id (off by default; with --party also unset, makes no token request)")
 	cmd.Flags().BoolVar(&offline, "offline", false, "With --jwt, mint and export the token but skip the live participant-id lookup")
 	cmd.Flags().BoolVar(&pqs, "pqs", false, "Also export each slot's PQS Postgres connection details")
+	cmd.Flags().BoolVar(&party, "party", false, "Also export each slot's validator primary party (_PARTY), read from the validator user over the JSON Ledger API; mints a token for the lookup but exports it only with --jwt")
 	cmd.Flags().IntVar(&ciSlot, "ci-slot", 0, "Re-resolve a-validator-1's credential contract as CI slot N's confidential client (1..4) instead of the interactive a-validator-1-validator client; only valid with --slot a")
 	_ = cmd.MarkFlagRequired("slot")
 	return cmd
@@ -178,7 +183,7 @@ func resolveEnvVars(cmd *cobra.Command, slotFlags []string, opts envOptions, onS
 		}
 	}
 
-	if !opts.jwt {
+	if !opts.jwt && !opts.party {
 		return vars, nil
 	}
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -188,21 +193,29 @@ func resolveEnvVars(cmd *cobra.Command, slotFlags []string, opts envOptions, onS
 		if err != nil {
 			return nil, err
 		}
-		jwtVar := envVar{Key: prefix + "_JWT", Value: token, Secret: true}
-		vars = append(vars, jwtVar)
-		if onSecret != nil && jwtVar.Secret {
-			if err := onSecret(jwtVar); err != nil {
-				return nil, err
+		if opts.jwt {
+			jwtVar := envVar{Key: prefix + "_JWT", Value: token, Secret: true}
+			vars = append(vars, jwtVar)
+			if onSecret != nil {
+				if err := onSecret(jwtVar); err != nil {
+					return nil, err
+				}
 			}
 		}
-		if opts.offline {
-			continue
+		if opts.jwt && !opts.offline {
+			participantID, err := slot.FetchParticipantID(cmd.Context(), ep, token, client)
+			if err != nil {
+				return nil, fmt.Errorf("env: fetch participant id for %s (pass --offline to skip): %w", ep.Slot.Canonical, err)
+			}
+			vars = append(vars, envVar{Key: prefix + "_PARTICIPANT_ID", Value: participantID})
 		}
-		participantID, err := slot.FetchParticipantID(cmd.Context(), ep, token, client)
-		if err != nil {
-			return nil, fmt.Errorf("env: fetch participant id for %s (pass --offline to skip): %w", ep.Slot.Canonical, err)
+		if opts.party {
+			primaryParty, err := slot.FetchPrimaryParty(cmd.Context(), ep, token, client)
+			if err != nil {
+				return nil, fmt.Errorf("env: fetch validator primary party for %s: %w", ep.Slot.Canonical, err)
+			}
+			vars = append(vars, envVar{Key: prefix + "_PARTY", Value: primaryParty})
 		}
-		vars = append(vars, envVar{Key: prefix + "_PARTICIPANT_ID", Value: participantID})
 	}
 	return vars, nil
 }
@@ -244,16 +257,28 @@ func readSpliceVersion(repoRoot string) (string, error) {
 	return version, nil
 }
 
+func scanURL(svSlot slot.Slot) string {
+	if override, ok := os.LookupEnv("CANTON_LOCALNET_SCAN_URL"); ok && strings.TrimSpace(override) != "" {
+		return override
+	}
+	return "http://" + scanRegistryVhost + ":" + svSlot.WebUIPort()
+}
+
 func globalEnvVars(primary slot.Endpoints, spliceVersion string) ([]envVar, error) {
 	keycloakHost, keycloakPort, err := splitURLHostPort(primary.KeycloakHostBase)
 	if err != nil {
 		return nil, fmt.Errorf("env: parse Keycloak host: %w", err)
+	}
+	svSlot, err := slot.Parse("sv")
+	if err != nil {
+		return nil, err
 	}
 	vars := []envVar{
 		{Key: "CANTON_LOCALNET_HOST", Value: primary.Host},
 		{Key: "CANTON_LOCALNET_KEYCLOAK_HOST", Value: keycloakHost},
 		{Key: "CANTON_LOCALNET_KEYCLOAK_PORT", Value: keycloakPort},
 		{Key: "CANTON_LOCALNET_AUDIENCE", Value: primary.Audience},
+		{Key: "CANTON_LOCALNET_SCAN_URL", Value: scanURL(svSlot)},
 	}
 	if primary.Scope != "" {
 		vars = append(vars, envVar{Key: "CANTON_LOCALNET_SCOPE", Value: primary.Scope})
@@ -283,6 +308,7 @@ func staticSlotEnvVars(repoRoot string, ep slot.Endpoints, opts envOptions) ([]e
 		{Key: prefix + "_JSON_PORT", Value: jsonPort},
 		{Key: prefix + "_GRPC_URL", Value: "http://" + ep.LedgerGrpcURL},
 		{Key: prefix + "_GRPC_PORT", Value: ep.Slot.LedgerGrpcPort()},
+		{Key: prefix + "_ADMIN_GRPC_URL", Value: "http://" + ep.AdminGrpcURL},
 		{Key: prefix + "_VALIDATOR_API_URL", Value: "http://" + ep.ValidatorAdminURL},
 	}
 

@@ -307,6 +307,16 @@ got="$(CANTON_LOCALNET_A_VALIDATOR_1_TOKEN_URL="https://external-keycloak.exampl
 assert_eq "endpoint_overrides: non-localhost TOKEN_URL is rejected by name" \
   "CANTON_LOCALNET_A_VALIDATOR_1_TOKEN_URL" "$got"
 
+got="$(CANTON_LOCALNET_SCAN_URL="http://scan.localhost:10000" canton_localnet_endpoint_overrides)"
+assert_eq "endpoint_overrides: default scan.localhost SCAN_URL (self-export value) is not rejected" "" "$got"
+
+got="$(CANTON_LOCALNET_SCAN_URL="   " canton_localnet_endpoint_overrides)"
+assert_eq "endpoint_overrides: blank SCAN_URL is not rejected" "" "$got"
+
+got="$(CANTON_LOCALNET_SCAN_URL="http://scan.remote.example:10000" canton_localnet_endpoint_overrides)"
+assert_eq "endpoint_overrides: non-local SCAN_URL is rejected by name" \
+  "CANTON_LOCALNET_SCAN_URL" "$got"
+
 got="$(CANTON_LOCALNET_KEYCLOAK_HOST="   " canton_localnet_endpoint_overrides)"
 assert_eq "endpoint_overrides: blank CANTON_LOCALNET_KEYCLOAK_HOST is not rejected" "" "$got"
 

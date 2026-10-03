@@ -56,6 +56,8 @@ func TestEnvShFormatPinsCredentialContractLiterally(t *testing.T) {
 		"export CANTON_LOCALNET_A_VALIDATOR_1_JSON_PORT='11975'\n",
 		"export CANTON_LOCALNET_A_VALIDATOR_1_GRPC_URL='http://localhost:11901'\n",
 		"export CANTON_LOCALNET_A_VALIDATOR_1_GRPC_PORT='11901'\n",
+		"export CANTON_LOCALNET_A_VALIDATOR_1_ADMIN_GRPC_URL='http://localhost:11902'\n",
+		"export CANTON_LOCALNET_SCAN_URL='http://scan.localhost:10000'\n",
 		"export CANTON_LOCALNET_A_VALIDATOR_1_VALIDATOR_API_URL='http://localhost:11903'\n",
 		"export CANTON_LOCALNET_A_VALIDATOR_1_TOKEN_URL='http://localhost:8082/realms/AValidator1/protocol/openid-connect/token'\n",
 		"export CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_ID='a-validator-1-validator'\n",
@@ -71,8 +73,8 @@ func TestEnvShFormatPinsCredentialContractLiterally(t *testing.T) {
 	if strings.Contains(stdout, "_SCOPE=") {
 		t.Errorf("SCOPE should be omitted when empty, got:\n%s", stdout)
 	}
-	if strings.Contains(stdout, "_JWT=") || strings.Contains(stdout, "_PARTICIPANT_ID=") {
-		t.Errorf("without --jwt, no JWT or participant id should be present, got:\n%s", stdout)
+	if strings.Contains(stdout, "_JWT=") || strings.Contains(stdout, "_PARTICIPANT_ID=") || strings.Contains(stdout, "_PARTY=") {
+		t.Errorf("without --jwt or --party, no JWT, participant id or party should be present, got:\n%s", stdout)
 	}
 	if strings.Contains(stdout, "_PQS_CONNECTION_STRING=") {
 		t.Errorf("without --pqs, no PQS connection string should be present, got:\n%s", stdout)
@@ -102,6 +104,8 @@ func TestEnvJSONFormatPinsFieldsLiterally(t *testing.T) {
 		"CANTON_LOCALNET_A_VALIDATOR_1_JSON_PORT":         "11975",
 		"CANTON_LOCALNET_A_VALIDATOR_1_GRPC_URL":          "http://localhost:11901",
 		"CANTON_LOCALNET_A_VALIDATOR_1_GRPC_PORT":         "11901",
+		"CANTON_LOCALNET_A_VALIDATOR_1_ADMIN_GRPC_URL":    "http://localhost:11902",
+		"CANTON_LOCALNET_SCAN_URL":                        "http://scan.localhost:10000",
 		"CANTON_LOCALNET_A_VALIDATOR_1_VALIDATOR_API_URL": "http://localhost:11903",
 		"CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_ID":         "a-validator-1-validator",
 		"CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET":     "test-secret-123",
@@ -874,5 +878,130 @@ func TestEnvCiSlotRejectsOutOfRange(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("expected an out-of-range error for --ci-slot 5")
+	}
+}
+
+func TestEnvAdminGrpcUrlFollowsEachSlotsPortPrefix(t *testing.T) {
+	root := newEnvTestRepoRoot(t, "0.8.3-pin")
+	t.Setenv("CANTON_LOCALNET_HOST", "localhost")
+	t.Setenv("CANTON_LOCALNET_KEYCLOAK_PORT", "8082")
+	for _, slotLetter := range []string{"A", "B", "C", "D"} {
+		t.Setenv("CANTON_LOCALNET_"+slotLetter+"_VALIDATOR_1_CLIENT_SECRET", "x")
+	}
+
+	stdout := captureRoot(t, "env", "--slot", "a", "--slot", "b", "--slot", "c", "--slot", "d", "--format", "json", "--repo-root", root)
+
+	var got map[string]string
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"CANTON_LOCALNET_A_VALIDATOR_1_ADMIN_GRPC_URL": "http://localhost:11902",
+		"CANTON_LOCALNET_B_VALIDATOR_1_ADMIN_GRPC_URL": "http://localhost:12902",
+		"CANTON_LOCALNET_C_VALIDATOR_1_ADMIN_GRPC_URL": "http://localhost:13902",
+		"CANTON_LOCALNET_D_VALIDATOR_1_ADMIN_GRPC_URL": "http://localhost:14902",
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%s: got %q, want %q", k, got[k], v)
+		}
+	}
+}
+
+func TestEnvScanUrlIsExportedOnceFromTheSvWebUIPort(t *testing.T) {
+	root := newEnvTestRepoRoot(t, "0.8.3-pin")
+	t.Setenv("CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET", "x")
+	t.Setenv("CANTON_LOCALNET_B_VALIDATOR_1_CLIENT_SECRET", "x")
+
+	stdout := captureRoot(t, "env", "--slot", "b", "--slot", "a", "--repo-root", root)
+
+	if n := strings.Count(stdout, "CANTON_LOCALNET_SCAN_URL="); n != 1 {
+		t.Errorf("expected exactly one CANTON_LOCALNET_SCAN_URL, got %d in:\n%s", n, stdout)
+	}
+	if !strings.Contains(stdout, "export CANTON_LOCALNET_SCAN_URL='http://scan.localhost:10000'\n") {
+		t.Errorf("scan url should point at the sv web UI port, got:\n%s", stdout)
+	}
+}
+
+func TestEnvScanUrlHonoursAnExplicitOverrideForARemoteStack(t *testing.T) {
+	root := newEnvTestRepoRoot(t, "0.8.3-pin")
+	t.Setenv("CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET", "x")
+	t.Setenv("CANTON_LOCALNET_SCAN_URL", "http://scan.remote.example:10000")
+
+	stdout := captureRoot(t, "env", "--slot", "a", "--repo-root", root)
+
+	if !strings.Contains(stdout, "export CANTON_LOCALNET_SCAN_URL='http://scan.remote.example:10000'\n") {
+		t.Errorf("scan url override should be exported verbatim, got:\n%s", stdout)
+	}
+}
+
+func TestEnvPartyExportsValidatorPrimaryPartyWithoutExportingTheToken(t *testing.T) {
+	root := newEnvTestRepoRoot(t, "0.8.3-pin")
+
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"access_token":"minted-jwt","token_type":"Bearer","expires_in":300}`))
+	}))
+	defer tokenServer.Close()
+	var userPath, participantIDHits = "", 0
+	jsonServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v2/parties/participant-id" {
+			participantIDHits++
+		}
+		userPath = r.URL.Path
+		if r.Header.Get("Authorization") != "Bearer minted-jwt" {
+			t.Errorf("unexpected authorization header: %q", r.Header.Get("Authorization"))
+		}
+		_, _ = w.Write([]byte(`{"user":{"id":"c87743ab-80e0-4b83-935a-4c0582226691","primaryParty":"a-validator-1::abcd1234"}}`))
+	}))
+	defer jsonServer.Close()
+
+	tokenHost, tokenPort := splitHostPort(t, tokenServer.URL)
+	_, jsonPort := splitHostPort(t, jsonServer.URL)
+	t.Setenv("CANTON_LOCALNET_HOST", tokenHost)
+	t.Setenv("CANTON_LOCALNET_KEYCLOAK_PORT", tokenPort)
+	t.Setenv("CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET", "x")
+	t.Setenv("CANTON_LOCALNET_A_VALIDATOR_1_JSON_PORT", jsonPort)
+
+	stdout := captureRoot(t, "env", "--slot", "a", "--party", "--format", "json", "--repo-root", root)
+
+	var got map[string]string
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["CANTON_LOCALNET_A_VALIDATOR_1_PARTY"] != "a-validator-1::abcd1234" {
+		t.Errorf("party: got %q", got["CANTON_LOCALNET_A_VALIDATOR_1_PARTY"])
+	}
+	if userPath != "/v2/users/c87743ab-80e0-4b83-935a-4c0582226691" {
+		t.Errorf("user path: got %q", userPath)
+	}
+	if participantIDHits != 0 {
+		t.Errorf("--party alone must not look up the participant id, got %d hits", participantIDHits)
+	}
+	if _, ok := got["CANTON_LOCALNET_A_VALIDATOR_1_JWT"]; ok {
+		t.Error("_JWT must stay absent when only --party is passed")
+	}
+}
+
+func TestEnvPartyFailsWhenValidatorUserHasNoPrimaryParty(t *testing.T) {
+	root := newEnvTestRepoRoot(t, "0.8.3-pin")
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"access_token":"minted-jwt","token_type":"Bearer","expires_in":300}`))
+	}))
+	defer tokenServer.Close()
+	jsonServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"user":{"id":"c87743ab-80e0-4b83-935a-4c0582226691"}}`))
+	}))
+	defer jsonServer.Close()
+
+	tokenHost, tokenPort := splitHostPort(t, tokenServer.URL)
+	_, jsonPort := splitHostPort(t, jsonServer.URL)
+	t.Setenv("CANTON_LOCALNET_HOST", tokenHost)
+	t.Setenv("CANTON_LOCALNET_KEYCLOAK_PORT", tokenPort)
+	t.Setenv("CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET", "x")
+	t.Setenv("CANTON_LOCALNET_A_VALIDATOR_1_JSON_PORT", jsonPort)
+
+	err := executeRootError(t, "env", "--slot", "a", "--party", "--repo-root", root)
+	if err == nil || !strings.Contains(err.Error(), "no primaryParty") {
+		t.Fatalf("expected a no-primaryParty error, got %v", err)
 	}
 }
