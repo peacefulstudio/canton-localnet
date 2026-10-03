@@ -7,6 +7,98 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.4-2] - 2026-10-03
+
+`canton-localnet env` and the GitHub Action now export what a live test suite
+needs beyond the OAuth2 credential contract: the validator party, each slot's
+participant admin gRPC URL and the Scan registry URL. A new
+`canton-localnet tap` funds a validator party with Amulet, by a fixed amount or
+up to a target balance, so a suite that reads Amulet through PQS can run right
+after boot. The vendored Splice stays at
+0.8.4. Drop-in from `0.8.4-1`, with no volume wipe and no config to edit.
+
+### Added
+
+- `canton-localnet env` exports every slot's participant admin gRPC endpoint as
+  `CANTON_LOCALNET_<SLOT>_ADMIN_GRPC_URL`.
+  - For slot `a` that is `http://localhost:11902`, derived from the same slot
+    port prefix as `_GRPC_URL`. It is exported on every run, with no flag and
+    no network call.
+- `canton-localnet env` exports one global, `CANTON_LOCALNET_SCAN_URL`
+  (`http://scan.localhost:10000`), the token-standard registry
+  (`/registry/...`).
+  - nginx serves the registry only under the `scan.localhost` virtual host,
+    so the name must resolve to loopback. `*.localhost` does on a developer
+    machine and on `ubuntu-latest`; where it does not, add
+    `127.0.0.1 scan.localhost` to `/etc/hosts`.
+  - For a stack on another host, set `CANTON_LOCALNET_SCAN_URL` before
+    running `canton-localnet env` and it is exported verbatim.
+  - The Action boots its own local stack, so it fails before booting if
+    `CANTON_LOCALNET_SCAN_URL` is set in the job environment to anything
+    other than a loopback URL, the same way it already refuses endpoint
+    overrides.
+- `canton-localnet env --party`, and the Action's `party` input, export each
+  slot's validator party as `CANTON_LOCALNET_<SLOT>_PARTY`.
+  - The value is the validator user's primary party (for slot `a`,
+    `a-validator-1::1220…`), on which that user holds `CanActAs`.
+  - The lookup mints a token for one `GET /v2/users/{id}` call. The token is
+    exported only if you also pass `--jwt` (Action input `jwt: true`).
+    With both off, `env` still makes no token request at all.
+- `canton-localnet tap --slot <a|b|c|d> --amount <decimal>` mints Amulet into
+  the slot's validator party wallet and prints the new contract id.
+  - Use it when a suite needs the validator party to hold an `Amulet`
+    contract, for example to read Amulet rows from PQS, which shows the new
+    contract within a second. In a workflow, add
+    `run: canton-localnet tap --slot a --amount 10` after the Action's boot
+    step: the Action already puts `canton-localnet` on `PATH`.
+  - It logs in as the slot's demo wallet user through Keycloak and calls the
+    Splice validator wallet API, so the caller needs no Splice-specific code.
+    Override the login per slot with `CANTON_LOCALNET_<SLOT>_WALLET_CLIENT_ID`,
+    `_WALLET_USER` and `_WALLET_PASSWORD`.
+  - `--amount` is converted at LocalNet's amulet price, so the wallet
+    balance, not `--amount`, is the holding: `--amount 10` mints 2000 Amulet.
+    Every call mints a new contract and adds to the balance.
+  - Safe to call straight after boot. It retries a 429 or a refused
+    connection, honouring `Retry-After`, for up to 60 seconds; the Keycloak
+    login also retries 502, 503 and 504. The mint itself does not retry those,
+    since a mint may already have committed behind them. Any other failure
+    exits 1 naming the last status.
+  - `--slot sv` is refused, since `sv-validator-1` has no Keycloak wallet
+    login.
+- `canton-localnet tap --slot <a|b|c|d> --at-least <amulet>` raises the
+  validator wallet's spendable balance to a target and prints the resulting
+  balance.
+  - Use it in place of `--amount` when a suite needs a known balance however
+    many times the step has run before, for example
+    `run: canton-localnet tap --slot a --at-least 1000`. At or above the
+    target it taps nothing, so a rerun is a no-op.
+  - The balance it reads and prints is the wallet's `effective_unlocked_qty`:
+    unlocked Amulet net of holding fees. Locked Amulet does not count.
+  - Below the target, it taps exactly the gap, converted to USD at the
+    amulet price of the latest open mining round and rounded up so the mint
+    cannot land short. It then reads the balance again and tops up if
+    holding fees or a price change left it short, for up to three taps. If
+    the balance is still short after three taps, it exits 1 naming the balance
+    it reached.
+  - `--amount` and `--at-least` are mutually exclusive, and exactly one is
+    required. The retry rules are the same as for `--amount`.
+
+### Fixed
+
+- `canton-localnet info --json` now reports the validator user's primary
+  party as `validator_primary_party`.
+  - It previously returned the participant id in that field, which is not a
+    party a ledger command can act as. A script that read it as a party now
+    gets the right value with no change on its side.
+  - Without `--offline`, `info` now also reads the validator user
+    (`GET /v2/users/{id}`) and fails, naming that lookup, if the call fails.
+    `--offline` still skips every network call.
+
+### Changed
+
+- The C# package version moves to `0.8.4-2` (NuGet `0.8.4.2`); pin
+  `go/fixture` at `v0.8.4-2`.
+
 ## [0.8.4-1] - 2026-09-30
 
 Vendored Splice moves 0.8.3 → 0.8.4, which brings Canton 3.5.19 inside the

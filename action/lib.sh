@@ -198,7 +198,7 @@ canton_localnet_client_id_overrides() {
 }
 
 # canton_localnet_endpoint_overrides prints, one per line, the names of
-# CANTON_LOCALNET_HOST, CANTON_LOCALNET_KEYCLOAK_HOST and per-slot
+# CANTON_LOCALNET_HOST, CANTON_LOCALNET_KEYCLOAK_HOST, CANTON_LOCALNET_SCAN_URL and per-slot
 # CANTON_LOCALNET_<SLOT>_{JSON_API_URL, TOKEN_URL} vars that are both set
 # (non-blank after trimming) and do not resolve to localhost — the set
 # boot.sh must fail closed on. slot.Resolve gives these vars precedence over
@@ -221,6 +221,13 @@ canton_localnet_endpoint_overrides() {
       echo "$name"
     fi
   done
+  trimmed="$(canton_localnet_trim_space "${CANTON_LOCALNET_SCAN_URL:-}")"
+  if [ -n "$trimmed" ]; then
+    case "$trimmed" in
+      http://scan.localhost:* | http://localhost:* | http://127.0.0.1:*) ;;
+      *) echo "CANTON_LOCALNET_SCAN_URL" ;;
+    esac
+  fi
   while IFS= read -r name; do
     value="${!name}"
     trimmed="$(canton_localnet_trim_space "$value")"

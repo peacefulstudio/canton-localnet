@@ -46,6 +46,9 @@ type Endpoints struct {
 	HS256User            string
 	PartyHint            string
 	ValidatorUserID      string
+	WalletClientID       string
+	WalletUser           string
+	WalletPassword       string
 }
 
 // EnvLookup mirrors os.LookupEnv so tests can inject fake environments.
@@ -122,6 +125,24 @@ func Resolve(s Slot, repoRoot string, lookup EnvLookup) (Endpoints, error) {
 			"CANTON_LOCALNET_"+s.EnvPrefix()+"_CLIENT_SECRET",
 			"AUTH_"+s.EnvPrefix()+"_VALIDATOR_CLIENT_SECRET",
 			"",
+		)
+		out.WalletClientID = pick(
+			lookup, composeEnv,
+			"CANTON_LOCALNET_"+s.EnvPrefix()+"_WALLET_CLIENT_ID",
+			"AUTH_"+s.EnvPrefix()+"_AUTO_CONFIG_CLIENT_ID",
+			s.Canonical+"-unsafe",
+		)
+		out.WalletUser = pick(
+			lookup, composeEnv,
+			"CANTON_LOCALNET_"+s.EnvPrefix()+"_WALLET_USER",
+			"AUTH_"+s.EnvPrefix()+"_WALLET_ADMIN_USER_NAME",
+			s.Canonical,
+		)
+		out.WalletPassword = pick(
+			lookup, composeEnv,
+			"CANTON_LOCALNET_"+s.EnvPrefix()+"_WALLET_PASSWORD",
+			"AUTH_"+s.EnvPrefix()+"_WALLET_ADMIN_USER_PASSWORD",
+			"abc123",
 		)
 		validatorUserIDKey := "CANTON_LOCALNET_" + s.EnvPrefix() + "_VALIDATOR_USER_ID"
 		if EnvIsSet(lookup, validatorUserIDKey) {

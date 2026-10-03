@@ -49,7 +49,7 @@ while IFS= read -r name; do
   overrides+=("$name")
 done < <(canton_localnet_endpoint_overrides)
 if [ "${#overrides[@]}" -gt 0 ]; then
-  canton_localnet_log_error "canton-localnet action: ${overrides[*]} set in the job environment to a value that differs from this action's locally-booted stack — this action boots its own LocalNet stack with fixed demo credentials and local URLs and does not reconfigure it to match differing CANTON_LOCALNET_<SLOT>_{CLIENT_ID,CLIENT_SECRET,JSON_API_URL,TOKEN_URL} or CANTON_LOCALNET_HOST overrides; 'canton-localnet env' would export credentials or URLs that don't match the booted stack. Those overrides apply only to 'canton-localnet env' run against an externally managed LocalNet stack — unset them, or leave them at their default values, before using this action."
+  canton_localnet_log_error "canton-localnet action: ${overrides[*]} set in the job environment to a value that differs from this action's locally-booted stack — this action boots its own LocalNet stack with fixed demo credentials and local URLs and does not reconfigure it to match differing CANTON_LOCALNET_<SLOT>_{CLIENT_ID,CLIENT_SECRET,JSON_API_URL,TOKEN_URL} or CANTON_LOCALNET_HOST or CANTON_LOCALNET_SCAN_URL overrides; 'canton-localnet env' would export credentials or URLs that don't match the booted stack. Those overrides apply only to 'canton-localnet env' run against an externally managed LocalNet stack — unset them, or leave them at their default values, before using this action."
   exit 1
 fi
 
@@ -199,6 +199,9 @@ if [ "$PQS" = "true" ]; then
 fi
 if [ "$JWT" = "true" ]; then
   env_args+=(--jwt)
+fi
+if [ "${PARTY:-false}" = "true" ]; then
+  env_args+=(--party)
 fi
 env_args+=("${slot_flags[@]}")
 

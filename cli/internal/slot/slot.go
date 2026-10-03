@@ -52,6 +52,11 @@ func (s Slot) LedgerGrpcPort() string     { return s.PortPrefix + "901" }
 func (s Slot) AdminGrpcPort() string      { return s.PortPrefix + "902" }
 func (s Slot) ValidatorAdminPort() string { return s.PortPrefix + "903" }
 
+// WebUIPort is the host-exposed nginx port for the slot's web UIs
+// (<PortPrefix>000). On sv-validator-1 the same listener also serves the
+// scan.localhost vhost, which carries the token-standard registry.
+func (s Slot) WebUIPort() string { return s.PortPrefix + "000" }
+
 // EnvPrefix returns the SCREAMING_SNAKE_CASE form used in compose env
 // files and CANTON_LOCALNET_<SLOT>_* per-slot overrides.
 func (s Slot) EnvPrefix() string {

@@ -12,6 +12,14 @@ import (
 	"testing"
 )
 
+func serveParticipantIdOrValidatorUser(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/v2/users/c87743ab-80e0-4b83-935a-4c0582226691" {
+		_, _ = w.Write([]byte(`{"user":{"id":"c87743ab-80e0-4b83-935a-4c0582226691","primaryParty":"a-validator-1::abcd1234"}}`))
+		return
+	}
+	_, _ = w.Write([]byte(`{"participantId":"participant::abcd1234"}`))
+}
+
 func TestInfoOfflineEmitsStaticJSON(t *testing.T) {
 	t.Setenv("CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET", "x")
 	t.Setenv("CANTON_LOCALNET_HOST", "localhost")
@@ -67,7 +75,7 @@ func TestInfoOnlineHitsParticipantID(t *testing.T) {
 	jsonServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedAuth = r.Header.Get("Authorization")
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"participantId":"a-validator-1::abcd1234"}`))
+		serveParticipantIdOrValidatorUser(w, r)
 	}))
 	defer jsonServer.Close()
 
@@ -87,7 +95,7 @@ func TestInfoOnlineHitsParticipantID(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
 		t.Fatalf("decode: %v\nstdout: %s", err, stdout)
 	}
-	if got.ParticipantID != "a-validator-1::abcd1234" {
+	if got.ParticipantID != "participant::abcd1234" {
 		t.Errorf("participant_id: got %q", got.ParticipantID)
 	}
 	if got.ParticipantNamespace != "abcd1234" {
@@ -101,7 +109,7 @@ func TestInfoOnlineHitsParticipantID(t *testing.T) {
 	}
 }
 
-func TestInfoOnlineValidatorPrimaryPartyComesFromParticipantIDNotPartyHint(t *testing.T) {
+func TestInfoOnlineValidatorPrimaryPartyComesFromValidatorUserNotPartyHintOrParticipantID(t *testing.T) {
 	t.Setenv("CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET", "secret")
 	t.Setenv("CANTON_LOCALNET_A_VALIDATOR_1_PARTY_HINT", "featuredapp-validator-1")
 
@@ -109,8 +117,8 @@ func TestInfoOnlineValidatorPrimaryPartyComesFromParticipantIDNotPartyHint(t *te
 		_, _ = w.Write([]byte(`{"access_token":"tok","token_type":"Bearer","expires_in":300}`))
 	}))
 	defer tokenServer.Close()
-	jsonServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"participantId":"a-validator-1::abcd1234"}`))
+	jsonServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serveParticipantIdOrValidatorUser(w, r)
 	}))
 	defer jsonServer.Close()
 
@@ -129,7 +137,7 @@ func TestInfoOnlineValidatorPrimaryPartyComesFromParticipantIDNotPartyHint(t *te
 		t.Errorf("party_hint should reflect configured override, got %q", got.PartyHint)
 	}
 	if got.ValidatorPrimaryParty != "a-validator-1::abcd1234" {
-		t.Errorf("validator_primary_party must come from participant id's hint, not party_hint; got %q", got.ValidatorPrimaryParty)
+		t.Errorf("validator_primary_party must come from the validator user, not party_hint or the participant id; got %q", got.ValidatorPrimaryParty)
 	}
 }
 

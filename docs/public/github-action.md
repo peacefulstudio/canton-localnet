@@ -92,7 +92,8 @@ error.
 | `multi-sync` | `false` | Enable the multi-synchronizer profile and wait for the app-synchronizer to connect. Requires `a`, `b` and `d` all present in `validators` — the app-synchronizer console script waits on all three — and the action fails closed if any are missing. A `config` file whose top-level `multiSync` is truthy also enables this wait, even when this input is left at its default. |
 | `dialect` | `native` | Exported variable dialect. Only `native` (`CANTON_LOCALNET_*`) ships today; `devkit` is not yet supported and the action fails the step rather than exporting a wrong or partial contract. |
 | `roles` | *(empty)* | Devkit-dialect role mapping. Only meaningful with `dialect: devkit`, which is not yet supported — leave unset. |
-| `jwt` | `false` | Mint a bearer token per enabled slot and export it plus the live participant id. Off by default: no token-minting network call happens at all. The token URL, client id and client secret are exported either way. |
+| `jwt` | `false` | Mint a bearer token per enabled slot and export it plus the live participant id. Off by default: the token is not exported, and unless `party` is `true` no token is minted at all. The token URL, client id and client secret are exported either way. |
+| `party` | `false` | Export each enabled slot's validator primary party as `CANTON_LOCALNET_<SLOT>_PARTY` (for `a`: `a-validator-1::1220…`), read from the validator user (`GET /v2/users/{id}` → `primaryParty`) after a token mint. The validator user holds `CanActAs` on that party. Off by default. The token is minted for the lookup only; it is exported only with `jwt: true`. |
 | `timeout` | `15m` | One total deadline shared by pre-boot cleanup, `up` (with its one retry) and `wait-ready` together — not a per-slot timeout. |
 | `cli` | `source` | `source` builds the CLI with `go build` from the action's own checkout (~9s measured with a warm Go module cache). `release` downloads the release asset matching the action's pinned ref and verifies it against that release's `checksums.txt`; valid only when the action's own `uses:` is pinned to a literal release tag (not its commit SHA — `github.action_ref` resolves to whichever form the pin used), and it fails closed — never falls back silently — on a non-tag ref, a missing asset, a download error, or a checksum mismatch. |
 | `config` | *(empty)* | Path (relative to your workspace) to a `canton-localnet.yaml` to use verbatim, instead of the one generated from `validators`/`pqs`/`observability`/`multi-sync`. When set, also set `validators` (and `pqs`) to match what that file actually enables — `wait-ready` and the env export still key off `validators`, not off parsing your file. |
@@ -111,6 +112,22 @@ the job's API-readable metadata and several of these values are secrets.
 See [`integration-testing.md`](integration-testing.md) for the full
 per-slot variable contract `canton-localnet env` renders.
 
+## Admin gRPC and the Scan registry
+
+Every exported slot carries `CANTON_LOCALNET_<SLOT>_ADMIN_GRPC_URL`, the
+participant admin gRPC endpoint (`http://localhost:11902` for `a`), derived
+from the same slot port prefix as `_GRPC_URL`.
+
+The action also exports one global, `CANTON_LOCALNET_SCAN_URL`
+(`http://scan.localhost:10000`), the token-standard registry
+(`/registry/...`) and Scan API (`/api/scan/...`). nginx serves them only under
+the `scan.localhost` virtual host of the SV web UI port, so the hostname must
+resolve to loopback. `*.localhost` names resolve to `127.0.0.1`/`::1` through
+`getaddrinfo` and `curl` on a developer machine, and systemd-resolved does the
+same on `ubuntu-latest`, where the action's own self-test fetches
+`$CANTON_LOCALNET_SCAN_URL/registry/metadata/v1/info` and expects a 200.
+Where it does not resolve, add `127.0.0.1 scan.localhost` to `/etc/hosts`.
+
 ## Credentials and their lifetime
 
 The action exports the OAuth2 credential contract (token URL, client id,
@@ -126,12 +143,40 @@ credentials (a `client_credentials` grant against `_TOKEN_URL`) rather than
 assume a single minted token survives the whole run — every fixture and
 live test suite in this repository's own consumers already does this.
 
+## Funding a party with Amulet after boot
+
+The action puts `canton-localnet` on `PATH` for later steps (its path is also
+the `cli-path` output). A suite that needs an `Amulet` contract in PQS, such as
+the Rust SDK's PQS live suite, funds the validator party with one step:
+
+```yaml
+- name: Fund slot a with Amulet
+  run: canton-localnet tap --slot a --amount 10
+```
+
+`tap` needs only the booted stack: it uses LocalNet's demo wallet login and
+prints the new contract id. It is safe to call immediately after boot: the
+validator app can answer 429 or refuse connections for a few seconds while it
+settles, and `tap` retries those with backoff for up to 60 seconds before
+failing with the last status. The Keycloak login also retries 502, 503 and
+504; the mint itself does not, since a mint may have committed behind them.
+See the `tap` section of the repository README for the login, the amount
+conversion and the refusals.
+
+To leave a slot with a known balance regardless of earlier runs, use
+`--at-least` in place of `--amount`; it taps only the gap and prints the
+resulting balance, so a rerun is a no-op:
+
+```yaml
+- name: Fund slot a to 1000 Amulet
+  run: canton-localnet tap --slot a --at-least 1000
+```
+
 ## What the action does not do
 
 - It does not check out this repository — the runner already has the
   pinned action's tree at `github.action_path`.
-- It never mints or exports a devkit-dialect variable, an admin-gRPC
-  endpoint, or a live `_PARTY` in this release.
+- It never mints or exports a devkit-dialect variable.
 - It never writes a secret to `$GITHUB_OUTPUT`, an on-disk dotenv file, or
   a diagnostics artifact. Diagnostics collection never reads back the
   rendered env, `canton-localnet.yaml`, or a compose `oauth2.env` file.

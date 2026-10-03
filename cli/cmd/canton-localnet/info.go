@@ -42,7 +42,7 @@ func newInfoCommand() *cobra.Command {
 		Use:   "info",
 		Short: "Print connection info for a LocalNet slot",
 		Long: "Prints the slot's ports, Keycloak realm, token URLs, audience, and (if reachable) the live participant id and primary party. With --json the output is a stable JSON document downstream scripts can jq into.\n\n" +
-			"Without --offline the command mints a participant-admin token, hits /v2/parties/participant-id on the JSON Ledger API, and adds participant_id / participant_namespace / validator_primary_party to the output. Pass --offline to skip the network round-trip when you only need the static endpoint mapping.",
+			"Without --offline the command mints a participant-admin token, hits /v2/parties/participant-id and /v2/users/{validator user} on the JSON Ledger API, and adds participant_id / participant_namespace / validator_primary_party (the validator user's primaryParty) to the output. Pass --offline to skip the network round-trip when you only need the static endpoint mapping.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ep, err := resolveSlotEndpoints(cmd, slotFlag)
 			if err != nil {
@@ -66,7 +66,11 @@ func newInfoCommand() *cobra.Command {
 					return fmt.Errorf("info: parse participant id: %w", err)
 				}
 				info.ParticipantNamespace = namespace
-				info.ValidatorPrimaryParty = participantID
+				primaryParty, err := slot.FetchPrimaryParty(cmd.Context(), ep, token, client)
+				if err != nil {
+					return fmt.Errorf("info: fetch validator primary party (pass --offline to skip): %w", err)
+				}
+				info.ValidatorPrimaryParty = primaryParty
 			}
 
 			if asJSON {
@@ -130,4 +134,3 @@ func writeHumanInfo(cmd *cobra.Command, info slotInfo) error {
 	}
 	return nil
 }
-

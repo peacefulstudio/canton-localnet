@@ -41,9 +41,16 @@ inputs:
   jwt:
     description: >-
       Mint a bearer token per enabled slot and export it plus the live
-      participant id. Off by default, in which case the step makes no
-      token-minting network call at all; the token URL, client id and
-      client secret are exported either way.
+      participant id. Off by default, in which case the token is not
+      exported (and, unless party is true, no token is minted at all); the
+      token URL, client id and client secret are exported either way.
+    default: 'false'
+  party:
+    description: >-
+      Export each enabled slot's validator primary party as
+      CANTON_LOCALNET_<SLOT>_PARTY, read from the validator user over the
+      JSON Ledger API. Off by default. The lookup mints a token but exports
+      it only with jwt: true.
     default: 'false'
   timeout:
     description: >-
@@ -58,7 +65,7 @@ inputs:
       release asset matching this action's pinned ref and verifies it
       against that release's checksums.txt; it is valid only when the
       action's own `uses:` is pinned to a literal release tag, not its
-      commit SHA (e.g. `uses: peacefulstudio/canton-localnet@v0.8.4-1`) and
+      commit SHA (e.g. `uses: peacefulstudio/canton-localnet@v0.8.4-2`) and
       fails closed — never silently — on a non-tag ref, a missing asset, a
       download error or a checksum mismatch.
     default: 'source'
@@ -117,6 +124,7 @@ runs:
         DIALECT: ${{ inputs.dialect }}
         ROLES: ${{ inputs.roles }}
         JWT: ${{ inputs.jwt }}
+        PARTY: ${{ inputs.party }}
         TIMEOUT: ${{ inputs.timeout }}
         CONFIG_INPUT: ${{ inputs.config }}
       run: bash "${{ github.action_path }}/action/boot.sh"

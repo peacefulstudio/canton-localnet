@@ -40,5 +40,6 @@ func newRootCommandWithDeps(makeRunner runnerFactory, vm vmDeps, rights rightsDe
 	cmd.AddCommand(newInfoCommand())
 	cmd.AddCommand(newEnvCommand())
 	cmd.AddCommand(newRightsCommand(rights))
+	cmd.AddCommand(newTapCommand(defaultTapDeps()))
 	return cmd
 }
