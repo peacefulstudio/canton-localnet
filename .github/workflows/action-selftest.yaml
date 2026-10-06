@@ -211,6 +211,58 @@ jobs:
           fi
           echo "ok: PQS connection string exported for c-validator-1"
 
+      - name: Assert the PQS watermark is set the moment the boot step returns
+        env:
+          A_PQS_DATABASE: ${{ env.CANTON_LOCALNET_A_VALIDATOR_1_PQS_DATABASE }}
+          A_PQS_USER: ${{ env.CANTON_LOCALNET_A_VALIDATOR_1_PQS_USER }}
+          C_PQS_DATABASE: ${{ env.CANTON_LOCALNET_C_VALIDATOR_1_PQS_DATABASE }}
+          C_PQS_USER: ${{ env.CANTON_LOCALNET_C_VALIDATOR_1_PQS_USER }}
+        run: |
+          set -euo pipefail
+          for slot in A C; do
+            database_var="${slot}_PQS_DATABASE"
+            user_var="${slot}_PQS_USER"
+            password_var="CANTON_LOCALNET_${slot}_VALIDATOR_1_PQS_PASSWORD"
+            offset="$(PGPASSWORD="${!password_var}" docker exec -e PGPASSWORD postgres \
+              psql -X -A -t -U "${!user_var}" -d "${!database_var}" -c 'select latest_offset()')"
+            if [ -z "$offset" ]; then
+              echo "::error::latest_offset() is NULL on ${!database_var} right after the boot step returned; wait-ready --pqs should have held the boot until Scribe set its watermark"
+              exit 1
+            fi
+            echo "ok: ${!database_var} watermark is set (offset ${offset})"
+          done
+
+      - name: Assert the run report lists the booted slots and carries no exported secret
+        run: |
+          set -euo pipefail
+          report="${RUNNER_TEMP}/canton-localnet/run-report.md"
+          cat "$report"
+          for row in \
+            '| `a-validator-1` | http://localhost:11975 | http://localhost:11901 | http://localhost:11902 | http://localhost:11903 | yes | a-validator-1::' \
+            '| `c-validator-1` | http://localhost:13975 | http://localhost:13901 | http://localhost:13902 | http://localhost:13903 | yes | c-validator-1::' \
+            '| Scan | http://scan.localhost:10000 |' \
+            '### Timings'; do
+            if ! grep -qF -- "$row" "$report"; then
+              echo "::error::run report is missing: $row"
+              exit 1
+            fi
+          done
+          for var_name in \
+            CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET CANTON_LOCALNET_C_VALIDATOR_1_CLIENT_SECRET \
+            CANTON_LOCALNET_A_VALIDATOR_1_PQS_PASSWORD CANTON_LOCALNET_C_VALIDATOR_1_PQS_PASSWORD \
+            CANTON_LOCALNET_A_VALIDATOR_1_PQS_CONNECTION_STRING CANTON_LOCALNET_C_VALIDATOR_1_PQS_CONNECTION_STRING; do
+            value="${!var_name:-}"
+            if [ -z "$value" ]; then
+              echo "::error::$var_name is empty — cannot verify it stays out of the run report"
+              exit 1
+            fi
+            if grep -qF -- "$value" "$report"; then
+              echo "::error::$var_name appears in the run report"
+              exit 1
+            fi
+          done
+          echo "ok: the run report lists both slots and carries no exported secret"
+
       - name: Tap Amulet into slot a and assert a contract id comes back
         run: |
           set -euo pipefail
@@ -221,9 +273,36 @@ jobs:
           fi
           echo "ok: tapped Amulet into a-validator-1, contract id ${contract_id:0:12}..."
 
+      - name: Assert PQS reports an effective time for the tapped Amulet
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            effective_at="$(PGPASSWORD="${CANTON_LOCALNET_A_VALIDATOR_1_PQS_PASSWORD}" docker exec -e PGPASSWORD postgres \
+              psql -X -A -t -U "${CANTON_LOCALNET_A_VALIDATOR_1_PQS_USER}" -d "${CANTON_LOCALNET_A_VALIDATOR_1_PQS_DATABASE}" \
+              -c "select created_effective_at from active('splice-amulet:Splice.Amulet:Amulet') order by created_at_offset desc limit 1" 2>/dev/null || true)"
+            if [ -n "$effective_at" ]; then
+              echo "ok: PQS reports created_effective_at=${effective_at} for the tapped Amulet"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::PQS never reported a created_effective_at for the tapped Amulet; it was seeded from an ACS snapshot instead of streamed"
+          exit 1
+
       - name: Tear down
         if: always()
         uses: ./teardown
+
+      - name: Assert the run report records the teardown
+        run: |
+          set -euo pipefail
+          report="${RUNNER_TEMP}/canton-localnet/run-report.md"
+          if ! grep -qF '`down --volumes` succeeded.' "$report"; then
+            echo "::error::run report has no successful teardown section"
+            cat "$report"
+            exit 1
+          fi
+          echo "ok: the run report records a successful teardown"
 
       - name: Assert teardown was scoped (the unrelated container survives)
         if: always()
