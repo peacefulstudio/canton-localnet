@@ -6,6 +6,7 @@ package compose
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -234,6 +235,40 @@ func TestBuildAddsPqsCValidator1ProfileWhenCEnabledAndPqsOn(t *testing.T) {
 	}
 	if !containsPair(plan.Args, "--profile", "pqs-c-validator-1") {
 		t.Errorf("expected --profile pqs-c-validator-1 when c is enabled and Pqs is on, full args: %v", plan.Args)
+	}
+}
+
+func TestBuildTurnsOnThePqsCValidator1OnboardingProfileWhenCEnabledAndPqsOn(t *testing.T) {
+	t.Parallel()
+	root := newTestRepoRoot(t)
+	plan, err := Build(Options{
+		RepoRoot:     root,
+		AuthMode:     AuthOAuth2,
+		Pqs:          true,
+		EnabledSlots: []string{"sv-validator-1", "a-validator-1", "c-validator-1"},
+	})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if !slices.Contains(plan.Env, "PQS_C_VALIDATOR_1_PROFILE=on") {
+		t.Errorf("expected PQS_C_VALIDATOR_1_PROFILE=on in env, got %v", plan.Env)
+	}
+}
+
+func TestBuildLeavesThePqsCValidator1OnboardingProfileOffWhenCDisabled(t *testing.T) {
+	t.Parallel()
+	root := newTestRepoRoot(t)
+	plan, err := Build(Options{
+		RepoRoot:     root,
+		AuthMode:     AuthOAuth2,
+		Pqs:          true,
+		EnabledSlots: []string{"sv-validator-1", "a-validator-1"},
+	})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if slices.Contains(plan.Env, "PQS_C_VALIDATOR_1_PROFILE=on") {
+		t.Errorf("did not expect PQS_C_VALIDATOR_1_PROFILE=on when c is disabled, got %v", plan.Env)
 	}
 }
 

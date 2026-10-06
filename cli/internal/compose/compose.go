@@ -192,6 +192,9 @@ func Build(opts Options) (Plan, error) {
 		"LOCALNET_DIR=" + localnetDir,
 		"AUTH_MODE=" + string(opts.AuthMode),
 	}
+	if opts.Pqs && containsSlot(enabledSlots, "c-validator-1") {
+		env = append(env, "PQS_C_VALIDATOR_1_PROFILE=on")
+	}
 	env = append(env, opts.ExtraEnv...)
 
 	return Plan{Args: args, Env: env}, nil

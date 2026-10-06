@@ -7,6 +7,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.4-3] - 2026-10-05
+
+The composite Action now leaves a run report in the job summary, and boot
+with PQS waits until PQS is actually following the ledger, so a contract
+created right after boot reaches PQS with its ledger effective time. Slot `c`'s
+PQS was never started and now is. The vendored Splice stays at 0.8.4.
+Drop-in from `0.8.4-2`, with no volume wipe and no config to edit.
+
+### Added
+
+- The composite Action writes a run report to the job summary.
+  - The header names the action ref with the CLI and Splice versions. A
+    **Validators** table has one row per booted slot: JSON API, ledger gRPC,
+    admin gRPC and validator API URLs, whether PQS is on and, with
+    `party: true`, the primary party. A **Shared endpoints** block lists the
+    Scan, Keycloak and token URLs.
+  - A **Timings** table gives the duration of each boot phase: CLI resolve,
+    pre-boot cleanup, `up` (image pull and compose up, one phase),
+    `wait-ready`, the PQS watermark wait and env export, plus the total.
+    When boot is slow, it shows which phase.
+  - The teardown step appends whether `down --volumes` succeeded and lists
+    any container that was unhealthy or had exited non-zero when teardown
+    began. Those containers' logs are uploaded as the
+    `canton-localnet-teardown-diagnostics-<job>` artifact, which until now
+    appeared only when teardown itself failed.
+  - The report lists endpoints only. A client secret, JWT, PQS password or PQS
+    connection string is never written to it. There is nothing to configure:
+    every run gets the report.
+- `canton-localnet env --format github --summary-file <path>` appends the same
+  markdown report to a file, rendered from the values `env` exports, so the
+  report cannot disagree with the environment your steps see. Use it to
+  produce the report outside the Action, for example in a job that boots
+  LocalNet with the CLI.
+- `canton-localnet wait-ready --pqs` also waits until the slot's PQS is
+  following the ledger.
+  - Pass `--slot a` or `--slot c` with it. It shares the existing
+    `--timeout`, and a failure names PQS and the slot.
+  - It runs `psql` inside the compose `postgres` container, so `docker` must
+    be on `PATH`. The Action already does this for you; use the flag when you
+    boot with the CLI and enable PQS.
+
+### Fixed
+
+- With `pqs: true`, a contract created right after boot could reach PQS
+  without its ledger effective time.
+  - Before, the boot step returned as soon as the participants were ready,
+    while PQS (Scribe) was still starting. A contract created in that window,
+    for example an `Amulet` from `canton-localnet tap`, was loaded from a
+    snapshot of the active contracts, and PQS reported a null
+    `created_effective_at` for it. A test that read that column failed only
+    when it ran fast enough after boot.
+  - Now boot does not return until Scribe has set its watermark, so every
+    contract you create afterwards is streamed with its effective time. The
+    Action waits for slots `a` and `c`, the slots that run PQS, and you need
+    no polling step in your workflow. The wait counts against the existing
+    `timeout` input, and its duration is shown in the job summary.
+  - If you boot with the CLI instead of the Action, add `--pqs` to your
+    `wait-ready` call to get the same guarantee.
+- With `pqs: true` and slot `c` enabled, slot `c`'s PQS never started.
+  - Its profile defaulted to off, so its PQS user was never created, Scribe
+    never received credentials and its PQS database never got a schema. A
+    suite that queried slot `c`'s PQS found nothing to connect to.
+  - `canton-localnet up` now turns the PQS profile on for `c` whenever PQS and
+    `c` are both enabled. If you worked around this by
+    setting `PQS_C_VALIDATOR_1_PROFILE=on` yourself, you can remove that
+    setting; leaving it is harmless.
+- With `pqs: true`, the PQS wait now uses the file named by the `config` input.
+  - Before, that wait ignored `config` and searched upward from your workspace
+    for a `canton-localnet.yaml`. If your repository holds another one, for
+    example with an unresolved `${SECRET}`, the step failed while parsing it
+    after the stack had already booted.
+  - Now every call the Action makes, the PQS wait included, reads the same
+    config. There is nothing to change in your workflow.
+
+### Changed
+
+- The C# package version moves to `0.8.4-3` (NuGet `0.8.4.3`); pin
+  `go/fixture` at `v0.8.4-3`.
+
 ## [0.8.4-2] - 2026-10-03
 
 `canton-localnet env` and the GitHub Action now export what a live test suite

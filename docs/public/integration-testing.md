@@ -25,6 +25,15 @@ canton-localnet wait-ready --timeout 10m --interval 5s
 canton-localnet down --volumes
 ```
 
+With PQS enabled, add `--pqs` (and `--slot a` or `--slot c`) to `wait-ready`:
+it then also waits until that slot's Scribe pipeline has set its watermark
+(`select latest_offset()` returns non-null), which is the point from which
+PQS streams transactions with their effective time. A contract created before
+that point is seeded from an ACS snapshot and reports no
+`created_effective_at`. The wait shares `--timeout` and its error names PQS and
+the slot. It runs `psql` inside the compose `postgres` container, so it needs
+`docker` on `PATH`. The composite action does this for you.
+
 This separation is deliberate. Booting a Canton network is slow and
 stateful; a test process should not pay that cost per run. Bring the stack
 up once (locally, in a CI runner, or on a long-lived VM), point many test
