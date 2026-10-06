@@ -462,6 +462,80 @@ assert_eq "multi_sync_active: a failing probe logs a ::warning:: instead of fail
   "1" "$(grep -c '^::warning::' <<<"$probe_output")"
 rm -rf "$stub_dir"
 
+## Run-report helpers: timings, teardown section, unhealthy-container probe
+
+RUNNER_TEMP="$(mktemp -d)"
+export RUNNER_TEMP
+mkdir -p "$RUNNER_TEMP/canton-localnet"
+printf 'CLI resolve (source)\t9\nUp (image pull and compose up)\t120\nWait ready\t41\n' >"$(canton_localnet_timings_file)"
+got="$(canton_localnet_render_timings)"
+assert_contains "render_timings: lists a phase row" "$got" "| Up (image pull and compose up) | 120 |"
+assert_contains "render_timings: sums the phases into a total row" "$got" "| **Total** | **170** |"
+
+: >"$(canton_localnet_timings_file)"
+assert_eq "render_timings: prints nothing when no phase was recorded" "" "$(canton_localnet_render_timings)"
+
+stub_dir="$(mktemp -d)"
+cat >"$stub_dir/make" <<'EOF'
+#!/usr/bin/env bash
+cat <<'OUT'
+NAME                        IMAGE     SERVICE                     STATUS
+a-validator-1-participant   canton    a-validator-1-participant   Up 5 minutes (healthy)
+sv-app                      splice    sv-app                      Up 5 minutes (unhealthy)
+init-job                    busybox   init-job                    Exited (3) 4 minutes ago
+setup-done                  busybox   setup-done                  Exited (0) 4 minutes ago
+OUT
+EOF
+chmod +x "$stub_dir/make"
+got="$(PATH="$stub_dir:$PATH" canton_localnet_unhealthy_containers "$here/..")"
+assert_eq "unhealthy_containers: lists only unhealthy and non-zero-exit containers" \
+  "$(printf 'sv-app\tunhealthy\ninit-job\texited 3')" "$got"
+
+got="$(canton_localnet_render_teardown succeeded "$(printf 'sv-app\tunhealthy')" 'Logs are in the artifact.')"
+assert_contains "render_teardown: states the result" "$got" '`down --volumes` succeeded.'
+assert_contains "render_teardown: lists the unhealthy container row" "$got" '| `sv-app` | unhealthy |'
+assert_contains "render_teardown: points at the logs" "$got" "Logs are in the artifact."
+
+got="$(canton_localnet_render_teardown succeeded '' 'Logs are in the artifact.')"
+assert_eq "render_teardown: a clean teardown has no container table or logs pointer" \
+  "$(printf '### Teardown\n\n`down --volumes` succeeded.')" "$got"
+
+## down.sh writes the Teardown section, and the summary never carries a secret
+## present in the job environment
+
+stub="$(mktemp -d)/canton-localnet"
+cat >"$stub" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$stub"
+{
+  echo "CANTON_LOCALNET_ACTION_CLI_PATH=$stub"
+  echo "CANTON_LOCALNET_ACTION_REPO_ROOT=$here/.."
+  echo "CANTON_LOCALNET_ACTION_CONFIG_PATH=/dev/null"
+} >"$(canton_localnet_state_file)"
+summary="$(mktemp)"
+out="$(mktemp)"
+set +e
+PATH="$stub_dir:$PATH" STRICT=true GITHUB_OUTPUT="$out" GITHUB_STEP_SUMMARY="$summary" GITHUB_JOB=probe \
+  CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET="TEARDOWN-SYNTHETIC-SECRET-41d8" \
+  bash "$here/down.sh" >/dev/null 2>&1
+status=$?
+set -e
+assert_status "down.sh (strict): a succeeding stub 'down' exits 0 with unhealthy containers present" "0" "$status"
+assert_contains "down.sh (strict): summary has the Teardown section" "$(cat "$summary")" '`down --volumes` succeeded.'
+assert_contains "down.sh (strict): summary lists the unhealthy container" "$(cat "$summary")" '| `sv-app` | unhealthy |'
+assert_contains "down.sh (strict): summary names the teardown diagnostics artifact" "$(cat "$summary")" "canton-localnet-teardown-diagnostics-probe"
+assert_contains "down.sh (strict): unhealthy containers set unhealthy=true" "$(cat "$out")" "unhealthy=true"
+tests_run=$((tests_run + 1))
+if grep -qF "TEARDOWN-SYNTHETIC-SECRET-41d8" "$summary"; then
+  echo "FAIL: down.sh's summary contains a secret from the job environment"
+  failures=$((failures + 1))
+else
+  echo "ok: down.sh's summary contains no secret from the job environment"
+fi
+rm -rf "$stub_dir"
+
 ## T4: `canton-localnet env --format github` masks a synthetic secret set
 ## through the documented per-slot override (CANTON_LOCALNET_A_VALIDATOR_1_
 ## CLIENT_SECRET), before it ever writes $GITHUB_ENV. Needs a real build of
@@ -492,9 +566,64 @@ if [ -n "${CANTON_LOCALNET_BIN:-}" ]; then
   else
     echo "ok: the raw synthetic secret appears only on its own ::add-mask:: line, nowhere else in stdout"
   fi
+
+  summary_secret="SUMMARY-SYNTHETIC-SECRET-77ab"
+  summary_pqs_password="SUMMARY-SYNTHETIC-PQS-PASSWORD-52e1"
+  summary_file="$(mktemp)"
+  CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET="$summary_secret" \
+    PQS_A_VALIDATOR_1_READER_PASSWORD="$summary_pqs_password" \
+    GITHUB_ENV="$(mktemp)" \
+    "$CANTON_LOCALNET_BIN" env --format github --pqs --slot a --summary-file "$summary_file" --repo-root "$here/.." >/dev/null 2>&1
+  summary_text="$(cat "$summary_file")"
+  assert_contains "env --summary-file: validators table row for a-validator-1" "$summary_text" '| `a-validator-1` | http://localhost:11975 | http://localhost:11901 | http://localhost:11902 | http://localhost:11903 | yes |'
+  for forbidden in "$summary_secret" "$summary_pqs_password" "Password="; do
+    tests_run=$((tests_run + 1))
+    if grep -qF "$forbidden" <<<"$summary_text"; then
+      echo "FAIL: env --summary-file output contains [$forbidden]"
+      failures=$((failures + 1))
+    else
+      echo "ok: env --summary-file output does not contain [$forbidden]"
+    fi
+  done
 else
   echo "skip: CANTON_LOCALNET_BIN not set — action-selftest.yaml's T1 job builds the CLI and sets it; run this script from there to exercise the masking assertion"
 fi
+
+## boot.sh passes the selected config to the PQS watermark wait
+
+boot_dir="$(mktemp -d)"
+boot_argv_log="$boot_dir/argv.log"
+cat >"$boot_dir/canton-localnet" <<'EOF'
+#!/usr/bin/env bash
+echo "$*" >>"$BOOT_ARGV_LOG"
+EOF
+cat >"$boot_dir/make" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+cat >"$boot_dir/timeout" <<'EOF'
+#!/usr/bin/env bash
+shift
+exec "$@"
+EOF
+chmod +x "$boot_dir/canton-localnet" "$boot_dir/make" "$boot_dir/timeout"
+mkdir -p "$boot_dir/runner-temp"
+echo "validators: {}" >"$boot_dir/ci-specific.yaml"
+: >"$boot_dir/step-summary"
+: >"$boot_dir/github-output"
+PATH="$boot_dir:$PATH" BOOT_ARGV_LOG="$boot_argv_log" \
+  CLI_PATH="$boot_dir/canton-localnet" ACTION_PATH="$here/.." VALIDATORS=a PQS=true \
+  OBSERVABILITY=false MULTI_SYNC=false DIALECT=native ROLES="" JWT=false TIMEOUT=10m \
+  CONFIG_INPUT="$boot_dir/ci-specific.yaml" RUNNER_TEMP="$boot_dir/runner-temp" \
+  RUNNER_ENVIRONMENT=github-hosted GITHUB_WORKSPACE="$boot_dir" \
+  GITHUB_OUTPUT="$boot_dir/github-output" GITHUB_STEP_SUMMARY="$boot_dir/step-summary" \
+  bash "$here/boot.sh" >/dev/null 2>&1
+status=$?
+assert_status "boot.sh (pqs: true): runs to completion against a stub CLI" "0" "$status"
+pqs_wait_line="$(grep -- '--pqs' "$boot_argv_log" | grep '^wait-ready' || true)"
+assert_contains "boot.sh (pqs: true): the PQS wait-ready call is recorded" "$pqs_wait_line" "--slot a-validator-1"
+assert_contains "boot.sh (pqs: true): the PQS wait-ready call carries the selected --config" "$pqs_wait_line" "--config $boot_dir/ci-specific.yaml"
+rm -rf "$boot_dir"
 
 echo
 echo "$tests_run tests run, $failures failed"

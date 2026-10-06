@@ -38,12 +38,12 @@ runs:
       # outputs.failed) is checked too, so a crash in down.sh before it
       # writes its output — e.g. the saved-state file being unreadable —
       # still reads as a failure here instead of silently skipping.
-      if: always() && (steps.down.outcome == 'failure' || steps.down.outputs.failed == 'true')
+      if: always() && (steps.down.outcome == 'failure' || steps.down.outputs.failed == 'true' || steps.down.outputs.unhealthy == 'true')
       shell: bash
       run: bash "${{ github.action_path }}/../action/diagnose.sh"
 
     - name: Upload diagnostics (teardown failed)
-      if: always() && (steps.down.outcome == 'failure' || steps.down.outputs.failed == 'true')
+      if: always() && (steps.down.outcome == 'failure' || steps.down.outputs.failed == 'true' || steps.down.outputs.unhealthy == 'true')
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: canton-localnet-teardown-diagnostics-${{ github.job }}

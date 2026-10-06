@@ -65,7 +65,7 @@ inputs:
       release asset matching this action's pinned ref and verifies it
       against that release's checksums.txt; it is valid only when the
       action's own `uses:` is pinned to a literal release tag, not its
-      commit SHA (e.g. `uses: peacefulstudio/canton-localnet@v0.8.4-2`) and
+      commit SHA (e.g. `uses: peacefulstudio/canton-localnet@v0.8.4-3`) and
       fails closed — never silently — on a non-tag ref, a missing asset, a
       download error or a checksum mismatch.
     default: 'source'
@@ -116,6 +116,7 @@ runs:
       env:
         CLI_PATH: ${{ steps.resolve-cli.outputs.cli-path }}
         ACTION_PATH: ${{ github.action_path }}
+        ACTION_REF: ${{ github.action_ref }}
         RUNNER_ENVIRONMENT: ${{ runner.environment }}
         VALIDATORS: ${{ inputs.validators }}
         PQS: ${{ inputs.pqs }}

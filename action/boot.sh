@@ -11,6 +11,7 @@
 # Required env: CLI_PATH, ACTION_PATH, VALIDATORS, PQS, OBSERVABILITY,
 # MULTI_SYNC, DIALECT, ROLES, JWT, TIMEOUT, CONFIG_INPUT, RUNNER_TEMP,
 # RUNNER_ENVIRONMENT, GITHUB_WORKSPACE, GITHUB_OUTPUT, GITHUB_STEP_SUMMARY.
+# Optional: ACTION_REF (shown in the job summary heading).
 
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -112,6 +113,7 @@ state_file="$(canton_localnet_state_file)"
 timeout_seconds="$(canton_localnet_parse_duration "$TIMEOUT")"
 deadline=$(($(date +%s) + timeout_seconds))
 
+preboot_started="$(date +%s)"
 preboot_deadline="$(canton_localnet_deadline_remaining "$deadline" "pre-boot reconciliation")"
 echo "::group::Pre-boot reconciliation"
 preboot_rc=0
@@ -125,6 +127,7 @@ if canton_localnet_has_leftover_containers "$preboot_log"; then
   canton_localnet_log_warning "pre-boot reconciliation found and removed leftover LocalNet containers from a previous run"
 fi
 echo "::endgroup::"
+canton_localnet_record_phase "Pre-boot reconciliation" "$preboot_started"
 
 echo "::group::Docker version safety check"
 remaining="$(canton_localnet_deadline_remaining "$deadline" "Docker version check")"
@@ -142,6 +145,7 @@ up_args=(up --repo-root "$ACTION_PATH" --config "$config_path")
 
 down_args=(down --volumes --repo-root "$ACTION_PATH" --config "$config_path")
 
+up_started="$(date +%s)"
 echo "::group::canton-localnet up (one retry on the Splice bootstrap race)"
 remaining="$(canton_localnet_deadline_remaining "$deadline" "up")"
 if ! timeout "${remaining}s" "$CLI_PATH" "${up_args[@]}"; then
@@ -156,12 +160,14 @@ if ! timeout "${remaining}s" "$CLI_PATH" "${up_args[@]}"; then
   timeout "${remaining}s" "$CLI_PATH" "${up_args[@]}"
 fi
 echo "::endgroup::"
+canton_localnet_record_phase "Up (image pull and compose up)" "$up_started"
 
 multi_sync_effective="$MULTI_SYNC"
 if [ "$multi_sync_effective" != "true" ] && canton_localnet_multi_sync_active "$ACTION_PATH"; then
   multi_sync_effective="true"
 fi
 
+wait_ready_started="$(date +%s)"
 wait_ready_slots=("${enabled[@]}" sv)
 for short in "${wait_ready_slots[@]}"; do
   remaining="$(canton_localnet_deadline_remaining "$deadline" "wait-ready for ${short}")"
@@ -188,12 +194,29 @@ if [ "$multi_sync_effective" = "true" ]; then
   echo "::endgroup::"
 fi
 
+canton_localnet_record_phase "Wait ready" "$wait_ready_started"
+
+if [ "$PQS" = "true" ]; then
+  pqs_wait_started="$(date +%s)"
+  for short in "${enabled[@]}"; do
+    { [ "$short" = "a" ] || [ "$short" = "c" ]; } || continue
+    remaining="$(canton_localnet_deadline_remaining "$deadline" "the PQS watermark wait for ${short}")"
+    prefix="$(canton_localnet_slot_prefix "$short")"
+    echo "::group::Wait for the PQS watermark on ${short}"
+    "$CLI_PATH" wait-ready --url "http://localhost:${prefix}975/readyz" --timeout "${remaining}s" --interval 5s \
+      --pqs --slot "$(canton_localnet_slot_canonical "$short")" --repo-root "$ACTION_PATH" --config "$config_path"
+    echo "::endgroup::"
+  done
+  canton_localnet_record_phase "Wait PQS watermark" "$pqs_wait_started"
+fi
+
 slot_flags=()
 for short in "${enabled[@]}"; do
   slot_flags+=(--slot "$short")
 done
 
-env_args=("$CLI_PATH" env --format github --repo-root "$ACTION_PATH" --config "$config_path")
+report_file="$(canton_localnet_report_file)"
+env_args=("$CLI_PATH" env --format github --summary-file "$report_file" --repo-root "$ACTION_PATH" --config "$config_path")
 if [ "$PQS" = "true" ]; then
   env_args+=(--pqs)
 fi
@@ -205,27 +228,22 @@ if [ "${PARTY:-false}" = "true" ]; then
 fi
 env_args+=("${slot_flags[@]}")
 
+primary_canonical="$(canton_localnet_slot_canonical "$primary_slot")"
+printf '## canton-localnet %s\n\n' "${ACTION_REF:-(local checkout)}" >"$report_file"
+
+env_started="$(date +%s)"
 echo "::group::canton-localnet env --format github"
 "${env_args[@]}"
 echo "::endgroup::"
+canton_localnet_record_phase "Env export" "$env_started"
 
-primary_canonical="$(canton_localnet_slot_canonical "$primary_slot")"
 {
-  echo "## canton-localnet"
   echo
-  echo "Booted validators: ${enabled[*]} (plus the always-on SV, booted and waited on but not exported —"
-  echo "\`canton-localnet env\` is OAuth2-only in v1 and SV has no OAuth2 client). Primary profile:"
-  echo "\`${primary_canonical}\`."
+  canton_localnet_render_timings
   echo
-  echo "Every \`CANTON_LOCALNET_<SLOT>_*\` variable is in \`\$GITHUB_ENV\` for the rest of this job — see"
-  echo "\`docs/public/github-action.md\` for the full contract. An OAuth2 credential mints a token that"
-  echo "lives 300s. Refresh via the credentials, don't assume a single token survives a long-running test"
-  echo "suite."
-  echo
-  echo "**Never \`echo\`, \`printenv\` or otherwise print an exported \`_CLIENT_SECRET\`, \`_JWT\` or"
-  echo "\`_PQS_CONNECTION_STRING\` value in a later step.** They are masked in the raw log, but a step that"
-  echo "captures its own output (e.g. into a file it then uploads) bypasses that masking."
-} >>"$GITHUB_STEP_SUMMARY"
+  canton_localnet_security_note
+} >>"$report_file"
+cat "$report_file" >>"$GITHUB_STEP_SUMMARY"
 
 echo "cli-path=$CLI_PATH" >>"$GITHUB_OUTPUT"
 echo "profile=$primary_canonical" >>"$GITHUB_OUTPUT"

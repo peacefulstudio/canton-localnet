@@ -112,6 +112,28 @@ the job's API-readable metadata and several of these values are secrets.
 See [`integration-testing.md`](integration-testing.md) for the full
 per-slot variable contract `canton-localnet env` renders.
 
+## Job summary
+
+Every run leaves a compact report in the job summary:
+
+- a header with the action ref, the CLI version and the Splice version;
+- a **Validators** table with one row per booted slot: JSON API, ledger gRPC,
+  admin gRPC and validator API URLs, whether PQS is enabled, and the primary
+  party when `party: true`;
+- the **Shared endpoints**: the Scan URL, Keycloak and the OAuth token URL;
+- **Timings** for the CLI resolve, pre-boot reconciliation, `up` (image pull
+  and compose up, one phase), wait-ready, the PQS watermark wait (with
+  `pqs: true`) and env export, plus the total;
+- a **Teardown** section, appended by `.../teardown`: whether `down --volumes`
+  succeeded, and any container that was unhealthy or had exited non-zero when
+  teardown began. Their logs are uploaded in the
+  `canton-localnet-teardown-diagnostics-<job>` artifact.
+
+The tables are rendered by `canton-localnet env --format github
+--summary-file <path>` from the same values it writes to `$GITHUB_ENV`, so the
+report cannot disagree with the exports. It lists only endpoints: a client
+secret, JWT, PQS password or PQS connection string never appears in it.
+
 ## Admin gRPC and the Scan registry
 
 Every exported slot carries `CANTON_LOCALNET_<SLOT>_ADMIN_GRPC_URL`, the
@@ -153,6 +175,11 @@ the Rust SDK's PQS live suite, funds the validator party with one step:
 - name: Fund slot a with Amulet
   run: canton-localnet tap --slot a --amount 10
 ```
+
+With `pqs: true` the boot step does not return until Scribe has set its
+watermark for each of `a` and `c`, so an `Amulet` tapped right after boot is
+streamed into PQS with its effective time; no PQS polling step is needed in
+your workflow.
 
 `tap` needs only the booted stack: it uses LocalNet's demo wallet login and
 prints the new contract id. It is safe to call immediately after boot: the

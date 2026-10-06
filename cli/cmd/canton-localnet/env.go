@@ -60,6 +60,8 @@ func newEnvCommand() *cobra.Command {
 		pqs     bool
 		party   bool
 		ciSlot  int
+
+		summaryFile string
 	)
 	cmd := &cobra.Command{
 		Use:   "env",
@@ -70,6 +72,9 @@ func newEnvCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := validateEnvFormat(format); err != nil {
 				return err
+			}
+			if summaryFile != "" && format != envFormatGithub {
+				return fmt.Errorf("env: --summary-file requires --format %s", envFormatGithub)
 			}
 			opts := envOptions{jwt: jwt, offline: offline, pqs: pqs, party: party, ciSlot: ciSlot}
 			switch format {
@@ -94,7 +99,13 @@ func newEnvCommand() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return appendGithubEnv(githubEnvPath, vars)
+				if err := appendGithubEnv(githubEnvPath, vars); err != nil {
+					return err
+				}
+				if summaryFile == "" {
+					return nil
+				}
+				return appendEnvSummary(summaryFile, vars)
 			}
 		},
 	}
@@ -105,6 +116,7 @@ func newEnvCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&pqs, "pqs", false, "Also export each slot's PQS Postgres connection details")
 	cmd.Flags().BoolVar(&party, "party", false, "Also export each slot's validator primary party (_PARTY), read from the validator user over the JSON Ledger API; mints a token for the lookup but exports it only with --jwt")
 	cmd.Flags().IntVar(&ciSlot, "ci-slot", 0, "Re-resolve a-validator-1's credential contract as CI slot N's confidential client (1..4) instead of the interactive a-validator-1-validator client; only valid with --slot a")
+	cmd.Flags().StringVar(&summaryFile, "summary-file", "", "With --format github, append a markdown run report (versions, validators table, shared endpoints) to this file, e.g. $GITHUB_STEP_SUMMARY; secrets are never written to it")
 	_ = cmd.MarkFlagRequired("slot")
 	return cmd
 }

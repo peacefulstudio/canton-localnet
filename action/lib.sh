@@ -337,3 +337,64 @@ canton_localnet_parse_duration() {
   canton_localnet_log_error "canton-localnet action: 'timeout' must look like 15m, 900s or 1h — got '$raw'"
   return 1
 }
+
+canton_localnet_report_file() {
+  echo "${RUNNER_TEMP:?RUNNER_TEMP is required}/canton-localnet/run-report.md"
+}
+
+canton_localnet_timings_file() {
+  echo "${RUNNER_TEMP:?RUNNER_TEMP is required}/canton-localnet/timings.tsv"
+}
+
+canton_localnet_record_phase() {
+  local phase="$1" started_epoch="$2" timings_file
+  timings_file="$(canton_localnet_timings_file)"
+  mkdir -p "$(dirname "$timings_file")"
+  printf '%s\t%s\n' "$phase" "$(($(date +%s) - started_epoch))" >>"$timings_file"
+}
+
+canton_localnet_render_timings() {
+  local timings_file
+  timings_file="$(canton_localnet_timings_file)"
+  [ -s "$timings_file" ] || return 0
+  echo "### Timings"
+  echo
+  echo "| Phase | Seconds |"
+  echo "|---|---|"
+  awk -F '\t' '{ printf "| %s | %d |\n", $1, $2; total += $2 } END { printf "| **Total** | **%d** |\n", total }' "$timings_file"
+}
+
+canton_localnet_security_note() {
+  echo "Exported secrets, JWTs and PQS connection strings are masked in logs and are never listed here; never print them in a later step."
+}
+
+canton_localnet_unhealthy_containers() {
+  local status_table line state
+  status_table="$(timeout 30 make -C "$1" status-all 2>/dev/null)" || return 0
+  while IFS= read -r line; do
+    if [[ "$line" =~ \(unhealthy\) ]]; then
+      state="unhealthy"
+    elif [[ "$line" =~ [Ee]xited\ \(([1-9][0-9]*)\) ]]; then
+      state="exited ${BASH_REMATCH[1]}"
+    else
+      continue
+    fi
+    printf '%s\t%s\n' "${line%%[[:space:]]*}" "$state"
+  done <<<"$status_table"
+}
+
+canton_localnet_render_teardown() {
+  local result="$1" unhealthy_table="$2" logs_pointer="$3" container state
+  echo "### Teardown"
+  echo
+  echo "\`down --volumes\` ${result}."
+  [ -n "$unhealthy_table" ] || return 0
+  echo
+  echo "| Unhealthy container | State |"
+  echo "|---|---|"
+  while IFS=$'\t' read -r container state; do
+    echo "| \`${container}\` | ${state} |"
+  done <<<"$unhealthy_table"
+  echo
+  echo "$logs_pointer"
+}

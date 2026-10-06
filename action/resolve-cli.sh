@@ -22,6 +22,8 @@ source "$here/lib.sh"
 
 bin_dir="$RUNNER_TEMP/canton-localnet/bin"
 mkdir -p "$bin_dir"
+: >"$(canton_localnet_timings_file)"
+resolve_started="$(date +%s)"
 cli_path="$bin_dir/canton-localnet"
 
 build_from_source() {
@@ -86,6 +88,7 @@ case "$CLI_MODE" in
 esac
 
 "$cli_path" --version >/dev/null
+canton_localnet_record_phase "CLI resolve ($CLI_MODE)" "$resolve_started"
 
 echo "$bin_dir" >>"$GITHUB_PATH"
 echo "cli-path=$cli_path" >>"$GITHUB_OUTPUT"
