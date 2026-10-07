@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0-1] - 2026-10-07
+
+Vendored Splice moves 0.8.4 → 0.9.0, which brings Canton 3.6.1 inside the
+images, up from 3.5.19. This is a Canton minor upgrade: the Compose topology,
+ports, slots, env vars and fixture surface are unchanged, and the only change to
+the vendored stack is that the Postgres health check now names the loopback
+host and port explicitly. PQS (`participant-query-store`) has no 3.6 image yet
+and stays on 3.5.7. Upgrade from `0.8.x` by running `canton-localnet down --volumes`
+first and booting on fresh volumes.
+
+### Added
+
+- `canton-localnet up --timeout <duration>` gives up and exits non-zero when
+  the boot has not finished in time.
+  - Before, a boot that stalled, for example on a machine too small for
+    LocalNet, never failed by itself: the vendored Splice health check retries
+    for hours. Pass a duration such as `--timeout 15m` in CI to turn a stall
+    into a failure. The default, `0`, keeps the unbounded behaviour.
+- The composite Action takes an `up-timeout` input, the longest one `up`
+  attempt may take before it is killed and the one retry starts.
+  - Set it below `timeout` (for example `up-timeout: 10m` with
+    `timeout: 15m`) so a stalled first attempt leaves room for the retry.
+    Empty, the default, or zero keeps today's behaviour, where an attempt may
+    use whatever is left of `timeout`.
+- The diagnostics artifact the Action uploads when the boot fails now
+  carries host diagnostics.
+  - A `host/` folder holds `free -m`, `nproc`, the kernel out-of-memory lines
+    from `dmesg` and the peak memory used during the run. For this LocalNet's
+    compose project only, it also holds `docker stats`, per-container state and
+    health, and the tail of the `splice` and `canton` logs. When the first `up`
+    attempt also failed, a `host-attempt1/` folder holds the same capture
+    taken before the retry. Containers of other workloads on a shared Docker
+    daemon are never listed or logged. Read it when a boot fails or stalls to
+    tell a starved runner from a LocalNet fault; there is nothing to
+    configure.
+
+### Changed
+
+- The vendored Splice moves from 0.8.4 to 0.9.0, and the Canton inside the
+  `canton` and `splice-app` images from 3.5.19 to 3.6.1.
+  - Canton 3.6 removes the `topology.use-new-processor` and
+    `topology.use-new-client` configuration keys. If you pass an
+    `ADDITIONAL_CONFIG` that sets either, delete it.
+  - Canton migrates its databases automatically on startup, but an in-place
+    upgrade over a `0.8.x` volume was not exercised, so boot this release on
+    fresh volumes: `canton-localnet down --volumes` (or `make clean`) first.
+    Ledger state, onboarded parties and uploaded DARs do not survive the wipe.
+  - Canton 3.6 makes Daml-LF 2.3 the default compile target, and Ledger API
+    clients on this LocalNet gain `POST /v2/updates/update-by-hash` and
+    `POST /v2/commands/completion-by-hash`. A project that already compiles
+    for LF 2.2 keeps working.
+  - Splice 0.9.0 removes Scan's `/v0/state/acs`, `/v1/state/acs`,
+    `/v0/holdings/state` and `/v1/holdings/state` endpoints, and the SV app's
+    `/v0/dso`. If your client calls any of them, move it to Scan's
+    `/v2/state/acs` and `/v2/holdings/state`, and to the SV app's `/v1/dso`
+    or Scan's `/v0/dso`, before booting this release.
+- The Postgres container health check runs `pg_isready` against `127.0.0.1:5432`
+  explicitly, as upstream Splice 0.9.0 does. Nothing to do.
+- The C# package version moves to `0.9.0-1` (NuGet `0.9.0.1`); pin
+  `go/fixture` at `v0.9.0-1`.
+
 ## [0.8.4-3] - 2026-10-05
 
 The composite Action now leaves a run report in the job summary, and boot
