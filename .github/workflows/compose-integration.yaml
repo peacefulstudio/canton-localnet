@@ -8,6 +8,7 @@
 name: compose-integration
 
 on:
+  workflow_dispatch:
   push:
     branches: [dev]
     paths:
@@ -41,13 +42,22 @@ permissions:
 jobs:
   integration:
     name: integration (compose stack)
+    # LocalNet peaks near 7.6 GiB and starves 2 vCPU / 8 GB runners; these lanes run on 4 vCPU / 16 GB runners, or by manual dispatch.
+    if: github.repository == 'peacefulstudio/canton-localnet' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       AUTH_MODE: oauth2
+      # Workaround: the vendored splice health check retries for hours, so a starved boot hangs instead of failing. 15m is above the 12m slowest healthy boot measured.
+      LOCALNET_UP_TIMEOUT: 15m
+      HOST_DIAGNOSTICS_DIR: /tmp/host-diagnostics
+      MEMORY_SAMPLES_FILE: /tmp/memory-samples.txt
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Start memory sampler
+        run: bash action/host-diagnostics.sh start-sampler "${MEMORY_SAMPLES_FILE}"
 
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
@@ -94,13 +104,14 @@ jobs:
           # — "Ensuring decentralized synchronizer registered failed:
           # UNAVAILABLE: No active synchronizer serial found". The initial
           # bring-up is treated as setup, so one retry is allowed.
-          if ! "${GITHUB_WORKSPACE}/canton-localnet" up; then
+          if ! "${GITHUB_WORKSPACE}/canton-localnet" up --timeout "${LOCALNET_UP_TIMEOUT}"; then
             echo "::warning::canton-localnet up failed on first attempt — capturing diagnostics, tearing down with volumes, and retrying once"
             docker ps -a > /tmp/docker-ps-attempt1.txt 2>&1 || true
             timeout 60 make logs > /tmp/logs-attempt1.txt 2>&1 || true
+            bash action/host-diagnostics.sh capture "${HOST_DIAGNOSTICS_DIR}/attempt1" "${MEMORY_SAMPLES_FILE}"
             "${GITHUB_WORKSPACE}/canton-localnet" down --volumes || echo "::warning::pre-retry teardown failed; second up may fail with leaked state"
             sleep 30
-            "${GITHUB_WORKSPACE}/canton-localnet" up
+            "${GITHUB_WORKSPACE}/canton-localnet" up --timeout "${LOCALNET_UP_TIMEOUT}"
           fi
 
       - name: CLI wait-ready check
@@ -178,6 +189,7 @@ jobs:
           make status > /tmp/compose-status.txt 2>&1 || true
           timeout 30 make logs > /tmp/compose-logs.txt 2>&1 || true
           docker ps -a > /tmp/docker-ps.txt 2>&1 || true
+          bash action/host-diagnostics.sh capture "${HOST_DIAGNOSTICS_DIR}/final" "${MEMORY_SAMPLES_FILE}"
 
       - name: Upload diagnostics on failure
         if: failure()
@@ -190,6 +202,7 @@ jobs:
             /tmp/docker-ps.txt
             /tmp/docker-ps-attempt1.txt
             /tmp/logs-attempt1.txt
+            /tmp/host-diagnostics/
           if-no-files-found: warn
           retention-days: 7
 

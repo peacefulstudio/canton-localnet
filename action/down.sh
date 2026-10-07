@@ -16,7 +16,8 @@
 #   a real failure the way the pre-Action pattern (`down || echo ::error::`)
 #   did.
 #
-# Either way it appends a "Teardown" section to the run report
+# Either way it stops the memory sampler boot.sh started, and appends a
+# "Teardown" section to the run report
 # ($RUNNER_TEMP/canton-localnet/run-report.md) and to $GITHUB_STEP_SUMMARY (when
 # set) with the result and any container that was unhealthy or exited
 # non-zero when teardown began. In strict mode those containers' logs are
@@ -35,6 +36,8 @@ canton_localnet_down_timeout_seconds="${CANTON_LOCALNET_DOWN_TIMEOUT_SECONDS:-12
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 source "$here/lib.sh"
+
+bash "$here/host-diagnostics.sh" stop-sampler "$(canton_localnet_memory_samples_file)"
 
 unhealthy_log_lines=200
 diagnostics_dir="$RUNNER_TEMP/canton-localnet/diagnostics"

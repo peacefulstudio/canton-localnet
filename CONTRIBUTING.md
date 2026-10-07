@@ -163,7 +163,11 @@ External contributors usually don't have write access to
    ```
 6. Fill out the PR template — explicitly call out anything that affects
    public behaviour, schema, or state migration.
-7. Make sure CI passes (build, tests, lint, coverage report).
+7. Make sure CI passes (build, tests, lint, coverage report). The LocalNet
+   lanes (`integration-tests`, `compose-integration`, and the
+   `action-selftest` jobs that boot LocalNet) run on PRs and pushes to
+   `peacefulstudio/canton-localnet`; in any other repository, a fork
+   included, they run only when dispatched manually.
 8. Request review. A maintainer will respond — the maintainers may also
    request an automated reviewer (GitHub Copilot, or a Claude-based bot)
    on top of human review; treat its comments as suggestions rather than

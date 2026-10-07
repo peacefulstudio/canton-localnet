@@ -37,5 +37,8 @@ fi
 timeout 30 docker network ls >"$out_dir/docker-networks.txt" 2>&1 || true
 timeout 30 docker volume ls >"$out_dir/docker-volumes.txt" 2>&1 || true
 
+bash "$here/host-diagnostics.sh" capture "$out_dir/host" "$(canton_localnet_memory_samples_file)" || true
+bash "$here/host-diagnostics.sh" stop-sampler "$(canton_localnet_memory_samples_file)" || true
+
 echo "Diagnostics collected in ${out_dir}:"
 ls -la "$out_dir"

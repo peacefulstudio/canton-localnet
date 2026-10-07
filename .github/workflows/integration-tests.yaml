@@ -4,6 +4,7 @@
 name: integration-tests
 
 on:
+  workflow_dispatch:
   push:
     branches: [dev]
     paths:
@@ -38,10 +39,12 @@ jobs:
   setup:
     name: select scenarios
     runs-on: ubuntu-latest
+    # LocalNet peaks near 7.6 GiB and starves 2 vCPU / 8 GB runners; these lanes run on 4 vCPU / 16 GB runners, or by manual dispatch.
     if: >-
-      github.event_name != 'pull_request' ||
+      (github.repository == 'peacefulstudio/canton-localnet' || github.event_name == 'workflow_dispatch') &&
+      (github.event_name != 'pull_request' ||
       (github.event.action != 'labeled' && github.event.action != 'unlabeled') ||
-      github.event.label.name == 'ci:full'
+      github.event.label.name == 'ci:full')
     outputs:
       scenarios: ${{ steps.select.outputs.scenarios }}
     steps:
@@ -92,7 +95,7 @@ jobs:
     name: ${{ matrix.scenario }}
     needs: setup
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -103,9 +106,17 @@ jobs:
       OBS: ${{ (matrix.scenario == 'observability-on') && 'true' || 'false' }}
       IS_OBS: ${{ startsWith(matrix.scenario, 'observability-') }}
       UP_ARGS: ${{ (matrix.scenario == 'multi-sync') && '--multi-sync' || '' }}
+      # Workaround: the vendored splice health check retries for hours, so a starved boot hangs instead of failing. 15m is above the 12m slowest healthy boot measured; 10m is above the 4.8m slowest warm restart.
+      LOCALNET_UP_TIMEOUT: 15m
+      LOCALNET_WARM_UP_TIMEOUT: 10m
+      HOST_DIAGNOSTICS_DIR: ${{ github.workspace }}/host-diagnostics
+      MEMORY_SAMPLES_FILE: /tmp/memory-samples.txt
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Start memory sampler
+        run: bash action/host-diagnostics.sh start-sampler "${MEMORY_SAMPLES_FILE}"
 
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
@@ -150,17 +161,18 @@ jobs:
           # warm-restart step below stays single-shot because that IS the
           # regression-test signal.
           # shellcheck disable=SC2086 # UP_ARGS is a deliberate word-split flag list
-          if ! "${GITHUB_WORKSPACE}/canton-localnet" up ${UP_ARGS}; then
+          if ! "${GITHUB_WORKSPACE}/canton-localnet" up --timeout "${LOCALNET_UP_TIMEOUT}" ${UP_ARGS}; then
             echo "::warning::canton-localnet up failed on first attempt — capturing diagnostics, tearing down with volumes, and retrying once"
             docker ps -a > docker-ps-attempt1.txt 2>&1 || true
             timeout 60 make logs > logs-attempt1.txt 2>&1 || true
+            bash action/host-diagnostics.sh capture "${HOST_DIAGNOSTICS_DIR}/attempt1" "${MEMORY_SAMPLES_FILE}"
             if [ "${SCENARIO}" = "multi-sync" ]; then
               docker logs multi-sync-startup > multi-sync-startup-attempt1.txt 2>&1 || true
             fi
             "${GITHUB_WORKSPACE}/canton-localnet" down --volumes || echo "::warning::pre-retry teardown failed; second up may fail with leaked state"
             sleep 30
             # shellcheck disable=SC2086
-            "${GITHUB_WORKSPACE}/canton-localnet" up ${UP_ARGS}
+            "${GITHUB_WORKSPACE}/canton-localnet" up --timeout "${LOCALNET_UP_TIMEOUT}" ${UP_ARGS}
           fi
 
       - name: Bring up LocalNet via make (one retry on splice bootstrap race)
@@ -171,13 +183,14 @@ jobs:
           # — "Ensuring decentralized synchronizer registered failed:
           # UNAVAILABLE: No active synchronizer serial found". The initial
           # bring-up is treated as setup, so one retry is allowed.
-          if ! make up; then
+          if ! timeout "${LOCALNET_UP_TIMEOUT}" make up; then
             echo "::warning::make up failed on first attempt — capturing diagnostics, tearing down with volumes, and retrying once"
             docker ps -a > docker-ps-attempt1.txt 2>&1 || true
             timeout 60 make logs > logs-attempt1.txt 2>&1 || true
+            bash action/host-diagnostics.sh capture "${HOST_DIAGNOSTICS_DIR}/attempt1" "${MEMORY_SAMPLES_FILE}"
             make clean || echo "::warning::pre-retry teardown failed; second up may fail with leaked state"
             sleep 30
-            make up
+            timeout "${LOCALNET_UP_TIMEOUT}" make up
           fi
 
       - name: Wait for expected validators (CLI scenarios)
@@ -280,7 +293,7 @@ jobs:
           echo "::endgroup::"
 
           echo "::group::canton-localnet up (warm volumes)"
-          "${GITHUB_WORKSPACE}/canton-localnet" up
+          "${GITHUB_WORKSPACE}/canton-localnet" up --timeout "${LOCALNET_WARM_UP_TIMEOUT}"
           echo "::endgroup::"
 
           for prefix in 10 11 12 13 14; do
@@ -307,6 +320,7 @@ jobs:
           set -euo pipefail
           docker ps -a > docker-ps.txt 2>&1 || true
           timeout 60 make logs > logs.txt 2>&1 || true
+          bash action/host-diagnostics.sh capture "${HOST_DIAGNOSTICS_DIR}/final" "${MEMORY_SAMPLES_FILE}"
           if [ "${SCENARIO}" = "multi-sync" ]; then
             docker logs multi-sync-startup > multi-sync-startup.txt 2>&1 || true
           fi
@@ -323,6 +337,7 @@ jobs:
             logs-attempt1.txt
             multi-sync-startup.txt
             multi-sync-startup-attempt1.txt
+            host-diagnostics/
             canton-localnet.yaml
           if-no-files-found: warn
 

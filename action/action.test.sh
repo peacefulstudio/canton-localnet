@@ -125,6 +125,21 @@ else
 fi
 tests_run=$((tests_run + 1))
 
+
+## canton_localnet_up_attempt_seconds
+
+assert_eq "up_attempt_seconds: no cap uses the whole remaining budget" "600" "$(canton_localnet_up_attempt_seconds 600 '')"
+assert_eq "up_attempt_seconds: a cap below the remaining budget wins" "120" "$(canton_localnet_up_attempt_seconds 600 2m)"
+assert_eq "up_attempt_seconds: a cap above the remaining budget is narrowed to it" "600" "$(canton_localnet_up_attempt_seconds 600 1h)"
+assert_eq "up_attempt_seconds: a zero cap uses the whole remaining budget, never an unbounded attempt" "600" "$(canton_localnet_up_attempt_seconds 600 0s)"
+if canton_localnet_up_attempt_seconds 600 bogus >/dev/null 2>&1; then
+  echo "FAIL: up_attempt_seconds should reject a malformed cap"
+  failures=$((failures + 1))
+else
+  echo "ok: up_attempt_seconds rejects a malformed cap"
+fi
+tests_run=$((tests_run + 1))
+
 ## canton_localnet_deadline_remaining
 
 past="$(($(date +%s) - 10))"
@@ -516,6 +531,8 @@ chmod +x "$stub"
 } >"$(canton_localnet_state_file)"
 summary="$(mktemp)"
 out="$(mktemp)"
+bash "$here/host-diagnostics.sh" start-sampler "$(canton_localnet_memory_samples_file)"
+sampler_pid="$(cat "$(canton_localnet_memory_samples_file).pid")"
 set +e
 PATH="$stub_dir:$PATH" STRICT=true GITHUB_OUTPUT="$out" GITHUB_STEP_SUMMARY="$summary" GITHUB_JOB=probe \
   CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET="TEARDOWN-SYNTHETIC-SECRET-41d8" \
@@ -527,6 +544,18 @@ assert_contains "down.sh (strict): summary has the Teardown section" "$(cat "$su
 assert_contains "down.sh (strict): summary lists the unhealthy container" "$(cat "$summary")" '| `sv-app` | unhealthy |'
 assert_contains "down.sh (strict): summary names the teardown diagnostics artifact" "$(cat "$summary")" "canton-localnet-teardown-diagnostics-probe"
 assert_contains "down.sh (strict): unhealthy containers set unhealthy=true" "$(cat "$out")" "unhealthy=true"
+for _ in 1 2 3 4 5; do
+  kill -0 "$sampler_pid" 2>/dev/null || break
+  sleep 1
+done
+if kill -0 "$sampler_pid" 2>/dev/null || [ -e "$(canton_localnet_memory_samples_file).pid" ]; then
+  echo "FAIL: down.sh should stop the memory sampler boot.sh started"
+  kill "$sampler_pid" 2>/dev/null || true
+  failures=$((failures + 1))
+else
+  echo "ok: down.sh stops the memory sampler boot.sh started"
+fi
+tests_run=$((tests_run + 1))
 tests_run=$((tests_run + 1))
 if grep -qF "TEARDOWN-SYNTHETIC-SECRET-41d8" "$summary"; then
   echo "FAIL: down.sh's summary contains a secret from the job environment"
@@ -623,7 +652,191 @@ assert_status "boot.sh (pqs: true): runs to completion against a stub CLI" "0" "
 pqs_wait_line="$(grep -- '--pqs' "$boot_argv_log" | grep '^wait-ready' || true)"
 assert_contains "boot.sh (pqs: true): the PQS wait-ready call is recorded" "$pqs_wait_line" "--slot a-validator-1"
 assert_contains "boot.sh (pqs: true): the PQS wait-ready call carries the selected --config" "$pqs_wait_line" "--config $boot_dir/ci-specific.yaml"
+bash "$here/host-diagnostics.sh" stop-sampler "$boot_dir/runner-temp/canton-localnet/memory-samples.txt"
 rm -rf "$boot_dir"
+
+## boot.sh caps each up attempt at up-timeout, and captures host diagnostics when the first attempt fails
+
+boot_dir="$(mktemp -d)"
+cat >"$boot_dir/canton-localnet" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = "up" ]; then
+  echo "up" >>"$BOOT_UP_LOG"
+  [ "$(wc -l <"$BOOT_UP_LOG")" -gt "$BOOT_FAILING_UP_ATTEMPTS" ] || exit "$BOOT_FAILING_UP_EXIT"
+fi
+exit 0
+EOF
+cat >"$boot_dir/make" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+cat >"$boot_dir/sleep" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+cat >"$boot_dir/timeout" <<'EOF'
+#!/usr/bin/env bash
+echo "$1" >>"$BOOT_TIMEOUT_LOG"
+shift
+exec "$@"
+EOF
+chmod +x "$boot_dir/canton-localnet" "$boot_dir/make" "$boot_dir/sleep" "$boot_dir/timeout"
+
+run_boot_with_up_timeout() {
+  local up_timeout="$1" failing_up_attempts="$2" failing_up_exit="$3"
+  boot_runner_temp="$(mktemp -d)"
+  : >"$boot_dir/up.log"
+  : >"$boot_dir/timeout.log"
+  : >"$boot_dir/step-summary"
+  : >"$boot_dir/github-output"
+  set +e
+  PATH="$boot_dir:$PATH" BOOT_UP_LOG="$boot_dir/up.log" BOOT_TIMEOUT_LOG="$boot_dir/timeout.log" \
+    BOOT_FAILING_UP_ATTEMPTS="$failing_up_attempts" BOOT_FAILING_UP_EXIT="$failing_up_exit" \
+    CLI_PATH="$boot_dir/canton-localnet" ACTION_PATH="$here/.." VALIDATORS=a PQS=false \
+    OBSERVABILITY=false MULTI_SYNC=false DIALECT=native ROLES="" JWT=false TIMEOUT=10m UP_TIMEOUT="$up_timeout" \
+    CONFIG_INPUT="" RUNNER_TEMP="$boot_runner_temp" \
+    RUNNER_ENVIRONMENT=github-hosted GITHUB_WORKSPACE="$boot_dir" \
+    GITHUB_OUTPUT="$boot_dir/github-output" GITHUB_STEP_SUMMARY="$boot_dir/step-summary" \
+    bash "$here/boot.sh" >"$boot_dir/boot.log" 2>&1
+  status=$?
+  set -e
+  bash "$here/host-diagnostics.sh" stop-sampler "$boot_runner_temp/canton-localnet/memory-samples.txt"
+}
+
+up_attempt_caps_within_total_deadline() {
+  grep -E '^[0-9]+s$' "$boot_dir/timeout.log" | while IFS= read -r cap; do
+    if [ "${cap%s}" -ge 570 ] && [ "${cap%s}" -le 600 ]; then
+      echo "within the 10m total deadline"
+    else
+      echo "$cap"
+    fi
+  done | sort -u
+}
+
+run_boot_with_up_timeout 2m 1 1
+assert_status "boot.sh (up-timeout): a failed first up is retried and the boot completes" "0" "$status"
+assert_eq "boot.sh (up-timeout): both up attempts were capped at up-timeout" "2" "$(grep -c '^120s$' "$boot_dir/timeout.log")"
+if [ -d "$boot_runner_temp/canton-localnet/diagnostics/host-attempt1" ]; then
+  echo "ok: boot.sh (up-timeout): host diagnostics were captured after the first failed attempt"
+else
+  echo "FAIL: boot.sh (up-timeout): expected host-attempt1 diagnostics"
+  failures=$((failures + 1))
+fi
+tests_run=$((tests_run + 1))
+
+run_boot_with_up_timeout 2m 2 124
+assert_status "boot.sh (up-timeout): a retry that also times out fails the boot with timeout's exit 124" "124" "$status"
+assert_eq "boot.sh (up-timeout): a retry that also times out ran exactly two up attempts" "2" "$(wc -l <"$boot_dir/up.log" | tr -d ' ')"
+
+for zero_cap in 0s 0m 0h; do
+  run_boot_with_up_timeout "$zero_cap" 1 1
+  assert_status "boot.sh (up-timeout: $zero_cap): a zero cap boots like an empty one" "0" "$status"
+  assert_eq "boot.sh (up-timeout: $zero_cap): every up attempt stays inside the total timeout instead of running unbounded" \
+    "within the 10m total deadline" "$(up_attempt_caps_within_total_deadline)"
+done
+
+run_boot_with_up_timeout '' 1 1
+assert_status "boot.sh (up-timeout empty): a failed first up is retried and the boot completes" "0" "$status"
+assert_eq "boot.sh (up-timeout empty): every up attempt stays inside the total timeout" \
+  "within the 10m total deadline" "$(up_attempt_caps_within_total_deadline)"
+
+for malformed_cap in bogus -1m 15 1d; do
+  run_boot_with_up_timeout "$malformed_cap" 0 1
+  if [ "$status" -ne 0 ]; then
+    echo "ok: boot.sh (up-timeout: $malformed_cap): a malformed cap fails the boot"
+  else
+    echo "FAIL: boot.sh (up-timeout: $malformed_cap): a malformed cap should fail the boot"
+    failures=$((failures + 1))
+  fi
+  tests_run=$((tests_run + 1))
+  assert_contains "boot.sh (up-timeout: $malformed_cap): the error names the up-timeout input" "$(cat "$boot_dir/boot.log")" "'up-timeout' must look like"
+  assert_eq "boot.sh (up-timeout: $malformed_cap): no up attempt runs" "0" "$(wc -l <"$boot_dir/up.log" | tr -d ' ')"
+done
+rm -rf "$boot_dir"
+
+## host-diagnostics.sh captures what a memory-starvation post-mortem needs, and never fails the caller
+
+diag_dir="$(mktemp -d)"
+mkdir -p "$diag_dir/bin"
+cat >"$diag_dir/bin/docker" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  *"label=com.docker.compose.project=localnet"*) containers='splice canton postgres' ;;
+  *"label=com.docker.compose.project="*) containers='' ;;
+  *) containers='splice canton postgres foreign-splice-db' ;;
+esac
+case "$1" in
+  ps)
+    case "$*" in
+      *"{{.Names}}"*) [ -z "$containers" ] || printf '%s\n' $containers ;;
+      *) echo "NAMES $containers" ;;
+    esac
+    ;;
+  logs) echo "stub log for ${*: -1}" ;;
+  stats)
+    shift 2
+    if [ "$#" -eq 0 ]; then
+      echo "stub stats for every container on the daemon: $containers"
+    else
+      echo "stub stats for $*"
+    fi
+    ;;
+  inspect) shift 3; echo "stub inspect for $*" ;;
+esac
+EOF
+cat >"$diag_dir/bin/free" <<'EOF'
+#!/usr/bin/env bash
+echo "stub free"
+EOF
+chmod +x "$diag_dir/bin/docker" "$diag_dir/bin/free"
+printf '100 3000 4000\n110 7600 100\n120 5000 2700\n' >"$diag_dir/samples.txt"
+set +e
+PATH="$diag_dir/bin:$PATH" bash "$here/host-diagnostics.sh" capture "$diag_dir/out" "$diag_dir/samples.txt" >"$diag_dir/capture.log" 2>&1
+status=$?
+set -e
+assert_status "host-diagnostics.sh: capture exits 0" "0" "$status"
+assert_contains "host-diagnostics.sh: free -m output is captured" "$(cat "$diag_dir/out/free-m.txt")" "stub free"
+assert_contains "host-diagnostics.sh: peak memory is the highest used sample" "$(cat "$diag_dir/out/memory-peak.txt")" "peak used 7600 MiB"
+assert_contains "host-diagnostics.sh: lowest available memory is reported" "$(cat "$diag_dir/out/memory-peak.txt")" "lowest available 100 MiB"
+assert_contains "host-diagnostics.sh: splice logs are captured" "$(cat "$diag_dir/out/logs-splice.txt")" "stub log for splice"
+assert_contains "host-diagnostics.sh: canton logs are captured" "$(cat "$diag_dir/out/logs-canton.txt")" "stub log for canton"
+if [ -e "$diag_dir/out/logs-postgres.txt" ]; then
+  echo "FAIL: host-diagnostics.sh: only splice and canton logs should be captured"
+  failures=$((failures + 1))
+else
+  echo "ok: host-diagnostics.sh: only splice and canton logs are captured"
+fi
+tests_run=$((tests_run + 1))
+assert_contains "host-diagnostics.sh: container health is captured" "$(cat "$diag_dir/out/container-health.txt")" "stub inspect"
+assert_contains "host-diagnostics.sh: nproc is captured" "$(ls "$diag_dir/out")" "nproc.txt"
+assert_contains "host-diagnostics.sh: the kernel OOM scan is captured" "$(ls "$diag_dir/out")" "dmesg-oom.txt"
+assert_contains "host-diagnostics.sh: docker stats are captured" "$(cat "$diag_dir/out/docker-stats.txt")" "stub stats for splice canton postgres"
+if grep -rqF "foreign-splice-db" "$diag_dir/out"; then
+  echo "FAIL: host-diagnostics.sh: a container outside the LocalNet compose project leaked into the capture: $(grep -rlF foreign-splice-db "$diag_dir/out" | tr '\n' ' ')"
+  failures=$((failures + 1))
+else
+  echo "ok: host-diagnostics.sh: a splice-named container outside the LocalNet compose project is not captured"
+fi
+tests_run=$((tests_run + 1))
+
+set +e
+PATH="$diag_dir/bin:$PATH" COMPOSE_PROJECT_NAME=slot2 bash "$here/host-diagnostics.sh" capture "$diag_dir/out-slot2" >/dev/null 2>&1
+status=$?
+set -e
+assert_status "host-diagnostics.sh (COMPOSE_PROJECT_NAME=slot2): capture exits 0" "0" "$status"
+assert_contains "host-diagnostics.sh (COMPOSE_PROJECT_NAME=slot2): the scope names the project" "$(cat "$diag_dir/out-slot2/container-scope.txt")" "compose project: slot2"
+assert_eq "host-diagnostics.sh (COMPOSE_PROJECT_NAME=slot2): an empty project captures no stats, health or logs, never the whole daemon" \
+  "container-scope.txt dmesg-oom.txt docker-ps.txt free-m.txt nproc.txt" "$(ls "$diag_dir/out-slot2" | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
+
+set +e
+PATH="$diag_dir/bin:$PATH" COMPOSE_PROJECT_NAME='Not A Project' bash "$here/host-diagnostics.sh" capture "$diag_dir/out-invalid" >/dev/null 2>&1
+status=$?
+set -e
+assert_status "host-diagnostics.sh (invalid COMPOSE_PROJECT_NAME): capture exits 0" "0" "$status"
+assert_contains "host-diagnostics.sh (invalid COMPOSE_PROJECT_NAME): container capture is skipped" "$(cat "$diag_dir/out-invalid/container-scope.txt")" "skipped"
+assert_eq "host-diagnostics.sh (invalid COMPOSE_PROJECT_NAME): no container is listed, inspected or logged" \
+  "container-scope.txt dmesg-oom.txt free-m.txt nproc.txt" "$(ls "$diag_dir/out-invalid" | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
+rm -rf "$diag_dir"
 
 echo
 echo "$tests_run tests run, $failures failed"
