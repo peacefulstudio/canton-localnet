@@ -47,6 +47,7 @@
 name: action-selftest
 
 on:
+  workflow_dispatch:
   push:
     branches: [dev]
     paths:
@@ -123,14 +124,16 @@ jobs:
 
   boot:
     name: T2 boot end-to-end (validators a,c + pqs)
+    # Workaround: the private repo's ubuntu-latest runner (2 vCPU, 7.9 GB) starves LocalNet's ~7.6 GiB peak; run 37466442939 there hung in swap with 276 MiB available. LocalNet lanes run on the public twin's 4 vCPU/16 GB runner, and on the private repo only by manual dispatch.
+    if: github.repository == 'peacefulstudio/canton-localnet' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Start an unrelated container (scoped-teardown probe)
-        run: docker run -d --name selftest-scoped-probe busybox:1.36 sleep 900
+        run: docker run -d --name selftest-scoped-probe busybox:1.36 sleep infinity
 
       - name: Boot LocalNet
         id: boot
@@ -143,6 +146,8 @@ jobs:
           validators: 'a,c'
           pqs: 'true'
           party: 'true'
+          timeout: '30m'
+          up-timeout: '15m'
 
       - name: Hit the JSON API with client-credentials from the exported token
         run: |
@@ -320,8 +325,9 @@ jobs:
 
   masking-probe:
     name: T4 masking-probe (real boot, real exported secrets)
+    if: github.repository == 'peacefulstudio/canton-localnet' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -341,6 +347,8 @@ jobs:
           # password/connection-string is exported for both slots too.
           validators: 'a,c'
           pqs: 'true'
+          timeout: '30m'
+          up-timeout: '15m'
 
       - name: Collect diagnostics (always, to exercise the masking-sensitive path even on a clean boot)
         run: bash action/diagnose.sh
@@ -399,7 +407,7 @@ jobs:
   masking-log-check:
     name: T4 masking-log-check (fetches masking-probe's own raw log via REST)
     needs: [masking-probe]
-    if: always()
+    if: always() && (github.repository == 'peacefulstudio/canton-localnet' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
