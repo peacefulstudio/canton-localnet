@@ -39,7 +39,7 @@ jobs:
   setup:
     name: select scenarios
     runs-on: ubuntu-latest
-    # Workaround: the private repo's ubuntu-latest runner (2 vCPU, 7.9 GB) starves LocalNet's ~7.6 GiB peak; run 37466442939 there hung in swap with 276 MiB available. LocalNet lanes run on the public twin's 4 vCPU/16 GB runner, and on the private repo only by manual dispatch.
+    # LocalNet peaks near 7.6 GiB and starves 2 vCPU / 8 GB runners; these lanes run on 4 vCPU / 16 GB runners, or by manual dispatch.
     if: >-
       (github.repository == 'peacefulstudio/canton-localnet' || github.event_name == 'workflow_dispatch') &&
       (github.event_name != 'pull_request' ||
