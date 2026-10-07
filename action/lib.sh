@@ -323,7 +323,7 @@ canton_localnet_deadline_remaining() {
 # --timeout flags parse via time.ParseDuration, restricted to what the
 # action's own inputs realistically need.
 canton_localnet_parse_duration() {
-  local raw="$1" value unit
+  local raw="$1" input_name="${2:-timeout}" value unit
   if [[ "$raw" =~ ^([0-9]+)(s|m|h)$ ]]; then
     value="${BASH_REMATCH[1]}"
     unit="${BASH_REMATCH[2]}"
@@ -334,8 +334,30 @@ canton_localnet_parse_duration() {
     esac
     return 0
   fi
-  canton_localnet_log_error "canton-localnet action: 'timeout' must look like 15m, 900s or 1h — got '$raw'"
+  canton_localnet_log_error "canton-localnet action: '${input_name}' must look like 15m, 900s or 1h — got '$raw'"
   return 1
+}
+
+# canton_localnet_up_attempt_seconds prints how many seconds one `up`
+# attempt may take: the seconds left in the total budget, narrowed to
+# up_timeout (a duration; empty or zero means "no narrower cap") when that
+# is shorter.
+canton_localnet_up_attempt_seconds() {
+  local remaining="$1" up_timeout="$2" cap
+  if [ -z "$up_timeout" ]; then
+    echo "$remaining"
+    return 0
+  fi
+  cap="$(canton_localnet_parse_duration "$up_timeout" "up-timeout")" || return 1
+  if [ "$cap" -gt 0 ] && [ "$cap" -lt "$remaining" ]; then
+    echo "$cap"
+  else
+    echo "$remaining"
+  fi
+}
+
+canton_localnet_memory_samples_file() {
+  echo "${RUNNER_TEMP:?RUNNER_TEMP is required}/canton-localnet/memory-samples.txt"
 }
 
 canton_localnet_report_file() {

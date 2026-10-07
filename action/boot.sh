@@ -11,7 +11,8 @@
 # Required env: CLI_PATH, ACTION_PATH, VALIDATORS, PQS, OBSERVABILITY,
 # MULTI_SYNC, DIALECT, ROLES, JWT, TIMEOUT, CONFIG_INPUT, RUNNER_TEMP,
 # RUNNER_ENVIRONMENT, GITHUB_WORKSPACE, GITHUB_OUTPUT, GITHUB_STEP_SUMMARY.
-# Optional: ACTION_REF (shown in the job summary heading).
+# Optional: ACTION_REF (shown in the job summary heading), UP_TIMEOUT (caps
+# each `up` attempt; unset means an attempt may use the whole remaining budget).
 
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -110,6 +111,8 @@ state_file="$(canton_localnet_state_file)"
   printf 'CANTON_LOCALNET_ACTION_CONFIG_PATH=%q\n' "$config_path"
 } >"$state_file"
 
+bash "$here/host-diagnostics.sh" start-sampler "$(canton_localnet_memory_samples_file)"
+
 timeout_seconds="$(canton_localnet_parse_duration "$TIMEOUT")"
 deadline=$(($(date +%s) + timeout_seconds))
 
@@ -148,16 +151,19 @@ down_args=(down --volumes --repo-root "$ACTION_PATH" --config "$config_path")
 up_started="$(date +%s)"
 echo "::group::canton-localnet up (one retry on the Splice bootstrap race)"
 remaining="$(canton_localnet_deadline_remaining "$deadline" "up")"
-if ! timeout "${remaining}s" "$CLI_PATH" "${up_args[@]}"; then
+attempt_seconds="$(canton_localnet_up_attempt_seconds "$remaining" "${UP_TIMEOUT:-}")"
+if ! timeout "${attempt_seconds}s" "$CLI_PATH" "${up_args[@]}"; then
   canton_localnet_log_warning "canton-localnet up failed or timed out on the first attempt — capturing diagnostics, tearing down with volumes, and retrying once"
   mkdir -p "$RUNNER_TEMP/canton-localnet/diagnostics"
   timeout 30 make -C "$ACTION_PATH" status-all >"$RUNNER_TEMP/canton-localnet/diagnostics/docker-ps-attempt1.txt" 2>&1 || true
   timeout 60 make -C "$ACTION_PATH" logs-recent >"$RUNNER_TEMP/canton-localnet/diagnostics/logs-attempt1.txt" 2>&1 || true
+  bash "$here/host-diagnostics.sh" capture "$RUNNER_TEMP/canton-localnet/diagnostics/host-attempt1" "$(canton_localnet_memory_samples_file)"
   remaining="$(canton_localnet_deadline_remaining "$deadline" "the pre-retry teardown")"
   timeout "${remaining}s" "$CLI_PATH" "${down_args[@]}" || canton_localnet_log_warning "pre-retry teardown failed; the retry may fail with leaked state"
   sleep 30
   remaining="$(canton_localnet_deadline_remaining "$deadline" "the up retry")"
-  timeout "${remaining}s" "$CLI_PATH" "${up_args[@]}"
+  attempt_seconds="$(canton_localnet_up_attempt_seconds "$remaining" "${UP_TIMEOUT:-}")"
+  timeout "${attempt_seconds}s" "$CLI_PATH" "${up_args[@]}"
 fi
 echo "::endgroup::"
 canton_localnet_record_phase "Up (image pull and compose up)" "$up_started"

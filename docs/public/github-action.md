@@ -95,6 +95,7 @@ error.
 | `jwt` | `false` | Mint a bearer token per enabled slot and export it plus the live participant id. Off by default: the token is not exported, and unless `party` is `true` no token is minted at all. The token URL, client id and client secret are exported either way. |
 | `party` | `false` | Export each enabled slot's validator primary party as `CANTON_LOCALNET_<SLOT>_PARTY` (for `a`: `a-validator-1::1220…`), read from the validator user (`GET /v2/users/{id}` → `primaryParty`) after a token mint. The validator user holds `CanActAs` on that party. Off by default. The token is minted for the lookup only; it is exported only with `jwt: true`. |
 | `timeout` | `15m` | One total deadline shared by pre-boot cleanup, `up` (with its one retry) and `wait-ready` together — not a per-slot timeout. |
+| `up-timeout` | empty | Longest one `up` attempt may take (e.g. `15m`) before it is killed and the one retry starts. Empty or zero lets an attempt use whatever is left of `timeout`; set it below `timeout` to keep room for the retry, because LocalNet's own health check retries for hours and a stalled boot otherwise spends the whole budget. |
 | `cli` | `source` | `source` builds the CLI with `go build` from the action's own checkout (~9s measured with a warm Go module cache). `release` downloads the release asset matching the action's pinned ref and verifies it against that release's `checksums.txt`; valid only when the action's own `uses:` is pinned to a literal release tag (not its commit SHA — `github.action_ref` resolves to whichever form the pin used), and it fails closed — never falls back silently — on a non-tag ref, a missing asset, a download error, or a checksum mismatch. |
 | `config` | *(empty)* | Path (relative to your workspace) to a `canton-localnet.yaml` to use verbatim, instead of the one generated from `validators`/`pqs`/`observability`/`multi-sync`. When set, also set `validators` (and `pqs`) to match what that file actually enables — `wait-ready` and the env export still key off `validators`, not off parsing your file. |
 
@@ -133,6 +134,20 @@ The tables are rendered by `canton-localnet env --format github
 --summary-file <path>` from the same values it writes to `$GITHUB_ENV`, so the
 report cannot disagree with the exports. It lists only endpoints: a client
 secret, JWT, PQS password or PQS connection string never appears in it.
+
+## Boot-failure diagnostics
+
+When the boot fails, the action uploads the
+`canton-localnet-diagnostics-<job>` artifact, kept for 7 days: container
+status, recent compose logs, and the Docker networks and volumes. Its `host/`
+folder holds `free -m`, `nproc`, the kernel out-of-memory lines from `dmesg`
+and the peak memory used during the run and, for this LocalNet's compose
+project only, `docker stats`, per-container state and health, and the tail of
+the `splice` and `canton` logs. When the first `up` attempt also failed, a
+`host-attempt1/` folder holds the same capture taken before the retry. Read
+it to tell a runner that ran out of memory or CPU from a LocalNet fault.
+Containers of other workloads on a shared Docker daemon are never listed or
+logged.
 
 ## Admin gRPC and the Scan registry
 

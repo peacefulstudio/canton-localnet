@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/peacefulstudio/canton-localnet/cli/internal/compose"
 )
@@ -20,6 +21,8 @@ type capturedRun struct {
 	dir       string
 	plan      compose.Plan
 	extraArgs []string
+	deadline  time.Time
+	bounded   bool
 }
 
 type fakeRunner struct {
@@ -27,12 +30,19 @@ type fakeRunner struct {
 	calls []capturedRun
 	dir   string
 	err   error
+
+	blockUntilDone bool
 }
 
-func (f *fakeRunner) Run(_ context.Context, plan compose.Plan, extraArgs ...string) error {
+func (f *fakeRunner) Run(ctx context.Context, plan compose.Plan, extraArgs ...string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.calls = append(f.calls, capturedRun{dir: f.dir, plan: plan, extraArgs: append([]string{}, extraArgs...)})
+	deadline, bounded := ctx.Deadline()
+	f.calls = append(f.calls, capturedRun{dir: f.dir, plan: plan, extraArgs: append([]string{}, extraArgs...), deadline: deadline, bounded: bounded})
+	if f.blockUntilDone {
+		<-ctx.Done()
+		return ctx.Err()
+	}
 	return f.err
 }
 
@@ -280,4 +290,60 @@ func equalStrings(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func TestUpIsUnboundedByDefault(t *testing.T) {
+	t.Parallel()
+	root := newTestRepoRoot(t)
+	runner, _, err := runRoot(t, "up", "--repo-root", root)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if runner.calls[0].bounded {
+		t.Errorf("up without --timeout must not impose a deadline")
+	}
+}
+
+func TestUpTimeoutBoundsTheComposeRun(t *testing.T) {
+	t.Parallel()
+	root := newTestRepoRoot(t)
+	before := time.Now()
+	runner, _, err := runRoot(t, "up", "--repo-root", root, "--timeout", "15m")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	call := runner.calls[0]
+	if !call.bounded {
+		t.Fatalf("up --timeout 15m must run compose under a deadline")
+	}
+	if got := call.deadline.Sub(before); got < 14*time.Minute || got > 16*time.Minute {
+		t.Errorf("expected a deadline about 15m out, got %s", got)
+	}
+}
+
+func TestUpTimeoutReportsAStalledBringUpAsATimeout(t *testing.T) {
+	t.Parallel()
+	root := newTestRepoRoot(t)
+	runner, factory := newFakeRunnerFactory()
+	runner.blockUntilDone = true
+	cmd := newRootCommand(factory)
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"up", "--repo-root", root, "--timeout", "50ms"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("expected a stalled up to fail")
+	}
+	if !strings.Contains(err.Error(), "did not finish within 50ms") {
+		t.Errorf("expected the error to name the timeout, got %q", err)
+	}
+}
+
+func TestUpRejectsNegativeTimeout(t *testing.T) {
+	t.Parallel()
+	root := newTestRepoRoot(t)
+	_, _, err := runRoot(t, "up", "--repo-root", root, "--timeout", "-1s")
+	if err == nil {
+		t.Fatalf("expected a negative --timeout to be rejected")
+	}
 }

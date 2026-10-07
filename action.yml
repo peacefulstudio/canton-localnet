@@ -57,6 +57,15 @@ inputs:
       Total deadline shared by pre-boot cleanup, up (with its one retry)
       and wait-ready together — not a per-slot timeout.
     default: '15m'
+  up-timeout:
+    description: >-
+      Longest a single `up` attempt may take before it is killed and the
+      one retry starts, e.g. `15m`. Empty (the default) or zero lets an
+      attempt use whatever is left of `timeout`. LocalNet's own health
+      check retries for hours, so without a cap a stalled boot spends the
+      whole budget and leaves nothing for the retry; set this below
+      `timeout` to keep room for it.
+    default: ''
   cli:
     description: >-
       How to obtain the canton-localnet binary. 'source' (default) builds
@@ -65,7 +74,7 @@ inputs:
       release asset matching this action's pinned ref and verifies it
       against that release's checksums.txt; it is valid only when the
       action's own `uses:` is pinned to a literal release tag, not its
-      commit SHA (e.g. `uses: peacefulstudio/canton-localnet@v0.8.4-3`) and
+      commit SHA (e.g. `uses: peacefulstudio/canton-localnet@v0.9.0-1`) and
       fails closed — never silently — on a non-tag ref, a missing asset, a
       download error or a checksum mismatch.
     default: 'source'
@@ -127,6 +136,7 @@ runs:
         JWT: ${{ inputs.jwt }}
         PARTY: ${{ inputs.party }}
         TIMEOUT: ${{ inputs.timeout }}
+        UP_TIMEOUT: ${{ inputs.up-timeout }}
         CONFIG_INPUT: ${{ inputs.config }}
       run: bash "${{ github.action_path }}/action/boot.sh"
 
