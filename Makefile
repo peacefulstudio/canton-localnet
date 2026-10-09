@@ -52,11 +52,19 @@ ifeq ($(AUTH_MODE),oauth2)
   endif
 endif
 
-# Optional PQS layer — opt in via `make up PQS=true`.
-ifeq ($(PQS),true)
+PQS_SLOT_NAMES := a b c sv
+comma := ,
+PQS_ACTIVE_SLOTS := $(sort $(subst $(comma), ,$(PQS_SLOTS)) $(if $(filter true,$(PQS)),a))
+PQS_UNKNOWN_SLOTS := $(filter-out $(PQS_SLOT_NAMES),$(PQS_ACTIVE_SLOTS))
+ifneq ($(PQS_UNKNOWN_SLOTS),)
+  $(error PQS_SLOTS: unknown slot(s) $(PQS_UNKNOWN_SLOTS); expected a subset of $(PQS_SLOT_NAMES))
+endif
+
+ifneq ($(PQS_ACTIVE_SLOTS),)
   COMPOSE_FILES += -f $(PQS_DIR)/compose.yaml
   ENV_FILES    += --env-file $(PQS_DIR)/compose.env
-  PROFILES     += --profile pqs-a-validator-1
+  PROFILES     += $(foreach s,$(PQS_ACTIVE_SLOTS),--profile pqs-$(s)-validator-1)
+  $(foreach s,$(PQS_SLOT_NAMES),$(eval export PQS_$(shell echo $(s) | tr a-z A-Z)_VALIDATOR_1_PROFILE := $(if $(filter $(s),$(PQS_ACTIVE_SLOTS)),on,off)))
   ifeq ($(RES),true)
     COMPOSE_FILES += -f $(PQS_DIR)/resource-constraints.yaml
   endif
@@ -91,13 +99,23 @@ ifeq ($(OBS),true)
   endif
   OBS_ENV_FILES += --env-file $(OBS_DIR)/compose.env
   OBS_PROFILES  += --profile observability
-  ifeq ($(PQS),true)
+  ifneq ($(PQS_ACTIVE_SLOTS),)
     OBS_COMPOSE_FILES += -f $(PQS_DIR)/observability.yaml
   endif
 endif
 
 DOCKER_COMPOSE := docker compose $(COMPOSE_FILES) $(OBS_COMPOSE_FILES) \
                   $(ENV_FILES) $(OBS_ENV_FILES) $(PROFILES) $(OBS_PROFILES)
+
+PQS_TEARDOWN_FILES    := $(if $(PQS_ACTIVE_SLOTS),,-f $(PQS_DIR)/compose.yaml)
+PQS_TEARDOWN_ENV      := $(if $(PQS_ACTIVE_SLOTS),,--env-file $(PQS_DIR)/compose.env)
+PQS_TEARDOWN_PROFILES := $(foreach s,$(PQS_SLOT_NAMES),--profile pqs-$(s)-validator-1)
+
+DOCKER_COMPOSE_DOWN := docker compose $(COMPOSE_FILES) $(OBS_COMPOSE_FILES) $(PQS_TEARDOWN_FILES) \
+                       $(ENV_FILES) $(OBS_ENV_FILES) $(PQS_TEARDOWN_ENV) \
+                       $(PROFILES) $(OBS_PROFILES) $(PQS_TEARDOWN_PROFILES)
+DOCKER_COMPOSE_APP_DOWN := docker compose $(COMPOSE_FILES) $(PQS_TEARDOWN_FILES) \
+                           $(ENV_FILES) $(PQS_TEARDOWN_ENV) $(PROFILES) $(PQS_TEARDOWN_PROFILES)
 
 .PHONY: help
 help: ## Show this help
@@ -110,19 +128,19 @@ up: ## Start LocalNet (auth mode: $(AUTH_MODE))
 
 .PHONY: down
 down: ## Stop LocalNet and remove containers
-	$(DOCKER_COMPOSE) down --remove-orphans
+	$(DOCKER_COMPOSE_DOWN) down --remove-orphans
 
 .PHONY: stop-app
 stop-app: ## Stop the app stack but leave observability containers running (only meaningful with OBS=true)
-	$(DOCKER_COMPOSE_APP) down
+	$(DOCKER_COMPOSE_APP_DOWN) down
 
 .PHONY: clean
 clean: ## Stop LocalNet and remove containers + volumes
-	$(DOCKER_COMPOSE) down -v --remove-orphans
+	$(DOCKER_COMPOSE_DOWN) down -v --remove-orphans
 
 .PHONY: clean-app
 clean-app: ## Like `clean`, but leave observability running
-	$(DOCKER_COMPOSE_APP) down -v
+	$(DOCKER_COMPOSE_APP_DOWN) down -v
 
 .PHONY: status
 status: ## Show container status

@@ -75,7 +75,8 @@ Optional layers via Make flags (shortcuts — the canonical config layer is
 `canton-localnet.yaml`, see **Configuration** below):
 
 ```bash
-make up PQS=true            # opt in to PQS a-validator-1 profile
+make up PQS=true            # opt in to PQS for slot a (same as PQS_SLOTS=a)
+make up PQS_SLOTS=a,c       # PQS for the listed slots (a, b, c, sv); see docs/public/topologies.md
 make up OBS=true            # add Grafana (http://localhost:3030) + Prometheus / Loki / Tempo / cAdvisor
 make up RES=false           # remove the default mem_limit / JVM heap caps
 make up AUTH_MODE=secret    # shared-secret JWT (escape hatch; not CI-tested)

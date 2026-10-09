@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0-2] - 2026-10-09
+
+PQS moves to scribe 3.6.0, the first scribe built for Canton 3.6, and is now
+configured through the `PQS_` prefix. The vendored Splice stays at 0.9.0.
+Drop-in from `0.9.0-1` unless you override scribe settings or pin a scribe
+image, with no volume wipe.
+
+### Added
+
+- The composite Action has Marketplace branding, a blue `refresh-cw` icon, so
+  its GitHub Marketplace listing shows a branded tile. Nothing to do.
+- `make` takes `PQS_SLOTS=a,c` to choose which slots run PQS, from `a`, `b`,
+  `c` and `sv`.
+  - Each listed slot gets its PQS profile and its on/off toggle from the same
+    list, so the two cannot disagree. An unknown slot fails `make`. `PQS=true`
+    still means slot `a`, so nothing changes unless you want PQS on another
+    slot. `docs/public/topologies.md` lists what each slot supports.
+  - A slot whose PQS is off still has an empty database, and querying it fails
+    with `function active(text) does not exist` (SQLSTATE 42883). Read that as
+    "PQS is not running for this slot" and start it with `PQS_SLOTS`.
+
+### Fixed
+
+- `make down`, `make clean`, `make stop-app`, `make clean-app` and
+  `canton-localnet down` now remove the PQS containers of every slot.
+  - Before, only slot `a` (and `c` in the CLI, when enabled) was torn down, so
+    a `pqs-c-validator-1` started earlier kept running and restarting against
+    a wiped database. Nothing to do; stale PQS containers left by an earlier
+    version go away on the next teardown.
+- The C# `LocalnetFixture.FromEnvironment()` no longer returns an empty
+  `ValidatorUserId` for `b-validator-1`, `c-validator-1`, `d-validator-1` and
+  `sv-validator-1`.
+  - Before, those slots failed late with `User id must be non-empty` after your
+    test had already uploaded DARs and allocated parties. Each slot now defaults
+    to its LocalNet validator user id, and `sv-validator-1` to its HS256 user.
+    The `CANTON_LOCALNET_<SLOT>_VALIDATOR_USER_ID` override still wins. Drop any
+    workaround that set the id by hand.
+
+### Changed
+
+- PQS (`participant-query-store`) moves from scribe 3.5.7 to 3.6.0, matching the
+  Canton 3.6.1 inside Splice 0.9.0.
+  - Before, PQS stayed on 3.5.7 because no scribe image was built for Canton
+    3.6. Scribe 3.6.0 reads the same ledger and fills the same PQS schema, so
+    queries against PQS need no change.
+- The compose configures PQS with the `PQS_` prefix, and scribe's deprecation
+  warning is gone.
+  - `SCRIBE_SOURCE_*`, `SCRIBE_TARGET_POSTGRES_*`, `SCRIBE_PIPELINE_OAUTH_*`
+    and `SCRIBE_CONFIG` are now `PQS_SOURCE_*`, `PQS_TARGET_POSTGRES_*`,
+    `PQS_PIPELINE_OAUTH_*` and `PQS_CONFIG`. Rename any of them you override on
+    a PQS container; if you set none, there is nothing to do.
+- Pinning a 3.5.x scribe image is no longer supported.
+  - `SCRIBE_IMAGE` and `SCRIBE_VERSION` remain the image overrides, but 3.5.x
+    images do not read `PQS_*` settings, so the stack will not boot with one.
+    Drop any such pin and use the 3.6.0 default.
+- The `canton-localnet` CLI is built with `spf13/cobra` v1.10.2 and the Go
+  fixture uses `lib/pq` v1.12.3. Nothing to do.
+- The .NET test projects use `Microsoft.Testing.Extensions.CodeCoverage`
+  18.12.0 and the composite Action pins `actions/upload-artifact` v7.0.2 and
+  `actions/download-artifact` v8.0.2. Nothing to do.
+- The C# package version moves to `0.9.0-2` (NuGet `0.9.0.2`); pin
+  `go/fixture` at `v0.9.0-2`.
+
 ## [0.9.0-1] - 2026-10-07
 
 Vendored Splice moves 0.8.4 → 0.9.0, which brings Canton 3.6.1 inside the

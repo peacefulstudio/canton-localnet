@@ -87,7 +87,7 @@ error.
 | Input | Default | Meaning |
 |---|---|---|
 | `validators` | `a` | Space- or comma-separated slots to bring up, from `a`, `b`, `c`, `d`. `sv-validator-1` is always on and cannot be listed. |
-| `pqs` | `false` | Enable the Participant Query Store module; adds each enabled slot's PQS connection details to the export. Only `a` and `c` actually get a running PQS pipeline (`cli/internal/compose/compose.go`) — a `b` connection string points at a database no pipeline writes to, and the action warns if you combine `pqs: true` with a `b` slot. Slot `d` is rejected outright by the CLI. |
+| `pqs` | `false` | Enable the Participant Query Store module; adds each enabled slot's PQS connection details to the export. Only `a` and `c` get a running PQS pipeline through the Action (`cli/internal/compose/compose.go`); `make up PQS_SLOTS=...` can start `b` and `sv` outside the Action — a `b` connection string points at a database no pipeline writes to, and the action warns if you combine `pqs: true` with a `b` slot. Slot `d` is rejected outright by the CLI. |
 | `observability` | `false` | Enable the observability stack (Grafana/otel). |
 | `multi-sync` | `false` | Enable the multi-synchronizer profile and wait for the app-synchronizer to connect. Requires `a`, `b` and `d` all present in `validators` — the app-synchronizer console script waits on all three — and the action fails closed if any are missing. A `config` file whose top-level `multiSync` is truthy also enables this wait, even when this input is left at its default. |
 | `dialect` | `native` | Exported variable dialect. Only `native` (`CANTON_LOCALNET_*`) ships today; `devkit` is not yet supported and the action fails the step rather than exporting a wrong or partial contract. |

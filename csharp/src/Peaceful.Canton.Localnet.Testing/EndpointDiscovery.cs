@@ -42,7 +42,8 @@ public enum LocalnetProfile
 /// granting <c>CanActAs</c> to this user is what lets the fixture submit
 /// commands as an allocated party. Defaults to the a-validator-1 service
 /// account (the splice-quickstart LocalNet a-validator-1 validator user id);
-/// for other slots it is empty unless overridden via env. If splice rotates
+/// b-validator-1, c-validator-1 and d-validator-1 default to their Keycloak
+/// validator user ids, and sv-validator-1 defaults to its HS256 user. If splice rotates
 /// that id, override it with
 /// <c>CANTON_LOCALNET_A_VALIDATOR_1_VALIDATOR_USER_ID</c> to avoid a
 /// <c>PERMISSION_DENIED</c> against the wrong user.
@@ -126,6 +127,10 @@ public static class EndpointDiscovery
     private const string BcdValidator1DemoClientSecret = "6m12QyyGl81d9nABWQXMycZdXho6ejEX";
 
     private const string AValidator1ValidatorUserId = "c87743ab-80e0-4b83-935a-4c0582226691";
+    private const string BValidator1ValidatorUserId = "97bb6cef-a7a9-410b-ba8c-ada08451a5c9";
+    private const string CValidator1ValidatorUserId = "f902df23-9d11-4836-94c1-b9b584112755";
+    private const string DValidator1ValidatorUserId = "d82c7c58-f453-4961-9c34-4dd539994264";
+    private const string DefaultHs256User = "ledger-api-user";
 
     /// <summary>
     /// Returns true when enough environment variables are set to drive a real
@@ -269,7 +274,7 @@ public static class EndpointDiscovery
 
         var validatorUserId = GetValue(env, $"CANTON_LOCALNET_{slot}_VALIDATOR_USER_ID")
             ?? (honourLegacyGlobals ? GetValue(env, ValidatorUserIdEnv) : null)
-            ?? DefaultValidatorUserId(profile);
+            ?? DefaultValidatorUserId(profile, env);
 
         return new LocalnetEndpoints(
             JsonLedgerApi: new Uri(jsonApi, UriKind.Absolute),
@@ -352,10 +357,16 @@ public static class EndpointDiscovery
         _ => null,
     };
 
-    private static string DefaultValidatorUserId(LocalnetProfile profile) => profile switch
+    private static string DefaultValidatorUserId(
+        LocalnetProfile profile,
+        IReadOnlyDictionary<string, string?> env) => profile switch
     {
+        LocalnetProfile.SvValidator1 => GetValue(env, "CANTON_LOCALNET_SV_VALIDATOR_1_HS256_USER") ?? DefaultHs256User,
         LocalnetProfile.AValidator1 => AValidator1ValidatorUserId,
-        _ => string.Empty,
+        LocalnetProfile.BValidator1 => BValidator1ValidatorUserId,
+        LocalnetProfile.CValidator1 => CValidator1ValidatorUserId,
+        LocalnetProfile.DValidator1 => DValidator1ValidatorUserId,
+        _ => throw new ArgumentOutOfRangeException(nameof(profile), profile, null),
     };
 
     private static string SlotEnvPrefix(LocalnetProfile profile) => profile switch

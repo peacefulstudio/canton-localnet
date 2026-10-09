@@ -364,7 +364,7 @@ func staticSlotEnvVars(repoRoot string, ep slot.Endpoints, opts envOptions) ([]e
 
 // pqsFields is the PQS Postgres connection this slot's Scribe pipeline
 // writes to (compose/modules/pqs/env/<slot>/.../oauth2.env sets
-// SCRIBE_TARGET_POSTGRES_DATABASE to the same "pqs-<slot>" name). Host is
+// PQS_TARGET_POSTGRES_DATABASE to the same "pqs-<slot>" name). Host is
 // the host-reachable address (matching every other exported endpoint,
 // not Postgres's in-network service name); User/Password/Port default to
 // the same compose/modules/localnet/env/common.env values Postgres
