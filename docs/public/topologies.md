@@ -85,6 +85,35 @@ enabled.
 Toggle it with `modules.pqs` in `canton-localnet.yaml`, or force-enable it for a
 single run with the `--pqs` flag.
 
+Under Make, choose the slots with `PQS_SLOTS`, a comma-separated subset of `a`,
+`b`, `c` and `sv` (`PQS=true` means `PQS_SLOTS=a`):
+
+```bash
+make up PQS_SLOTS=a,c
+```
+
+Each listed slot gets its `--profile pqs-<slot>-validator-1` and its
+`PQS_<SLOT>_VALIDATOR_1_PROFILE=on` toggle from the same list, and every other
+slot is set to `off`, so the pair cannot disagree. An unknown slot name fails
+the make invocation. What each slot supports:
+
+| Slot | Status |
+|---|---|
+| `a` | Supported. |
+| `c` | Supported. The CLI enables it when `c-validator-1` is enabled and PQS is on. |
+| `b` | Starts, but the CLI and the boot Action never start it, and `env --pqs` exports connection details for it regardless. |
+| `sv` | Starts, but a party allocated on the SV participant after PQS startup is not projected, and `env --pqs` exports connection details for it regardless. |
+
+The Postgres databases for all four slots are created whether or not their PQS
+runs. Connecting to the database of a slot whose PQS is off finds it empty, and
+`active(...)` fails with SQLSTATE 42883 (`function active(text) does not
+exist`) because no scribe created the schema. That error means "PQS is not
+running for this slot".
+
+`make down`, `make clean`, `make stop-app`, `make clean-app` and
+`canton-localnet down` activate all four PQS profiles, so no PQS container
+survives a teardown whatever it was started with.
+
 ### Multi-synchronizer
 
 Brings up a second synchronizer (`app-synchronizer`) and connects the `a`, `b`,

@@ -25,8 +25,15 @@ canton-localnet wait-ready --timeout 10m --interval 5s
 canton-localnet down --volumes
 ```
 
-With PQS enabled, add `--pqs` (and `--slot a` or `--slot c`) to `wait-ready`:
-it then also waits until that slot's Scribe pipeline has set its watermark
+With PQS enabled, add `--pqs` (and `--slot a` or `--slot c`) to `wait-ready`.
+Under Make, `make up PQS=true` starts PQS for slot `a` and
+`make up PQS_SLOTS=a,c` for the listed slots (`a`, `b`, `c`, `sv`; `b` and `sv`
+carry the limits listed in [topologies](topologies.md#participant-query-store-pqs)).
+A slot whose PQS is off still has an empty database, so a query against it
+fails with SQLSTATE 42883 (`function active(text) does not exist`), which means
+PQS is not running for that slot.
+
+`wait-ready --pqs` also waits until that slot's Scribe pipeline has set its watermark
 (`select latest_offset()` returns non-null), which is the point from which
 PQS streams transactions with their effective time. A contract created before
 that point is seeded from an ACS snapshot and reports no

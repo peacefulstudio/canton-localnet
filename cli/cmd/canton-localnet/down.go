@@ -14,12 +14,13 @@ func newDownCommand(makeRunner runnerFactory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "down",
 		Short: "Tear down the Canton LocalNet stack",
-		Long:  "Runs `docker compose ... down --remove-orphans` against the vendored splice LocalNet modules. With --volumes it also removes named volumes (equivalent to `make clean`).",
+		Long:  "Runs `docker compose ... down --remove-orphans` against the vendored splice LocalNet modules, activating every PQS profile so no PQS container is left behind. With --volumes it also removes named volumes (equivalent to `make clean`).",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts, err := flags.options(cmd)
 			if err != nil {
 				return err
 			}
+			opts.Teardown = true
 			plan, err := compose.Build(opts)
 			if err != nil {
 				return err

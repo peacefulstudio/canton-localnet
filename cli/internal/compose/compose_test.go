@@ -289,6 +289,28 @@ func TestBuildOmitsPqsCValidator1ProfileWhenCDisabled(t *testing.T) {
 	}
 }
 
+func TestBuildTeardownActivatesEveryPqsProfile(t *testing.T) {
+	t.Parallel()
+	root := newTestRepoRoot(t)
+	plan, err := Build(Options{
+		RepoRoot:     root,
+		AuthMode:     AuthOAuth2,
+		Teardown:     true,
+		EnabledSlots: []string{"sv-validator-1", "a-validator-1"},
+	})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	for _, profile := range []string{"pqs-a-validator-1", "pqs-b-validator-1", "pqs-c-validator-1", "pqs-sv-validator-1"} {
+		if !containsPair(plan.Args, "--profile", profile) {
+			t.Errorf("expected --profile %s on teardown, full args: %v", profile, plan.Args)
+		}
+	}
+	if !containsPair(plan.Args, "-f", filepath.Join(root, "compose/modules/pqs/compose.yaml")) {
+		t.Errorf("expected the PQS compose file on teardown, full args: %v", plan.Args)
+	}
+}
+
 func TestBuildAlwaysEmitsSvProfile(t *testing.T) {
 	t.Parallel()
 	root := newTestRepoRoot(t)

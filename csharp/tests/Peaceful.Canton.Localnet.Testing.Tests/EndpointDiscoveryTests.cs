@@ -109,8 +109,51 @@ public class EndpointDiscoveryTests
 
         var bEndpoints = EndpointDiscovery.Resolve(LocalnetProfile.BValidator1, env);
 
-        Assert.Equal(string.Empty, bEndpoints.ValidatorUserId);
+        Assert.Equal("97bb6cef-a7a9-410b-ba8c-ada08451a5c9", bEndpoints.ValidatorUserId);
     }
+
+    [Theory]
+    [InlineData(LocalnetProfile.AValidator1, "c87743ab-80e0-4b83-935a-4c0582226691")]
+    [InlineData(LocalnetProfile.BValidator1, "97bb6cef-a7a9-410b-ba8c-ada08451a5c9")]
+    [InlineData(LocalnetProfile.CValidator1, "f902df23-9d11-4836-94c1-b9b584112755")]
+    [InlineData(LocalnetProfile.DValidator1, "d82c7c58-f453-4961-9c34-4dd539994264")]
+    public void Resolve_oauth2_slot_defaults_to_the_keycloak_validator_user_id(
+        LocalnetProfile profile, string expectedUserId)
+    {
+        var env = new Dictionary<string, string?>(StringComparer.Ordinal);
+
+        var endpoints = EndpointDiscovery.Resolve(profile, env);
+
+        Assert.Equal(expectedUserId, endpoints.ValidatorUserId);
+    }
+
+    [Fact]
+    public void Resolve_sv_validator_user_id_defaults_to_the_hs256_user()
+    {
+        var env = SvOAuth2Env();
+
+        var endpoints = EndpointDiscovery.Resolve(LocalnetProfile.SvValidator1, env);
+
+        Assert.Equal("ledger-api-user", endpoints.ValidatorUserId);
+    }
+
+    [Fact]
+    public void Resolve_sv_validator_user_id_follows_the_hs256_user_override()
+    {
+        var env = SvOAuth2Env();
+        env["CANTON_LOCALNET_SV_VALIDATOR_1_HS256_USER"] = "custom-hs256-user";
+
+        var endpoints = EndpointDiscovery.Resolve(LocalnetProfile.SvValidator1, env);
+
+        Assert.Equal("custom-hs256-user", endpoints.ValidatorUserId);
+    }
+
+    private static Dictionary<string, string?> SvOAuth2Env() => new(StringComparer.Ordinal)
+    {
+        ["CANTON_LOCALNET_SV_VALIDATOR_1_TOKEN_URL"] = "http://localhost:8082/token",
+        ["CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_ID"] = "sv-client",
+        ["CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET"] = "sv-secret",
+    };
 
     [Fact]
     public void Resolve_sv_validator_has_no_oauth2_defaults()

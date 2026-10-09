@@ -148,6 +148,24 @@ func TestDownDefault(t *testing.T) {
 	}
 }
 
+func TestDownPlanCarriesEveryPqsProfileRegardlessOfConfig(t *testing.T) {
+	t.Parallel()
+	root := newTestRepoRoot(t)
+	runner, _, err := runRoot(t, "down", "--repo-root", root)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	args := runner.calls[0].plan.Args
+	for _, profile := range []string{"pqs-a-validator-1", "pqs-b-validator-1", "pqs-c-validator-1", "pqs-sv-validator-1"} {
+		if !containsPair(args, "--profile", profile) {
+			t.Errorf("expected --profile %s in the down plan, got %v", profile, args)
+		}
+	}
+	if !containsPair(args, "-f", filepath.Join(root, "compose/modules/pqs/compose.yaml")) {
+		t.Errorf("expected the PQS compose file in the down plan, got %v", args)
+	}
+}
+
 func TestDownWithVolumesAppendsFlag(t *testing.T) {
 	t.Parallel()
 	root := newTestRepoRoot(t)

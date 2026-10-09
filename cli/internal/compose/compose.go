@@ -55,6 +55,7 @@ type Options struct {
 	NoResource   bool
 	Obs          bool
 	Pqs          bool
+	Teardown     bool
 	MultiSync    bool
 	HostOS       string
 	ExtraEnv     []string
@@ -76,6 +77,10 @@ func DefaultOptions(repoRoot string) Options {
 func defaultEnabledSlots() []string {
 	return []string{SlotSV, "a-validator-1", "b-validator-1", "c-validator-1", "d-validator-1"}
 }
+
+// PqsProfiles lists every compose profile the PQS module can start. A
+// teardown activates all of them so no PQS container outlives `down`.
+var PqsProfiles = []string{"pqs-a-validator-1", "pqs-b-validator-1", "pqs-c-validator-1", "pqs-sv-validator-1"}
 
 // Plan is a resolved set of docker compose arguments and environment
 // variables. It is deterministic for any given Options, which lets us
@@ -117,6 +122,7 @@ func Build(opts Options) (Plan, error) {
 	keycloakDir := filepath.Join(modulesDir, "keycloak")
 	pqsDir := filepath.Join(modulesDir, "pqs")
 	obsDir := filepath.Join(modulesDir, "observability")
+	loadsPqs := opts.Pqs || opts.Teardown
 
 	args := []string{"compose"}
 	args = append(args, "-f", filepath.Join(localnetDir, "compose.yaml"))
@@ -134,7 +140,7 @@ func Build(opts Options) (Plan, error) {
 		}
 	}
 
-	if opts.Pqs {
+	if loadsPqs {
 		args = append(args, "-f", filepath.Join(pqsDir, "compose.yaml"))
 		if withResource {
 			args = append(args, "-f", filepath.Join(pqsDir, "resource-constraints.yaml"))
@@ -160,7 +166,7 @@ func Build(opts Options) (Plan, error) {
 	if opts.AuthMode == AuthOAuth2 {
 		args = append(args, "--env-file", filepath.Join(keycloakDir, "compose.env"))
 	}
-	if opts.Pqs {
+	if loadsPqs {
 		args = append(args, "--env-file", filepath.Join(pqsDir, "compose.env"))
 	}
 	if opts.Obs {
@@ -174,7 +180,11 @@ func Build(opts Options) (Plan, error) {
 	if opts.AuthMode == AuthOAuth2 {
 		args = append(args, "--profile", "keycloak")
 	}
-	if opts.Pqs {
+	if opts.Teardown {
+		for _, profile := range PqsProfiles {
+			args = append(args, "--profile", profile)
+		}
+	} else if opts.Pqs {
 		args = append(args, "--profile", "pqs-a-validator-1")
 		if containsSlot(enabledSlots, "c-validator-1") {
 			args = append(args, "--profile", "pqs-c-validator-1")

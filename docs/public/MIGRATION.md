@@ -1,5 +1,22 @@
 # Migration guide
 
+## v0.9.0-1 → v0.9.0-2: PQS scribe 3.6.0 and the `PQS_` prefix
+
+PQS moves from `scribe` 3.5.7 to 3.6.0, the first scribe image built for
+Canton 3.6, which matches the Canton 3.6.1 inside Splice 0.9.0. The compose
+now configures it with the `PQS_` prefix instead of `SCRIBE_`:
+
+| Before | After |
+|---|---|
+| `SCRIBE_SOURCE_*` | `PQS_SOURCE_*` |
+| `SCRIBE_TARGET_POSTGRES_*` | `PQS_TARGET_POSTGRES_*` |
+| `SCRIBE_PIPELINE_OAUTH_*` | `PQS_PIPELINE_OAUTH_*` |
+| `SCRIBE_CONFIG` | `PQS_CONFIG` |
+
+Rename any of these you override on a PQS container. `SCRIBE_IMAGE` and
+`SCRIBE_VERSION` keep their names, but a 3.5.x scribe image no longer works with
+this compose because it does not read `PQS_*` settings; do not pin one.
+
 ## v0.6.14-1.preview.1 → v0.7.0-1.preview.1: Postgres 18
 
 This release moves the stack from Splice 0.6.14 to 0.7.0 and, with it, Postgres
