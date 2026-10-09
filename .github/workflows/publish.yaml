@@ -1,85 +1,39 @@
 # Copyright (c) 2026 Peaceful Studio OÜ
 # SPDX-License-Identifier: Apache-2.0
-#
-# Publishes Peaceful.Canton.Localnet.Testing to nuget.org when a maintainer
-# publishes a GitHub Release (release.yml only creates the draft; publishing
-# must be a human action — GITHUB_TOKEN-created events don't trigger
-# workflows).
-#
-# The NuGet version is derived from the release tag, not used verbatim.
-# Git tags must stay Go-compatible SemVer prereleases (Go rejects four-part
-# versions), but NuGet treats X.Y.Z-N as a prerelease that plain
-# `dotnet add package` refuses to install. So:
-#   v0.6.5-1           → NuGet 0.6.5.1 (four-part, STABLE)
-#   v0.6.5-1.preview.1 → NuGet 0.6.5.1-preview.1 (prerelease, opt-in)
-# Any other tag shape fails the run. See RELEASE.md "Version-format rule".
 
 name: Publish NuGet Packages
 
 on:
-  release:
-    types: [published]
-  workflow_dispatch:
+  workflow_call:
     inputs:
-      version_override:
-        description: 'Override version (leave empty for auto-calculated)'
-        required: false
+      tag:
+        description: 'Release tag, including the leading v (e.g. v0.9.0-3). The package builds from this tag.'
+        required: true
         type: string
+      nuget_version:
+        description: 'NuGet spelling of the release version, as resolved by release.yml (e.g. 0.9.0.3).'
+        required: true
+        type: string
+
+permissions: {}
 
 concurrency:
   group: publish-nuget
   cancel-in-progress: false
 
 jobs:
-  version:
-    runs-on: ubuntu-latest
-    outputs:
-      nuget: ${{ steps.map.outputs.nuget }}
-    steps:
-      - name: Map release tag to NuGet version
-        id: map
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-          VERSION_OVERRIDE: ${{ inputs.version_override }}
-        run: |
-          set -euo pipefail
-
-          if [ -n "$VERSION_OVERRIDE" ]; then
-            echo "nuget=$VERSION_OVERRIDE" >> "$GITHUB_OUTPUT"
-            echo "Using manual override: $VERSION_OVERRIDE"
-            exit 0
-          fi
-
-          if [ "$EVENT_NAME" != "release" ]; then
-            echo "nuget=" >> "$GITHUB_OUTPUT"
-            echo "Manual dispatch without override: callee auto-calculates a dev version"
-            exit 0
-          fi
-
-          if [[ "$RELEASE_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-([1-9][0-9]*)$ ]]; then
-            NUGET_VERSION="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
-            echo "Final release tag $RELEASE_TAG → stable NuGet version $NUGET_VERSION"
-          elif [[ "$RELEASE_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-([1-9][0-9]*)\.([0-9A-Za-z][0-9A-Za-z.]*)$ ]]; then
-            NUGET_VERSION="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}-${BASH_REMATCH[3]}"
-            echo "Preview release tag $RELEASE_TAG → prerelease NuGet version $NUGET_VERSION"
-          else
-            echo "::error::Tag '$RELEASE_TAG' matches neither v<X.Y.Z>-<N> (final) nor v<X.Y.Z>-<N>.<label> (preview). See RELEASE.md 'Version-format rule'." >&2
-            exit 1
-          fi
-          echo "nuget=$NUGET_VERSION" >> "$GITHUB_OUTPUT"
-
   publish:
-    needs: version
+    if: github.repository == 'peacefulstudio/canton-localnet'
     runs-on: ubuntu-latest
     environment: nuget-publish
     permissions:
       contents: read
       id-token: write
     steps:
-      - name: Checkout
+      - name: Checkout the release tag
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          ref: ${{ inputs.tag }}
           fetch-depth: 0
       - name: NuGet login (OIDC -> short-lived key)
         id: login
@@ -90,5 +44,5 @@ jobs:
         uses: peacefulstudio/github-actions/.github/actions/csharp-publish@v2
         with:
           api-key: ${{ steps.login.outputs.NUGET_API_KEY }}
-          version_override: ${{ needs.version.outputs.nuget }}
+          version_override: ${{ inputs.nuget_version }}
           working-directory: csharp

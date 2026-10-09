@@ -1,0 +1,90 @@
+# Copyright (c) 2026 Peaceful Studio OÜ
+# SPDX-License-Identifier: Apache-2.0
+
+name: Release lifecycle (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      action:
+        description: "'bootstrap' (ensure a draft release exists) or 'finalize' (fill the notes from the CHANGELOG section and publish the draft)."
+        required: true
+        type: string
+      tag:
+        description: 'Release tag, including the leading v (e.g. v0.9.0-3).'
+        required: true
+        type: string
+      prerelease:
+        description: "'true' marks the published release as a prerelease, 'false' as a stable one."
+        required: false
+        type: string
+        default: 'false'
+    outputs:
+      release_url:
+        description: 'HTML URL of the affected release.'
+        value: ${{ jobs.lifecycle.outputs.release_url }}
+
+permissions: {}
+
+jobs:
+  lifecycle:
+    if: github.repository == 'peacefulstudio/canton-localnet'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      release_url: ${{ steps.run.outputs.release_url }}
+    steps:
+      - name: Checkout the release tag
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ inputs.tag }}
+      - name: Run ${{ inputs.action }} for ${{ inputs.tag }}
+        id: run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ACTION: ${{ inputs.action }}
+          TAG: ${{ inputs.tag }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+          is_draft() { [ "$(gh release view "$TAG" --json isDraft --jq '.isDraft')" = "true" ]; }
+          case "$ACTION" in
+            bootstrap)
+              if gh release view "$TAG" >/dev/null 2>&1; then
+                if ! is_draft; then
+                  echo "::error::release $TAG is already published; refusing to rebuild, re-push to GHCR or re-attach assets for a released version"
+                  exit 1
+                fi
+                echo "draft $TAG already exists"
+              else
+                gh release create "$TAG" --draft --prerelease --verify-tag --title "$TAG" \
+                  --notes "Draft release assembled by CI. Assets are attached automatically; the release publishes itself once every stage passes."
+                echo "created draft $TAG"
+              fi
+              ;;
+            finalize)
+              if ! gh release view "$TAG" >/dev/null 2>&1; then
+                echo "::error::cannot finalize: release $TAG does not exist"
+                exit 1
+              fi
+              if is_draft; then
+                notes_file="$RUNNER_TEMP/release-notes.md"
+                .github/scripts/changelog-section.sh "${TAG#v}" > "$notes_file"
+                if [ "$PRERELEASE" = "true" ]; then
+                  gh release edit "$TAG" --notes-file "$notes_file" --prerelease=true --draft=false
+                else
+                  gh release edit "$TAG" --notes-file "$notes_file" --prerelease=false --latest --draft=false
+                fi
+                echo "published $TAG"
+              else
+                echo "::warning::release $TAG is already published; nothing to finalize"
+              fi
+              ;;
+            *)
+              echo "::error::unknown action '$ACTION' (want bootstrap|finalize)"
+              exit 1
+              ;;
+          esac
+          echo "release_url=$(gh release view "$TAG" --json url --jq '.url')" >> "$GITHUB_OUTPUT"
