@@ -52,36 +52,64 @@ jobs:
       tag: ${{ needs.resolve.outputs.tag }}
 
   pack-nuget:
-    name: pack NuGet
+    name: build, test and pack NuGet
     needs: [resolve, draft]
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      PACKAGE_ID: Peaceful.Canton.Localnet.Testing
+      NUGET_VERSION: ${{ needs.resolve.outputs.nuget }}
+      VERSION: ${{ needs.resolve.outputs.version }}
     steps:
       - name: Checkout the release tag
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           ref: ${{ needs.resolve.outputs.tag }}
+      - name: Refuse a version nuget.org already holds
+        run: .github/scripts/assert-nuget-unpublished.sh "${NUGET_VERSION}" "${PACKAGE_ID}"
       - name: Setup .NET
         uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5.2.0
         with:
           dotnet-version: '10.0.x'
       - name: Restore
         working-directory: csharp
-        run: dotnet restore src/Peaceful.Canton.Localnet.Testing/Peaceful.Canton.Localnet.Testing.csproj
-      - name: Pack
+        run: dotnet restore
+      - name: Build
         working-directory: csharp
-        env:
-          VERSION: ${{ needs.resolve.outputs.version }}
+        run: dotnet build --configuration Release --no-restore -p:Version="${NUGET_VERSION}" -p:ContinuousIntegrationBuild=true
+      - name: Test
+        working-directory: csharp
+        run: dotnet test --configuration Release --no-build
+      - name: Pack the nuget.org package
+        working-directory: csharp
         run: |
           set -euo pipefail
-          dotnet pack src/Peaceful.Canton.Localnet.Testing/Peaceful.Canton.Localnet.Testing.csproj \
+          dotnet pack "src/${PACKAGE_ID}/${PACKAGE_ID}.csproj" \
+            --configuration Release \
+            --no-build \
+            -p:PackageVersion="${NUGET_VERSION}" \
+            -o "${GITHUB_WORKSPACE}/nuget-packages"
+          ls -la "${GITHUB_WORKSPACE}/nuget-packages"
+      - name: Pack the release-asset package with the tag spelling
+        working-directory: csharp
+        run: |
+          set -euo pipefail
+          dotnet pack "src/${PACKAGE_ID}/${PACKAGE_ID}.csproj" \
             --configuration Release \
             --no-restore \
             -p:PackageVersion="${VERSION}" \
             -o "${GITHUB_WORKSPACE}/nupkgs"
           ls -la "${GITHUB_WORKSPACE}/nupkgs"
-      - name: Upload nupkg artifact
+      - name: Upload the nuget.org packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nuget-packages
+          path: |
+            nuget-packages/*.nupkg
+            nuget-packages/*.snupkg
+          if-no-files-found: error
+      - name: Upload the release-asset nupkg
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: nupkgs
@@ -189,7 +217,7 @@ jobs:
           echo "Pushed ${ref}"
 
   publish-nuget:
-    needs: [resolve, publish-oci]
+    needs: [resolve, publish-oci, attach-assets]
     permissions:
       contents: read
       id-token: write
@@ -201,7 +229,7 @@ jobs:
 
   attach-assets:
     name: attach assets to the draft
-    needs: [resolve, publish-nuget]
+    needs: [resolve, pack-nuget, cli]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -231,7 +259,7 @@ jobs:
         run: gh release upload "${TAG}" dist/* --clobber
 
   publish-release:
-    needs: [resolve, attach-assets]
+    needs: [resolve, publish-nuget]
     permissions:
       contents: write
     uses: ./.github/workflows/_release-lifecycle.yaml
