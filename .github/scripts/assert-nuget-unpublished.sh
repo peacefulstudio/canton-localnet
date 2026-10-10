@@ -52,6 +52,10 @@ for package_id in "$@"; do
   case "${http_code}" in
     404) ;;
     200)
+      jq -e '.versions | type == "array"' "${body}" >/dev/null || {
+        echo "::error::nuget.org returned a malformed version index for ${package_id}." >&2
+        exit "${EXIT_BROKEN}"
+      }
       if jq -e --arg version "${version}" '.versions | map(ascii_downcase) | index($version | ascii_downcase)' "${body}" >/dev/null; then
         published+=("${package_id}")
       fi

@@ -93,6 +93,10 @@ jobs:
             || { echo "::error::${tag} does not resolve to a shippable release; refusing to tag"; exit 1; }
 
           if [ "${tag_exists}" = "true" ]; then
+            tag_commit="$(gh api "repos/${GH_REPO}/commits/${tag}" --jq '.sha')" \
+              || { echo "::error::could not resolve ${tag} to a commit"; exit 1; }
+            [ "${tag_commit}" = "${HEAD_SHA}" ] \
+              || { echo "::error::${tag} points at ${tag_commit}, not at the green commit ${HEAD_SHA}; refusing to dispatch it"; exit 1; }
             echo "${tag} exists without a release or a running release; dispatching it again"
           else
             gh api -X POST "repos/${GH_REPO}/git/refs" -f "ref=refs/tags/${tag}" -f "sha=${HEAD_SHA}" >/dev/null

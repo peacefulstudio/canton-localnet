@@ -97,7 +97,7 @@ jobs:
           set -euo pipefail
           dotnet pack "src/${PACKAGE_ID}/${PACKAGE_ID}.csproj" \
             --configuration Release \
-            --no-restore \
+            --no-build \
             -p:PackageVersion="${VERSION}" \
             -o "${GITHUB_WORKSPACE}/nupkgs"
           ls -la "${GITHUB_WORKSPACE}/nupkgs"
