@@ -16,7 +16,7 @@ EOF2
 }
 
 [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && usage 0
-[ $# -ge 1 ] && [ $# -le 2 ] || usage 1
+if [ $# -lt 1 ] || [ $# -gt 2 ]; then usage 1; fi
 
 VERSION="$1"
 FILE="${2:-CHANGELOG.md}"
