@@ -1,0 +1,113 @@
+# Copyright (c) 2026 Peaceful Studio OÜ
+# SPDX-License-Identifier: Apache-2.0
+
+name: Auto-tag release
+
+on:
+  workflow_run:
+    workflows: [csharp, public-gate, integration-tests, compose-integration, action-selftest]
+    types: [completed]
+    branches: [dev]
+
+permissions: {}
+
+concurrency:
+  group: auto-tag-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    if: >-
+      github.repository == 'peacefulstudio/canton-localnet' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'dev'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Checkout the green dev commit
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Tag the green dev commit and start the release
+        run: |
+          set -euo pipefail
+          skip() { echo "::notice::$1"; exit 0; }
+
+          polling=false
+          lookup_failed() {
+            [ "${polling}" = "true" ] && return 0
+            echo "::error::$1"
+            exit 1
+          }
+
+          release_done_or_running() {
+            local view_error runs
+            if view_error="$(gh release view "${tag}" 2>&1 >/dev/null)"; then
+              return 0
+            fi
+            case "${view_error}" in
+              *"release not found"*) ;;
+              *) lookup_failed "gh release view ${tag} failed: ${view_error}"; return 1 ;;
+            esac
+            runs="$(gh run list --workflow release.yml --branch "${tag}" --limit 1000 --json status --jq '[.[] | select(.status != "completed")] | length' 2>&1)" \
+              || { lookup_failed "gh run list for ${tag} failed: ${runs}"; return 1; }
+            [ "${runs}" != "0" ]
+          }
+
+          dev_tip="$(gh api "repos/${GH_REPO}/git/ref/heads/dev" --jq '.object.sha')"
+          [ "${dev_tip}" = "${HEAD_SHA}" ] || skip "${HEAD_SHA} is no longer the tip of dev; a newer run decides"
+
+          lanes_status=0
+          lanes_waited_on="$(.github/scripts/required-lanes-green.sh "${HEAD_SHA}" csharp.yml public-gate.yaml integration-tests.yaml compose-integration.yaml action-selftest.yaml)" \
+            || lanes_status=$?
+          case "${lanes_status}" in
+            0) ;;
+            1) skip "${lanes_waited_on}" ;;
+            *) echo "::error::${lanes_waited_on}"; exit 1 ;;
+          esac
+
+          version="$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' csharp/Directory.Build.props | head -n 1 | tr -d '[:space:]')"
+          [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[1-9][0-9]*(\.[0-9A-Za-z][0-9A-Za-z.]*)?$ ]] \
+            || { echo "::error::'${version}' in csharp/Directory.Build.props is not a release version"; exit 1; }
+          tag="v${version}"
+
+          tag_exists=false
+          if gh api "repos/${GH_REPO}/git/ref/tags/${tag}" >/dev/null 2>&1; then
+            tag_exists=true
+            ! release_done_or_running || skip "${tag} already exists and its release is published, drafted or running"
+          fi
+
+          held="$(gh pr list --state open --label hold-release --json number --jq 'length')"
+          [ "${held}" = "0" ] || skip "${held} open pull request(s) carry hold-release"
+
+          .github/scripts/resolve-release.sh "${version}" > /dev/null \
+            || { echo "::error::${tag} does not resolve to a shippable release; refusing to tag"; exit 1; }
+
+          if [ "${tag_exists}" = "true" ]; then
+            tag_commit="$(gh api "repos/${GH_REPO}/commits/${tag}" --jq '.sha')" \
+              || { echo "::error::could not resolve ${tag} to a commit"; exit 1; }
+            [ "${tag_commit}" = "${HEAD_SHA}" ] \
+              || { echo "::error::${tag} points at ${tag_commit}, not at the green commit ${HEAD_SHA}; refusing to dispatch it"; exit 1; }
+            echo "${tag} exists without a release or a running release; dispatching it again"
+          else
+            gh api -X POST "repos/${GH_REPO}/git/refs" -f "ref=refs/tags/${tag}" -f "sha=${HEAD_SHA}" >/dev/null
+            echo "Tagged ${HEAD_SHA} as ${tag}"
+          fi
+
+          # Workaround: GitHub does not start `push` workflows for a tag created with GITHUB_TOKEN
+          # (documented Actions behaviour for events raised by GITHUB_TOKEN), so release.yml is dispatched explicitly.
+          gh workflow run release.yml --ref "${tag}" -f "version=${version}"
+          polling=true
+          for _ in $(seq 1 30); do
+            release_done_or_running && break
+            sleep 2
+          done

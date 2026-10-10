@@ -58,6 +58,7 @@ on:
       - 'compose/**'
       - 'Makefile'
       - 'canton-localnet.yaml'
+      - 'csharp/Directory.Build.props'
       - '.github/workflows/action-selftest.yaml'
   pull_request:
     branches: [dev]
@@ -69,6 +70,7 @@ on:
       - 'compose/**'
       - 'Makefile'
       - 'canton-localnet.yaml'
+      - 'csharp/Directory.Build.props'
       - '.github/workflows/action-selftest.yaml'
 
 concurrency:
