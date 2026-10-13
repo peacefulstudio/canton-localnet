@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1-1] - 2026-10-13
+
+The vendored Splice moves to 0.9.1. The Canton inside stays at 3.6.1.
+
+### Changed
+
+- The vendored Splice moves from 0.9.0 to 0.9.1, a patch release on the 0.9 line. The Canton inside stays at 3.6.1, and upstream's `cluster/compose/localnet` tree is byte-identical between the two tags, so the compose, env and conf files are unchanged: only the image tag (`SPLICE_VERSION`) moves. Splice 0.9.1 fixes the SV frontend's governance forms and backports an integration-test fix. Nothing to do on the consumer side.
+
 ## [0.9.0-2] - 2026-10-09
 
 PQS moves to scribe 3.6.0, the first scribe built for Canton 3.6, and is now
@@ -1872,3 +1880,6 @@ final was drafted but never pushed to nuget.org.
 - Hardened CI workflows (`automerge.yaml`, `claude.yaml`):
   SHA-pinned third-party action `dependabot/fetch-metadata`, added
   `set -euo pipefail` and fork-PR-token guards on write-API steps.
+
+[Unreleased]: https://github.com/peacefulstudio/canton-localnet/compare/v0.9.1-1...HEAD
+[0.9.1-1]: https://github.com/peacefulstudio/canton-localnet/compare/v0.9.0-2...v0.9.1-1

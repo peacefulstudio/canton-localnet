@@ -66,12 +66,10 @@ git config core.hooksPath .githooks
 
 | Branch  | Purpose                          |
 |---------|----------------------------------|
-| `dev`   | Default branch — open PRs here   |
-| `stage` | Staging / pre-production         |
-| `prod`  | Production — release tags only   |
+| `dev`   | Default branch — open PRs here, releases are tagged from it |
 
-All PRs target `dev`. Promotion to `stage` and `prod` is handled by the
-maintainers.
+All PRs target `dev`. There is no staging or production branch; a release is
+a tag on a green `dev` commit (see [Releases](#releases)).
 
 ## Test-driven development
 
@@ -183,13 +181,14 @@ test-only changes, CI tweaks, and dependency bumps that don't alter behaviour.
 
 ## Releases
 
-Releases are tag-driven: pushing a `v<splice>-<patch>` tag (e.g.
-`v0.6.2-1`) to `dev` triggers `.github/workflows/release.yml`,
-which publishes the NuGet package, the Go module version, the
-multi-platform CLI binaries, and the OCI compose artifact in
-lockstep. The full release SOP and the version-format rule (never
-a plain `v<splice>`; patch resets on splice bump) live in
-[RELEASE.md](RELEASE.md).
+Releases are cut from a green `dev`: a release PR bumps `<Version>` in
+`csharp/Directory.Build.props` and cuts the `CHANGELOG.md` section, and once it
+is merged and the CI and LocalNet lanes pass, an automatic `v<splice>-<patch>`
+tag (e.g. `v0.6.2-1`) starts `.github/workflows/release.yml`. That workflow
+publishes the NuGet package, the Go module version, the multi-platform CLI
+binaries, and the OCI compose artifact in lockstep. The full release SOP and
+the version-format rule (never a plain `v<splice>`; patch resets on splice
+bump) live in [RELEASE.md](RELEASE.md).
 
 ## Reporting bugs
 

@@ -3,8 +3,14 @@
 `canton-localnet` ships four artifacts in lockstep from a single
 git tag: a NuGet package, a Go module version, multi-platform CLI
 binaries, and an OCI artifact carrying the vendored Compose stack.
-All four are produced by [`.github/workflows/release.yml`](.github/workflows/release.yml)
-on a tag push.
+All four are produced by [`.github/workflows/release.yml`](.github/workflows/release.yml),
+which a green merge to `dev` starts through
+[`auto-tag-release.yaml`](.github/workflows/auto-tag-release.yaml).
+
+The version lives in one committed place: `<Version>` in
+`csharp/Directory.Build.props`. The release tag, that value and the top
+released heading of `CHANGELOG.md` must all agree, and the tag is `v` plus
+that value.
 
 ## Version-format rule
 
@@ -45,18 +51,18 @@ it. The release workflow rejects tags that don't match the regex.
 Git tags must stay SemVer prereleases for Go's sake — Go rejects
 four-part versions, and the dash prerelease is the only suffix
 grammar it accepts — but on NuGet a prerelease version is invisible
-to plain `dotnet add package`. The publish workflow
-([`publish.yaml`](.github/workflows/publish.yaml)) therefore derives
-the NuGet version from the tag instead of using it verbatim:
+to plain `dotnet add package`. The release workflow
+([`release.yml`](.github/workflows/release.yml), through
+[`.github/scripts/resolve-release.sh`](.github/scripts/resolve-release.sh))
+therefore derives the NuGet version from the tag instead of using it verbatim:
 
 | Tag shape | NuGet version | Stability |
 |---|---|---|
 | `v<X.Y.Z>-<N>` (final) | `<X.Y.Z>.<N>` (four-part) | stable |
 | `v<X.Y.Z>-<N>.<label>` (preview) | `<X.Y.Z>.<N>-<label>` | prerelease |
 
-Both [`publish.yaml`](.github/workflows/publish.yaml) and `release.yml`'s
-tag validator accept exactly these two shapes; any other tag fails the
-run. NuGet orders them as intended — `0.6.3.1-preview.1 < 0.6.3.1 <
+`resolve-release.sh` accepts exactly these two shapes; any other tag fails
+the run. NuGet orders them as intended — `0.6.3.1-preview.1 < 0.6.3.1 <
 0.6.3.2`. Go's own ordering is deliberately disregarded (it would rank a
 `-N.preview` above its `-N` final): consumers pin exact versions, per the
 note above.
@@ -65,97 +71,120 @@ note above.
 
 Maintainers develop in a private source repository and promote curated
 paths into this one. The source repository keeps its own `CHANGELOG.md` as
-the maintainers' full record; this repository's `CHANGELOG.md` is the public
-one, and each release adds a curated entry to it during promotion. Steps 1–5
-run in the source repository; steps 6–9 run here.
+the maintainers' full record, with an `### Internal` heading under a release
+for entries that concern only the maintainers; this repository's
+`CHANGELOG.md` is the public one. Steps 1–3 run in the source repository,
+steps 4–7 here.
 
-1. Make sure the source `CHANGELOG.md`'s `[Unreleased]` section is up
-   to date and lists every consumer-visible change since the previous
-   tag.
-2. Decide the next tag using the version-format rule above. If
-   `compose/splice.sha` was bumped this cycle, reset the patch to
-   `1`; otherwise increment the previous patch. Append a
-   `.preview.<n>` label for an opt-in prerelease; omit it to cut a
-   stable release. Everything downstream — the NuGet version shape
-   and the GitHub pre-release flag — follows from that one choice.
-3. Promote `[Unreleased]` to `[<version>] - <YYYY-MM-DD>` in the
-   source `CHANGELOG.md` and add an empty `[Unreleased]` block above
-   it. In the same PR, write the public entry for this release as
-   `.github/release-notes/<version>.md`: one `## [<version>] -
-   <YYYY-MM-DD>` heading followed by Keep-a-Changelog sections, written
-   for a consumer upgrading from the previous public release. Each item
-   opens with one line naming what changed, then says what a consumer
-   does about it. It carries no issue or PR numbers and no
-   private-repository names. Merge to `dev`.
-4. Advance `stage` to `dev` with a merge PR (`dev` → `stage`, merge
-   commit, no squash):
+1. Cut a release PR on the source repository's `dev`:
+   - Decide the next tag using the version-format rule above. If
+     `compose/splice.sha` was bumped this cycle, reset the patch to `1`;
+     otherwise increment the previous patch. Append a `.preview.<n>` label
+     for an opt-in prerelease. Everything downstream, the NuGet version
+     shape and the GitHub pre-release flag, follows from that one choice.
+   - Set `<Version>` in `csharp/Directory.Build.props` to that value
+     (without the `v`).
+   - Promote `[Unreleased]` in `CHANGELOG.md` to
+     `[<version>] - <YYYY-MM-DD>` and add an empty `[Unreleased]` block above
+     it. Keep consumer-facing entries under `### Added`, `### Changed`,
+     `### Fixed` and the like, each ending with its PR reference in
+     parentheses, and move maintainer-only entries under `### Internal`. The
+     promotion strips the PR references and drops `### Internal`, and writes
+     the compare links itself, so do not write any.
+   - Move the version citations along (the example tag in `action.yml`, the
+     pins in the docs). The release PR changes `<Version>`, which makes the
+     LocalNet lanes run on the merge commit.
+2. Merge the release PR with a **squash or merge commit** into `dev`, then
+   tag that merge commit and push the annotated tag:
    ```bash
-   gh pr create --base stage --head dev \
-     --title "release: advance stage to dev for <version>" --body ""
-   gh pr merge <number> --merge
+   git switch dev && git pull
+   git tag -a v<version> -m "Release v<version>"
+   git push origin v<version>
    ```
-   `stage` is what gets promoted, so it must hold the release commit
-   and its release-notes file before the next step.
-5. Promote `stage` into this repository, dry run first:
+   The tag push starts the source repository's promote workflow. It refuses
+   unless the tag equals `v<Version>`, the top released `CHANGELOG.md`
+   heading equals `<Version>`, the tagged commit is on `dev`, and the public
+   twin has no such tag yet.
+3. The promote workflow overlays the paths the source `.gitpublic` lists
+   onto this repository's `dev`, derives this repository's `CHANGELOG.md`
+   from the source one, runs a content leak-scan over the result, and opens
+   (or reuses) the `Release v<version>` PR here from `promote/v<version>`,
+   committed by the promote GitHub App so the commit is signed. To re-run
+   it for an existing tag, dispatch it with that tag:
    ```bash
-   gh workflow run promote-public-overlay.yaml --ref stage \
-     --field source_ref=stage --field promote_branch=promote/v<version> \
-     --field dry_run=true
+   gh workflow run promote-public-overlay.yaml -R <source repository> -f tag=v<version>
    ```
-   The run overlays the paths the source `.gitpublic` lists onto this
-   repository's `dev`, inserts `.github/release-notes/<version>.md` into
-   `CHANGELOG.md`
-   directly below `[Unreleased]`, and runs a content leak-scan over the
-   result, the whole `CHANGELOG.md` included. It fails if the
-   release-notes file is missing and `CHANGELOG.md` has no entry for
-   `<version>` yet. Review the log, then re-run with `dry_run=false` to
-   open the promote PR here.
-6. Review and merge the promote PR into `dev`. The release workflow
-   extracts the `## [<version>]` section of this repository's
-   `CHANGELOG.md` — the curated entry — and uses it as the GitHub
-   Release body.
-7. Tag and push:
-   ```bash
-   git checkout dev && git pull
-   git tag v0.6.2-1
-   git push origin v0.6.2-1
-   ```
-8. Watch the `release` workflow in GitHub Actions. The four
-   per-artifact jobs (`nuget`, `cli`, `oci`, plus release notes
-   extraction) fan out in parallel; the final `publish-release`
-   job creates a **draft** GitHub Release once they all succeed.
-9. Review the draft release — notes, assets, `checksums.txt` —
-   and publish it from the GitHub UI (or `gh release edit <tag>
-   --draft=false` with your own credentials). The workflow already
-   sets the GitHub "pre-release" flag from the tag shape — on for
-   `v<X.Y.Z>-<N>.<label>`, off for a final `v<X.Y.Z>-<N>` — so do
-   not pass `--prerelease` by hand; on a final tag it would
-   mislabel a stable release and stop it becoming "Latest". The
-   `release: published` event triggers the nuget.org publish
-   workflow ([`publish.yaml`](.github/workflows/publish.yaml)),
-   which pushes `Peaceful.Canton.Localnet.Testing` to nuget.org
-   under the mapped version (see "NuGet version mapping" above).
+4. **Prep PR for workflow files.** The promote App has no permission to write
+   `.github/workflows/`. Before it commits, the promote compares the
+   workflow files it would write with this repository's `dev` and, if any
+   differ, stops with the list and the commands for the prep PR: open a PR
+   here under your own account carrying exactly those files, byte-identical
+   to the tag, squash-merge it, then re-run the promote. Most releases need
+   no prep PR; a release that changes a workflow always does.
+5. Review the `Release v<version>` PR, and squash-merge it into `dev`.
+   Companion PRs that must ship in the same release merge first, or carry the
+   `hold-release` label, which holds the tag back while the PR is open.
+6. [`auto-tag-release.yaml`](.github/workflows/auto-tag-release.yaml) waits
+   until `csharp`, `public-gate`, `integration-tests`, `compose-integration`
+   and `action-selftest` have all passed on the merge commit while it is still
+   the tip of `dev`. It then reads `<Version>` from
+   `csharp/Directory.Build.props`, and, unless an open PR carries
+   `hold-release`, tags the commit `v<version>` and dispatches the
+   `release` workflow. If the tag exists but has neither a release nor a
+   running `release` run, it dispatches again. It never retries over a
+   leftover draft release: a failed release is re-run by hand, as in
+   "Recovering a failed release" below.
+7. [`release.yml`](.github/workflows/release.yml) runs: it checks the tag
+   against `<Version>` and `CHANGELOG.md`, creates a draft release, refuses
+   a version nuget.org already holds, builds, tests and packs the NuGet
+   package and builds the five CLI binaries. Only when every build has
+   passed does it push the OCI artifact to GHCR and attach the binaries, the
+   package and `checksums.txt` to the draft. It then pushes the package to
+   nuget.org, fills the release body with the `CHANGELOG.md` section for
+   this version, and publishes the release. The GitHub "pre-release" flag
+   follows the tag shape: on for `v<X.Y.Z>-<N>.<label>`, off for a final
+   `v<X.Y.Z>-<N>`.
 
-Step 3 (the CHANGELOG promotion) is a manual PR by design — we do
-not let the release workflow commit back to `dev`. That keeps the
-default branch's permission surface minimal and avoids the
-typical "workflow rewrites history" sharp edge.
+Tagging by hand is a fallback: pushing a `v*` tag here runs the same
+`release` workflow. Open a PR carrying `hold-release` first, so the
+auto-tag does not race you.
 
-Step 9 (publishing the draft) is manual by design too, for two
-reasons: GitHub suppresses workflow triggers for events created
-with a workflow's own `GITHUB_TOKEN`, so a release auto-published
-by `release.yml` would silently never reach nuget.org; and the
-nuget.org push is irreversible (packages can only be unlisted,
-never deleted), so a human looks at the draft before the point of
-no return.
+Publishing stays inside `release.yml` on purpose: GitHub does not start
+workflows for events raised with a workflow's own `GITHUB_TOKEN`, so a
+separate workflow listening for `release: published` would never run.
+The nuget.org push is irreversible (packages can only be unlisted, never
+deleted), which is why it comes after every build, the OCI push and the
+asset upload, and why it never skips a version that is already there.
+
+### Recovering a failed release
+
+A failed `release` run leaves a draft release, which the auto-tag leaves
+alone. Fix the cause, then re-run from the tag:
+
+```bash
+gh workflow run release.yml -R peacefulstudio/canton-localnet --ref dev -f version=<version>
+```
+
+Every job builds from the existing tag `v<version>`, the draft is reused,
+and a release that is already published is refused. A nuget.org version
+is permanent, so a re-run refuses a version nuget.org already holds. When
+the failed run got past the nuget.org push, only the release body and the
+publication are left; finish the draft by hand from a checkout of the tag:
+
+```bash
+.github/scripts/changelog-section.sh <version> > notes.md
+gh release edit v<version> -R peacefulstudio/canton-localnet --notes-file notes.md --draft=false
+```
+
+Add `--prerelease=false --latest` for a final `v<X.Y.Z>-<N>`; the draft starts as a pre-release, which a preview keeps.
 
 ## What each artifact is and where it lives
 
 | Artifact | Location | Consumed by |
 |---|---|---|
-| **NuGet** `Peaceful.Canton.Localnet.Testing.<version>.nupkg` | nuget.org, as the four-part stable version per the mapping above (e.g. `0.6.2.1`), pushed by [`publish.yaml`](.github/workflows/publish.yaml) when the draft release is published. nuget.org is the only NuGet distribution channel — we do not publish to the GitHub Packages NuGet feed. | .NET / xUnit integration tests in downstream Peaceful Studio repos. Add via `dotnet add package Peaceful.Canton.Localnet.Testing`. |
+| **NuGet** `Peaceful.Canton.Localnet.Testing.<version>.nupkg` | nuget.org, as the four-part stable version per the mapping above (e.g. `0.6.2.1`), pushed by [`publish.yaml`](.github/workflows/publish.yaml), which `release.yml` calls after every build has passed. nuget.org is the only NuGet distribution channel — we do not publish to the GitHub Packages NuGet feed. | .NET / xUnit integration tests in downstream Peaceful Studio repos. Add via `dotnet add package Peaceful.Canton.Localnet.Testing`. |
 | **Go module** `github.com/peacefulstudio/canton-localnet/go/fixture@v<version>` | The repo tag itself — Go's module proxy fetches it on demand. | Go integration tests via `go get github.com/peacefulstudio/canton-localnet/go/fixture@v0.6.2-1`. |
-| **CLI binary** `canton-localnet-<version>-<os>-<arch>(.exe)` | GitHub Release assets, with `checksums.txt` | Engineers, CI jobs that need the `up`/`down`/`wait-ready`/`vm` commands. SHA-256s are in `checksums.txt`. |
+| **CLI binary** `canton-localnet-<version>-<os>-<arch>(.exe)` | GitHub Release assets, with `checksums.txt` (which also covers the `.nupkg` attached to the release, built with the tag spelling `<version>`, not the NuGet spelling) | Engineers, CI jobs that need the `up`/`down`/`wait-ready`/`vm` commands. SHA-256s are in `checksums.txt`. |
 | **OCI compose artifact** `ghcr.io/peacefulstudio/canton-localnet:<version>` | GHCR (OCI artifact via `oras`, not a Docker image) | Future CLI runtime pull of the vendored Compose stack so it doesn't have to ship in the binary. |
 
 The CLI binary embeds the version via `-ldflags "-X main.version=<version>"`;
@@ -181,16 +210,19 @@ The CLI binary embeds the version via `-ldflags "-X main.version=<version>"`;
   { "strict": true, "checks": [ { "context": "public-gate" } ] }
   EOF
   ```
-- The workflow trigger is `push` of `v*` tags only — there is no
-  `pull_request` path, so the usual fork-PR token-guard rule does
-  not apply here.
+- The `release` workflow runs on a `v*` tag push or a manual
+  dispatch only, and every release job is skipped outside
+  `peacefulstudio/canton-localnet`, so no other repository can push to
+  the GHCR image or the release. There is no `pull_request` path, so the
+  usual fork-PR token-guard rule does not apply here.
 - All third-party actions are SHA-pinned with the version tag in a
   trailing comment for Dependabot, per
   [oss-prep `references/ci-hardening.md`](https://github.com/peacefulstudio/github-actions).
 - Every multi-line `run:` step starts with `set -euo pipefail`.
-- Workflow-level `permissions:` are scoped to `contents: write`
-  (release assets + tag reads) and `packages: write` (GHCR) and
-  nothing else.
+- Workflow-level `permissions:` are empty; each job asks for the least
+  it needs: `contents: write` to draft, attach and publish the release,
+  `packages: write` for the GHCR push, `id-token: write` for the
+  nuget.org login, and nothing else.
 - All `GITHUB_TOKEN`-derived values used in shell scripts are passed
   through `env:` rather than interpolated directly into `run:`
   blocks, to avoid shell injection from controlled-but-still-string
