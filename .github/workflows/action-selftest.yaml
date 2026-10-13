@@ -125,10 +125,14 @@ jobs:
           echo "ok: every 'uses:' line in action.yml, teardown/action.yml and this workflow is a literal"
 
   boot:
-    name: T2 boot end-to-end (validators a,c + pqs)
+    name: T2 boot end-to-end (validators a,c + pqs) on ${{ matrix.runner }}
     # LocalNet peaks near 7.6 GiB and starves 2 vCPU / 8 GB runners; these lanes run on 4 vCPU / 16 GB runners, or by manual dispatch.
     if: github.repository == 'peacefulstudio/canton-localnet' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-26.04]
     timeout-minutes: 45
     steps:
       - name: Checkout
