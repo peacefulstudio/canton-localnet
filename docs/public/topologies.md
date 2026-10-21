@@ -70,7 +70,12 @@ that.)
 ### Observability
 
 Adds the Grafana / Prometheus / Loki / Tempo / cAdvisor stack, with Grafana
-served on `localhost:3030`. **Off** in the repo's shipped config, under
+served on `localhost:3030`. The collector publishes OTLP on `HOST_BIND_IP`
+(loopback by default), so a host app exports traces with
+`OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:14001` (gRPC) or
+`OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` with
+`OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:14003` (HTTP), and finds the trace
+in Grafana under Explore, Tempo. **Off** in the repo's shipped config, under
 `make up`, and in CI (on only in the no-config fallback). Toggle it with
 `modules.obs` in
 `canton-localnet.yaml`, or force-enable it for a single run with the `--obs`

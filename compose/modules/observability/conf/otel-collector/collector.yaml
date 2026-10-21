@@ -7,6 +7,8 @@ receivers:
     protocols:
       grpc:
         endpoint: "0.0.0.0:${env:OTLP_LISTEN_PORT}"
+      http:
+        endpoint: "0.0.0.0:${env:OTLP_HTTP_LISTEN_PORT}"
 
   # Logs (non-OTLP)
   fluent_forward:

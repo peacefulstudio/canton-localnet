@@ -9,11 +9,14 @@ services:
     hostname: otel-collector
     mem_limit: 1gb
     ports:
+      - "${HOST_BIND_IP:-127.0.0.1}:${OTEL_COLLECTOR_OTLP_PORT}:${OTEL_COLLECTOR_OTLP_PORT}"
+      - "${HOST_BIND_IP:-127.0.0.1}:${OTEL_COLLECTOR_OTLP_HTTP_PORT}:${OTEL_COLLECTOR_OTLP_HTTP_PORT}"
       - "${HOST_BIND_IP:-127.0.0.1}:${OTEL_COLLECTOR_FLUENTD_PORT}:${OTEL_COLLECTOR_FLUENTD_PORT}"
     command:
       - --config=/etc/otel-collector/config.yaml
     environment:
       OTLP_LISTEN_PORT: ${OTEL_COLLECTOR_OTLP_PORT}
+      OTLP_HTTP_LISTEN_PORT: ${OTEL_COLLECTOR_OTLP_HTTP_PORT}
       FLUENTD_LISTEN_PORT: ${OTEL_COLLECTOR_FLUENTD_PORT}
       CANTON_METRICS_PORT: ${CANTON_METRICS_PORT}
       CADVISOR_METRICS_PORT: ${CADVISOR_METRICS_PORT}
@@ -81,7 +84,7 @@ services:
     image: ${GRAFANA_IMAGE}:${GRAFANA_VERSION}
     container_name: grafana
     hostname: grafana
-    mem_limit: 256mb
+    mem_limit: 512mb
     environment:
       LOKI_PORT: ${LOKI_HTTP_PORT}
       PROMETHEUS_PORT: ${PROMETHEUS_HTTP_PORT}

@@ -1,5 +1,22 @@
 # Migration guide
 
+## v0.9.1-1 → v0.9.3-1: protocol version 36
+
+Splice 0.9.3 bootstraps the global synchronizer on protocol version 36 instead
+of 35. The protocol version is only chosen when a synchronizer is first
+created, so a stack on existing volumes stays on 35, and a multi-sync app
+sequencer already initialised on 35 refuses the protocol-36 bootstrap.
+
+**Recreate the volumes before bringing an existing stack up on this release:**
+
+```bash
+canton-localnet down --volumes
+canton-localnet up
+```
+
+Ledger state, onboarded parties, and uploaded DARs do not survive the wipe;
+re-run whatever seeds them.
+
 ## v0.9.0-1 → v0.9.0-2: PQS scribe 3.6.0 and the `PQS_` prefix
 
 PQS moves from `scribe` 3.5.7 to 3.6.0, the first scribe image built for

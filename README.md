@@ -35,7 +35,7 @@ topology.
 
 ## Quickstart
 
-Boot a complete Canton LocalNet (Splice 0.9.1) on your machine:
+Boot a complete Canton LocalNet (Splice 0.9.3) on your machine:
 
 ```bash
 make up           # docker compose up -d, OAuth2 mode by default
@@ -58,10 +58,10 @@ each slot's participant ledger / admin / JSON / Splice validator admin ports
 share the same two-digit prefix as the JSON Ledger API port shown above.
 
 Every host-published port (participant ledger / admin / JSON, Splice
-validator admin, Postgres `5432`, Keycloak `8082`, swagger-ui, otel and
-Grafana `3030`) binds to `HOST_BIND_IP`, which defaults to `127.0.0.1`. Set
-`HOST_BIND_IP=0.0.0.0` (e.g. on the shared Hetzner LocalNet VM, whose cloud
-firewall is SSH-only) to publish on all interfaces:
+validator admin, Postgres `5432`, Keycloak `8082`, swagger-ui, the OTLP
+collector `14001` / `14003` and Grafana `3030`) binds to `HOST_BIND_IP`, which
+defaults to `127.0.0.1`. Set `HOST_BIND_IP=0.0.0.0` (e.g. on the shared Hetzner
+LocalNet VM, whose cloud firewall is SSH-only) to publish on all interfaces:
 
 ```bash
 make up HOST_BIND_IP=0.0.0.0
@@ -77,7 +77,7 @@ Optional layers via Make flags (shortcuts — the canonical config layer is
 ```bash
 make up PQS=true            # opt in to PQS for slot a (same as PQS_SLOTS=a)
 make up PQS_SLOTS=a,c       # PQS for the listed slots (a, b, c, sv); see docs/public/topologies.md
-make up OBS=true            # add Grafana (http://localhost:3030) + Prometheus / Loki / Tempo / cAdvisor
+make up OBS=true            # add Grafana (http://localhost:3030) + Prometheus / Loki / Tempo / cAdvisor; host apps export OTLP to localhost:14001 (gRPC) or localhost:14003 (HTTP)
 make up RES=false           # remove the default mem_limit / JVM heap caps
 make up AUTH_MODE=secret    # shared-secret JWT (escape hatch; not CI-tested)
 ```
