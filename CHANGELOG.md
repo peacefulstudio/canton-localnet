@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.3-1] - 2026-10-21
+
+The vendored Splice moves to 0.9.3 and the Canton inside to 3.6.3.
+
+### Added
+
+- With observability on, the OpenTelemetry collector publishes OTLP to the host on `HOST_BIND_IP`: gRPC on `14001` and HTTP on `14003`. A host app exports traces with `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:14001` and no compose override.
+
+### Changed
+
+- The vendored Splice moves from 0.9.1 to 0.9.3, skipping 0.9.2. The Canton inside moves from 3.6.1 to 3.6.3, which fixes a slow database query present in Splice 0.9.0 to 0.9.2. Upstream's `cluster/compose/localnet` tree is byte-identical between the two tags, so upstream brings no compose, env or conf change: only the image tag (`SPLICE_VERSION`) moves. Splice 0.9.3 raises the default protocol version from 35 to 36, so a freshly bootstrapped LocalNet runs the global synchronizer on protocol version 36 and its physical synchronizer id ends in `::36-0`; the multi-sync app synchronizer follows, since it bootstraps on the console's latest protocol version.
+  Recreate the volumes (`canton-localnet down --volumes`) when moving any stack from an earlier release to 0.9.3: the default protocol version applies only when a synchronizer is bootstrapped, so a stack on existing volumes stays on protocol 35, and with multi-sync on, an app sequencer already initialised on protocol 35 refuses the protocol-36 bootstrap.
+- Grafana's memory limit rises from 256 MB to 512 MB, which holds while browsing traces in Tempo; at 256 MB Grafana thrashed against its limit.
+
+### Fixed
+
+- The console image that runs the multi-sync bootstrap is now tagged with the Splice version (`localnet-console:<version>`) and always built locally, so a Splice bump rebuilds it. It used to be built once as `localnet-multi-sync-startup:latest` and reused across bumps, which left the bootstrap on an old Canton console; on Splice 0.9.3 a console from Canton 3.5 rejects the protocol-36 synchronizer id and `--multi-sync` fails.
+
 ## [0.9.1-1] - 2026-10-13
 
 The vendored Splice moves to 0.9.1. The Canton inside stays at 3.6.1.
@@ -1881,5 +1899,6 @@ final was drafted but never pushed to nuget.org.
   SHA-pinned third-party action `dependabot/fetch-metadata`, added
   `set -euo pipefail` and fork-PR-token guards on write-API steps.
 
-[Unreleased]: https://github.com/peacefulstudio/canton-localnet/compare/v0.9.1-1...HEAD
+[Unreleased]: https://github.com/peacefulstudio/canton-localnet/compare/v0.9.3-1...HEAD
+[0.9.3-1]: https://github.com/peacefulstudio/canton-localnet/compare/v0.9.1-1...v0.9.3-1
 [0.9.1-1]: https://github.com/peacefulstudio/canton-localnet/compare/v0.9.0-2...v0.9.1-1

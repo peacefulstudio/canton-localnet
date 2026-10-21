@@ -223,6 +223,8 @@ services:
       - multi-sync
 
   console:
+    image: "localnet-console:${IMAGE_TAG}"
+    pull_policy: build
     build:
       context: ${LOCALNET_DIR}/docker/console
       args:
