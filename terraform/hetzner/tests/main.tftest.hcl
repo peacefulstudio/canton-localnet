@@ -240,6 +240,16 @@ run "cloud_init_renders_mount_and_compose" {
   }
 
   assert {
+    condition     = strcontains(hcloud_server.localnet[0].user_data, indent(6, file("scripts/bring-up-localnet.sh")))
+    error_message = "cloud-init must ship scripts/bring-up-localnet.sh verbatim, so the box runs the tested wipe-on-version-change logic"
+  }
+
+  assert {
+    condition     = strcontains(hcloud_server.localnet[0].user_data, "/opt/canton-localnet/bring-up-localnet.sh \"$SRC\" \"$MOUNT/localnet-state-key\" make up PQS=true")
+    error_message = "provisioning must bring LocalNet up through bring-up-localnet.sh, keyed on a state key stored on the persistent volume"
+  }
+
+  assert {
     condition     = strcontains(hcloud_server.localnet[0].user_data, "git clone")
     error_message = "cloud-init must clone the repo"
   }

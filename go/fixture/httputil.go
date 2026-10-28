@@ -12,6 +12,21 @@ import (
 	"strings"
 )
 
+const maxResponseBodyBytes = 16 << 20
+
+var errResponseBodyTooLarge = fmt.Errorf("response exceeds %d bytes", maxResponseBodyBytes)
+
+func readBoundedBody(r io.Reader) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(r, maxResponseBodyBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > maxResponseBodyBytes {
+		return nil, errResponseBodyTooLarge
+	}
+	return body, nil
+}
+
 // normalizeBaseURL trims trailing slashes so callers can safely concatenate
 // path segments that always begin with "/". Multiple trailing slashes are
 // stripped; an empty input is returned unchanged.
@@ -79,7 +94,7 @@ func doRequest(ctx context.Context, client *http.Client, tokens TokenProvider, b
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := readBoundedBody(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("%s: read %s %s response: %w", req.errPrefix, req.method, req.errorPath(), err)
 	}

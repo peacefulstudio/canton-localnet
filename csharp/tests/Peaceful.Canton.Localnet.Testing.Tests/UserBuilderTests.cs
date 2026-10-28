@@ -114,19 +114,9 @@ public class UserBuilderTests
     }
 
     [Fact]
-    public async Task CreateAsync_grants_actAs_and_readAs_rights_via_followup_request()
+    public async Task CreateAsync_sends_actAs_and_readAs_rights_in_the_single_create_request()
     {
-        var requests = new List<(Uri Uri, string Body)>();
-        var handler = new RecordingHandler(async (req, ct) =>
-        {
-            var body = req.Content is null ? string.Empty : await req.Content.ReadAsStringAsync(ct);
-            requests.Add((req.RequestUri!, body));
-            if (req.RequestUri!.AbsolutePath.EndsWith("/v2/users", StringComparison.Ordinal))
-            {
-                return CreateUserResponse("carol");
-            }
-            return JsonOk("{}");
-        });
+        var handler = new RecordingHandler((_, _) => Task.FromResult(CreateUserResponse("carol")));
         using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
         var builder = new UserBuilder(http, StaticTokenProvider("tok"));
 
@@ -136,13 +126,13 @@ public class UserBuilderTests
             actAs: new[] { "carol::p" },
             readAs: new[] { "observer::p" });
 
-        Assert.Equal(2, requests.Count);
-        Assert.Equal(new Uri(JsonApiBase, "v2/users"), requests[0].Uri);
-        Assert.Equal(new Uri(JsonApiBase, "v2/users/carol/rights"), requests[1].Uri);
+        var recorded = Assert.Single(handler.Requests);
+        Assert.Equal(HttpMethod.Post, recorded.Method);
+        Assert.Equal(new Uri(JsonApiBase, "v2/users"), recorded.Uri);
 
-        using var rightsBody = JsonDocument.Parse(requests[1].Body);
-        Assert.Equal("carol", rightsBody.RootElement.GetProperty("userId").GetString());
-        var rights = rightsBody.RootElement.GetProperty("rights");
+        using var body = JsonDocument.Parse(recorded.Body);
+        Assert.Equal("carol", body.RootElement.GetProperty("user").GetProperty("id").GetString());
+        var rights = body.RootElement.GetProperty("rights");
         Assert.Equal(2, rights.GetArrayLength());
 
         var canActAs = rights[0].GetProperty("kind").GetProperty("CanActAs");
@@ -283,25 +273,6 @@ public class UserBuilderTests
     }
 
     [Fact]
-    public async Task CreateAsync_succeeds_when_the_rights_response_is_not_json()
-    {
-        var handler = new RecordingHandler((req, _) =>
-            Task.FromResult(req.RequestUri!.AbsolutePath.EndsWith("/v2/users", StringComparison.Ordinal)
-                ? CreateUserResponse("grace")
-                : new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent("ok", Encoding.UTF8, "text/plain"),
-                }));
-        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
-        var builder = new UserBuilder(http, StaticTokenProvider("tok"));
-
-        var id = await builder.CreateAsync("grace", actAs: new[] { "grace::p" });
-
-        Assert.Equal("grace", id);
-        Assert.Equal(2, handler.Requests.Count);
-    }
-
-    [Fact]
     public async Task GrantRightsAsync_throws_when_rights_request_fails()
     {
         var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
@@ -343,25 +314,19 @@ public class UserBuilderTests
     }
 
     [Fact]
-    public async Task CreateAsync_throws_when_rights_request_fails()
+    public async Task CreateAsync_throws_when_the_participant_rejects_the_rights_in_the_create_request()
     {
-        var handler = new RecordingHandler((req, _) =>
+        var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
         {
-            if (req.RequestUri!.AbsolutePath.EndsWith("/v2/users", StringComparison.Ordinal))
-            {
-                return Task.FromResult(CreateUserResponse("eve"));
-            }
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
-            {
-                Content = new StringContent("""{"cause":"INVALID_RIGHT"}""", Encoding.UTF8, "application/json"),
-            });
-        });
+            Content = new StringContent("""{"cause":"INVALID_RIGHT"}""", Encoding.UTF8, "application/json"),
+        }));
         using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
         var builder = new UserBuilder(http, StaticTokenProvider("tok"));
 
         var exception = await Assert.ThrowsAsync<JsonLedgerApiException>(
             () => builder.CreateAsync("eve", actAs: new[] { "eve::p" }));
         Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
+        Assert.Single(handler.Requests);
     }
 
     [Fact]

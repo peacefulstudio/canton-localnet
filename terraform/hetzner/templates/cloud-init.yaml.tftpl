@@ -9,6 +9,11 @@ packages:
   - git
   - make
 write_files:
+  - path: /opt/canton-localnet/bring-up-localnet.sh
+    permissions: "0700"
+    owner: root:root
+    content: |
+      ${indent(6, bring_up_localnet_script)}
   - path: /opt/canton-localnet/provision.sh
     permissions: "0700"
     owner: root:root
@@ -99,29 +104,11 @@ write_files:
       fi
       unset AUTH_HEADER
 
-      cd "$SRC"
-
-      # The scheduled Terraform `down` apply (server_enabled=false destroys the
-      # server resource) on a prior lifecycle event abruptly killed dockerd.
-      # Docker's persisted engine state is then left inconsistent in several ways:
-      # stale containers with nil RW layers, a corrupt BuildKit cache, and
-      # locally-built images referencing missing content-store blobs. Reset that
-      # mutable engine state via the `make down` below so `make up` recreates
-      # containers and rebuilds images from the (intact, crash-consistent) pulled
-      # base layers. Pulled images and the data volumes on the persistent disk are
-      # untouched, so ledger state carries over. There is no upstream issue
-      # reference; the inconsistent-engine-state was observed empirically.
       docker info >/dev/null 2>&1 || { echo "FATAL: docker daemon not responding after install — aborting" >&2; exit 1; }
-      make down || echo "WARN: make down failed (likely nothing to tear down) — continuing" >&2
-      docker buildx prune -af || echo "WARN: buildx prune failed — make up may reuse stale cache" >&2
-      BUILT_IMAGES="$(docker images --format '{{.Repository}}:{{.Tag}}' | grep '^localnet-' || true)"
-      if [ -n "$BUILT_IMAGES" ]; then
-        docker rmi -f $BUILT_IMAGES || echo "WARN: failed to remove $BUILT_IMAGES — make up may reuse corrupt images" >&2
-      fi
 
       export C_VALIDATOR_1_PROFILE=off
       export D_VALIDATOR_1_PROFILE=off
-      make up PQS=true
+      /opt/canton-localnet/bring-up-localnet.sh "$SRC" "$MOUNT/localnet-state-key" make up PQS=true
 
       mkdir -p "$(dirname "$DONE_FLAG")"
       touch "$DONE_FLAG"

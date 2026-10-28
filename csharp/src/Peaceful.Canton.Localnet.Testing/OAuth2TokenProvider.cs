@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -26,6 +27,17 @@ public sealed record OAuth2TokenProviderOptions(
     /// validator into a 401.
     /// </summary>
     public TimeSpan ExpiryLeeway { get; init; } = TimeSpan.FromSeconds(30);
+
+    private bool PrintMembers(StringBuilder builder)
+    {
+        builder.Append($"{nameof(TokenEndpoint)} = {TokenEndpoint}, ");
+        builder.Append($"{nameof(ClientId)} = {ClientId}, ");
+        builder.Append($"{nameof(ClientSecret)} = <redacted>, ");
+        builder.Append($"{nameof(Audience)} = {Audience}, ");
+        builder.Append($"{nameof(Scope)} = {Scope}, ");
+        builder.Append($"{nameof(ExpiryLeeway)} = {ExpiryLeeway}");
+        return true;
+    }
 }
 
 /// <summary>

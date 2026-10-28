@@ -114,6 +114,18 @@ func TestVMHelpListsThreeSubcommands(t *testing.T) {
 	}
 }
 
+func TestVMTunnelHelpListsEveryForwardedPort(t *testing.T) {
+	t.Parallel()
+	stdout, _, err := runVM(t, nil, nil, true, nil, "vm", "tunnel", "--help")
+	if err != nil {
+		t.Fatalf("vm tunnel --help: %v", err)
+	}
+	want := "10975, 11975, 12975, 13975, 14975, 11901, 7575, 8082"
+	if !strings.Contains(stdout.String(), want) {
+		t.Errorf("expected %q in vm tunnel --help output, got:\n%s", want, stdout.String())
+	}
+}
+
 func TestVMProvisionRunsInitApplyOutputs(t *testing.T) {
 	t.Parallel()
 	root := newVMTestRepo(t)

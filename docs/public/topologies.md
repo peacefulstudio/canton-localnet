@@ -85,8 +85,8 @@ flag on `canton-localnet up`.
 
 Adds a queryable projection of the ledger. **Off** in the repo's shipped config,
 under `make up`, and in CI (on only in the no-config fallback). It is brought up
-for `a-validator-1`, and additionally for `c-validator-1` when that slot is
-enabled.
+for each of `a-validator-1`, `b-validator-1` and `c-validator-1` that is
+enabled; with PQS on and none of them enabled, no Scribe starts.
 Toggle it with `modules.pqs` in `canton-localnet.yaml`, or force-enable it for a
 single run with the `--pqs` flag.
 
@@ -104,16 +104,19 @@ the make invocation. What each slot supports:
 
 | Slot | Status |
 |---|---|
-| `a` | Supported. |
-| `c` | Supported. The CLI enables it when `c-validator-1` is enabled and PQS is on. |
-| `b` | Starts, but the CLI and the boot Action never start it, and `env --pqs` exports connection details for it regardless. |
-| `sv` | Starts, but a party allocated on the SV participant after PQS startup is not projected, and `env --pqs` exports connection details for it regardless. |
+| `a` | Supported. The CLI and the Action start it when `a-validator-1` is enabled and PQS is on. |
+| `b` | Supported. The CLI and the Action start it when `b-validator-1` is enabled and PQS is on. |
+| `c` | Supported. The CLI and the Action start it when `c-validator-1` is enabled and PQS is on. |
+| `sv` | Opt-in through `make up PQS_SLOTS=sv` only; the CLI and the Action never start it. `wait-ready --pqs --slot sv` waits on it, and `env` does not export the SV slot. A party allocated on the SV participant after PQS startup is not projected. |
+| `d` | No PQS pipeline. `env --pqs` and `wait-ready --pqs` refuse it, and the Action refuses `pqs: true` with `d` in `validators`. |
 
-The Postgres databases for all four slots are created whether or not their PQS
-runs. Connecting to the database of a slot whose PQS is off finds it empty, and
-`active(...)` fails with SQLSTATE 42883 (`function active(text) does not
-exist`) because no scribe created the schema. That error means "PQS is not
-running for this slot".
+A slot's PQS database (`pqs-<slot>`) is created only when its PQS is on, so
+connecting to the database of a slot whose PQS is off fails with
+`database "pqs-<slot>" does not exist`. Volumes created by an earlier release
+keep all four PQS databases until `canton-localnet down --volumes` or
+`make clean`; on those, a query against an off slot's empty database fails with
+SQLSTATE 42883 (`function active(text) does not exist`) instead, which means the
+same thing.
 
 `make down`, `make clean`, `make stop-app`, `make clean-app` and
 `canton-localnet down` activate all four PQS profiles, so no PQS container

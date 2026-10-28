@@ -13,7 +13,7 @@ Module path: `github.com/peacefulstudio/canton-localnet/go/fixture`. Go 1.23+.
 - `JsonLedgerAdminClient` — pure `net/http` + `encoding/json` wrapper around the JSON Ledger Admin API. Currently exposes `GET /v2/parties/participant-id`.
 - `DarUploader` — `POST /v2/packages` per DAR. Idempotent: HTTP 400 with `KNOWN_PACKAGE_VERSION` in the body is treated as success, so re-uploading an already-known DAR (possibly with a different hash from a non-deterministic build) is safe. `UploadAll` runs paths sequentially and stops at the first failure.
 - `PartyAllocator` — `POST /v2/parties` with hints of the form `<prefix>-<suffix>`. The suffix is a random 16-character hex string generated once per allocator instance, so test runs sharing a ledger never collide.
-- `UserBuilder` — `POST /v2/users` and `POST /v2/users/{id}/rights` for `actAs` / `readAs` rights, in that order. The rights step is skipped when both lists are empty.
+- `UserBuilder` — a single `POST /v2/users` carrying the `actAs` / `readAs` rights; the rights array is empty when both lists are empty.
 - `Fixture` — composes the above behind `Setup(ctx)` / `Teardown(ctx)` and exposes convenience methods `GetParticipantId`, `UploadDar`, `UploadDars`, `AllocateParty`, `CreateUser`.
 - `ValidatorFixture` — per-slot view returned by `Fixture.Validator(role)` (or `Fixture.MustValidator(role)`). Exposes the same deep modules scoped to a single validator slot so tests that span multiple validators (e.g. allocate a party on `a-validator-1`, observe it on `b-validator-1`) don't have to juggle separate top-level fixtures. The first call for each role builds scoped clients; repeat calls return the cached instance. `KnownRoles()` returns the canonical slot set in stable order (sv, a, b, c, d).
 

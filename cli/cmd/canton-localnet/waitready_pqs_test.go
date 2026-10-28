@@ -130,3 +130,49 @@ func TestWaitReadyWithoutPqsNeverQueriesPostgres(t *testing.T) {
 		t.Fatalf("want no Postgres call without --pqs, got %v", psql.calls)
 	}
 }
+
+func TestWaitReadyPqsRejectsSlotDBeforeQueryingPostgres(t *testing.T) {
+	root := newEnvTestRepoRoot(t, "0.8.3-pin")
+	t.Setenv("CANTON_LOCALNET_HOST", "localhost")
+	t.Setenv("CANTON_LOCALNET_KEYCLOAK_PORT", "8082")
+	psql := &scriptedPsql{outputs: [][]byte{[]byte("35\n")}}
+	swapPqsRunner(t, psql)
+	server := readyzServer(t)
+
+	_, err := executeWaitReady(t, "wait-ready", "--url", server.URL, "--pqs", "--slot", "d",
+		"--repo-root", root, "--timeout", "5s", "--interval", "1ms")
+	want := "wait-ready: PQS: env: --pqs is not supported for slot d-validator-1: only sv-validator-1, a-validator-1, b-validator-1, c-validator-1 have a PQS pipeline"
+	if err == nil || err.Error() != want {
+		t.Fatalf("want %q, got %v", want, err)
+	}
+	if len(psql.calls) != 0 {
+		t.Fatalf("want no Postgres call, got %v", psql.calls)
+	}
+}
+
+func TestWaitReadyPqsWaitsForTheWatermarkOfTheBAndSvDatabases(t *testing.T) {
+	for _, tc := range []struct{ slot, database string }{
+		{"b", "pqs-b-validator-1"},
+		{"sv", "pqs-sv-validator-1"},
+	} {
+		t.Run(tc.slot, func(t *testing.T) {
+			root := newEnvTestRepoRoot(t, "0.8.3-pin")
+			t.Setenv("CANTON_LOCALNET_HOST", "localhost")
+			t.Setenv("CANTON_LOCALNET_KEYCLOAK_PORT", "8082")
+			psql := &scriptedPsql{outputs: [][]byte{[]byte("35\n")}}
+			swapPqsRunner(t, psql)
+			server := readyzServer(t)
+
+			stderr, err := executeWaitReady(t, "wait-ready", "--url", server.URL, "--pqs", "--slot", tc.slot,
+				"--repo-root", root, "--timeout", "5s", "--interval", "1ms")
+			if err != nil {
+				t.Fatalf("want nil, got %v\n%s", err, stderr)
+			}
+			wantArgs := []string{"docker", "exec", "-e", "PGPASSWORD", "postgres", "psql", "-X", "-A", "-t",
+				"-U", "cnadmin", "-d", tc.database, "-c", "select latest_offset()"}
+			if len(psql.calls) != 1 || !reflect.DeepEqual(psql.calls[0], wantArgs) {
+				t.Fatalf("want one probe %v, got %v", wantArgs, psql.calls)
+			}
+		})
+	}
+}

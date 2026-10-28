@@ -305,9 +305,10 @@ func globalEnvVars(primary slot.Endpoints, spliceVersion string) ([]envVar, erro
 
 // staticSlotEnvVars resolves everything for one slot that needs no
 // network call: endpoints/ports, the credential contract, and (with
-// --pqs) the PQS connection details. The JWT and live participant id are
-// resolved separately, by resolveEnvVars's second pass, because they are
-// the only fields that cost a network call.
+// --pqs) the PQS connection details.
+// The JWT and live participant id are resolved separately, by
+// resolveEnvVars's second pass, because they are the only fields that cost
+// a network call.
 func staticSlotEnvVars(repoRoot string, ep slot.Endpoints, opts envOptions) ([]envVar, error) {
 	prefix := "CANTON_LOCALNET_" + ep.Slot.EnvPrefix()
 	jsonPort, err := urlPort(ep.JSONLedgerAPIURL)
@@ -406,8 +407,8 @@ func npgsqlEscape(s string) string {
 // PQS_A_VALIDATOR_1_READER_USER/_READER_PASSWORD) and DB_PORT from
 // compose/modules/localnet/env/common.env — the file Postgres itself is
 // booted from — rather than assuming their defaults.
-// compose/modules/pqs/compose.yaml creates PQS databases for a/b/c/sv only;
-// requesting --pqs for slot d is rejected with a clear error. Each is a
+// A slot the PQS module has no pipeline for (slot.Slot.Pqs is false) is rejected
+// with an error naming the slots that do. Each is a
 // `${NAME:-default}` shell substitution in that file, the same shape
 // docker compose itself resolves at `up` time, so a real environment
 // variable of that name overrides the file's default, exactly as it
@@ -416,8 +417,8 @@ func npgsqlEscape(s string) string {
 // "HOST_IP:HOST:PORT|:PORT"); only its host-port segment is what a
 // client outside the compose network connects to.
 func resolvePqsFields(repoRoot string, ep slot.Endpoints) (pqsFields, error) {
-	if ep.Slot.Short == "d" {
-		return pqsFields{}, fmt.Errorf("env: --pqs is not supported for slot %s: compose/modules/pqs/compose.yaml creates PQS databases for a/b/c/sv only", ep.Slot.Canonical)
+	if !ep.Slot.Pqs {
+		return pqsFields{}, fmt.Errorf("env: --pqs is not supported for slot %s: only %s have a PQS pipeline", ep.Slot.Canonical, slot.JoinCanonicals(slot.PqsSlots()))
 	}
 	path := filepath.Join(repoRoot, "compose", "modules", "localnet", "env", "common.env")
 	common, err := slot.ReadEnvFile(path)

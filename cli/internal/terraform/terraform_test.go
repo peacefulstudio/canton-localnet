@@ -129,6 +129,20 @@ func TestRunPropagatesError(t *testing.T) {
 	}
 }
 
+func TestOutputsFailsWithErrTerraformMissingWhenBinaryMissing(t *testing.T) {
+	t.Parallel()
+	runner := &fakeRunner{}
+	client := newTestClient(runner)
+	client.LookPath = func(string) (string, error) { return "", errors.New("not found") }
+	_, err := client.Outputs(context.Background())
+	if !errors.Is(err, ErrTerraformMissing) {
+		t.Fatalf("expected ErrTerraformMissing, got %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Errorf("expected no runner calls when binary is missing, got %d", len(runner.calls))
+	}
+}
+
 func TestEnsureBinaryMissing(t *testing.T) {
 	t.Parallel()
 	runner := &fakeRunner{}

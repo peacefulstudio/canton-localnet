@@ -83,75 +83,7 @@ public sealed class LocalnetFixture : IAsyncDisposable
         ILoggerFactory? loggerFactory = null) => Build(endpoints, profile, loggerFactory);
 
     private static LocalnetFixture Build(LocalnetEndpoints endpoints, LocalnetProfile profile, ILoggerFactory? loggerFactory)
-    {
-        var services = new ServiceCollection();
-        if (loggerFactory is not null)
-        {
-            services.AddSingleton(loggerFactory);
-            services.AddLogging();
-        }
-        else
-        {
-            services.AddLogging();
-        }
-
-        services.AddSingleton(endpoints);
-        services.AddSingleton(new OAuth2TokenProviderOptions(
-            endpoints.TokenEndpoint,
-            endpoints.ClientId,
-            endpoints.ClientSecret,
-            endpoints.Audience,
-            endpoints.Scope));
-
-        services.AddHttpClient("oauth2");
-        services.AddHttpClient("json-ledger", client =>
-        {
-            client.BaseAddress = endpoints.JsonLedgerApi.EnsureTrailingSlash();
-        });
-
-        services.AddSingleton(sp =>
-        {
-            var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
-            var opts = sp.GetRequiredService<OAuth2TokenProviderOptions>();
-            var logger = sp.GetService<ILogger<OAuth2TokenProvider>>();
-            return new OAuth2TokenProvider(httpClientFactory.CreateClient("oauth2"), opts, logger);
-        });
-
-        services.AddSingleton(sp =>
-        {
-            var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
-            var tokenProvider = sp.GetRequiredService<OAuth2TokenProvider>();
-            var logger = sp.GetService<ILogger<JsonLedgerAdminClient>>();
-            return new JsonLedgerAdminClient(httpClientFactory.CreateClient("json-ledger"), tokenProvider, logger);
-        });
-
-        services.AddSingleton(sp =>
-        {
-            var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
-            var tokenProvider = sp.GetRequiredService<OAuth2TokenProvider>();
-            var logger = sp.GetService<ILogger<DarUploader>>();
-            return new DarUploader(httpClientFactory.CreateClient("json-ledger"), tokenProvider, logger);
-        });
-
-        services.AddSingleton(sp =>
-        {
-            var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
-            var tokenProvider = sp.GetRequiredService<OAuth2TokenProvider>();
-            var logger = sp.GetService<ILogger<PartyAllocator>>();
-            return new PartyAllocator(httpClientFactory.CreateClient("json-ledger"), tokenProvider, logger);
-        });
-
-        services.AddSingleton(sp =>
-        {
-            var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
-            var tokenProvider = sp.GetRequiredService<OAuth2TokenProvider>();
-            var logger = sp.GetService<ILogger<UserBuilder>>();
-            return new UserBuilder(httpClientFactory.CreateClient("json-ledger"), tokenProvider, logger);
-        });
-
-        var provider = services.BuildServiceProvider();
-        return new LocalnetFixture(provider, endpoints, profile, loggerFactory);
-    }
+        => new(BuildServices(endpoints, loggerFactory), endpoints, profile, loggerFactory);
 
     /// <summary>
     /// Convenience pass-through to <see cref="JsonLedgerAdminClient.GetParticipantIdAsync"/>.
@@ -340,12 +272,8 @@ public sealed class LocalnetFixture : IAsyncDisposable
         if (loggerFactory is not null)
         {
             services.AddSingleton(loggerFactory);
-            services.AddLogging();
         }
-        else
-        {
-            services.AddLogging();
-        }
+        services.AddLogging();
 
         services.AddSingleton(endpoints);
         services.AddSingleton(new OAuth2TokenProviderOptions(
@@ -382,7 +310,8 @@ public sealed class LocalnetFixture : IAsyncDisposable
             var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
             var tokenProvider = sp.GetRequiredService<OAuth2TokenProvider>();
             var logger = sp.GetService<ILogger<DarUploader>>();
-            return new DarUploader(httpClientFactory.CreateClient("json-ledger"), tokenProvider, logger);
+            var adminClient = sp.GetRequiredService<JsonLedgerAdminClient>();
+            return new DarUploader(httpClientFactory.CreateClient("json-ledger"), tokenProvider, logger, adminClient: adminClient);
         });
 
         services.AddSingleton(sp =>
@@ -390,7 +319,8 @@ public sealed class LocalnetFixture : IAsyncDisposable
             var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
             var tokenProvider = sp.GetRequiredService<OAuth2TokenProvider>();
             var logger = sp.GetService<ILogger<PartyAllocator>>();
-            return new PartyAllocator(httpClientFactory.CreateClient("json-ledger"), tokenProvider, logger);
+            var adminClient = sp.GetRequiredService<JsonLedgerAdminClient>();
+            return new PartyAllocator(httpClientFactory.CreateClient("json-ledger"), tokenProvider, logger, adminClient: adminClient);
         });
 
         services.AddSingleton(sp =>

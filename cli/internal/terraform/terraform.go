@@ -134,6 +134,9 @@ func (c *Client) Destroy(ctx context.Context) error {
 // Outputs reads `terraform output -json` and decodes the result into a
 // typed Outputs struct.
 func (c *Client) Outputs(ctx context.Context) (Outputs, error) {
+	if err := c.EnsureBinary(); err != nil {
+		return Outputs{}, err
+	}
 	var stdout bytes.Buffer
 	cmd := c.Runner
 	if err := cmd.Run(ctx, c.Dir, &stdout, c.Stderr, c.Binary, "output", "-json"); err != nil {

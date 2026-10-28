@@ -25,13 +25,13 @@ canton-localnet wait-ready --timeout 10m --interval 5s
 canton-localnet down --volumes
 ```
 
-With PQS enabled, add `--pqs` (and `--slot a` or `--slot c`) to `wait-ready`.
-Under Make, `make up PQS=true` starts PQS for slot `a` and
-`make up PQS_SLOTS=a,c` for the listed slots (`a`, `b`, `c`, `sv`; `b` and `sv`
-carry the limits listed in [topologies](topologies.md#participant-query-store-pqs)).
-A slot whose PQS is off still has an empty database, so a query against it
-fails with SQLSTATE 42883 (`function active(text) does not exist`), which means
-PQS is not running for that slot.
+With PQS enabled, add `--pqs` and `--slot a`, `b` or `c` to `wait-ready` (or
+`--slot sv` for an SV PQS started through Make). Under Make, `make up PQS=true`
+starts PQS for slot `a` and `make up PQS_SLOTS=a,c` for the listed slots (`a`,
+`b`, `c`, `sv`; `sv` carries the limit listed in
+[topologies](topologies.md#participant-query-store-pqs)). A slot whose PQS is
+off has no PQS database, so connecting to it fails with
+`database "pqs-<slot>" does not exist`.
 
 `wait-ready --pqs` also waits until that slot's Scribe pipeline has set its watermark
 (`select latest_offset()` returns non-null), which is the point from which
@@ -349,6 +349,15 @@ consumes the output directly, never for a shared CI log; use
 secret as a snapshot would produce a contract no fixture consumes.
 HS256 fixture support is tracked as a separate follow-up; until then,
 mint an SV token directly with `canton-localnet auth token --slot sv`.
+
+**`env` assumes an OAuth2 stack.** It never inspects the running stack's auth
+mode. Against a stack started with `make up AUTH_MODE=secret` (the
+shared-secret escape hatch, not CI-tested), `env` without `--jwt` makes no
+network call and still exports the OAuth2 token URL, client id and client
+secret together with `AUTH_KIND=oauth2`. A secret-mode stack does not start
+Keycloak, so none of those values authenticate, and the fixtures and
+`canton-localnet auth token` (which fetch from Keycloak for `a`/`b`/`c`/`d`)
+need it as well. Use `env` only with the default `AUTH_MODE=oauth2`.
 
 The credential contract — token URL, client id, client secret — is
 always exported for `a`/`b`/`c`/`d`; it never costs a network round

@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Peaceful Studio OÜ
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Text;
+
 namespace Peaceful.Canton.Localnet.Testing;
 
 /// <summary>
@@ -56,7 +58,20 @@ public sealed record LocalnetEndpoints(
     string ClientId,
     string ClientSecret,
     string? Scope,
-    string ValidatorUserId);
+    string ValidatorUserId)
+{
+    private bool PrintMembers(StringBuilder builder)
+    {
+        builder.Append($"{nameof(JsonLedgerApi)} = {JsonLedgerApi}, ");
+        builder.Append($"{nameof(TokenEndpoint)} = {TokenEndpoint}, ");
+        builder.Append($"{nameof(Audience)} = {Audience}, ");
+        builder.Append($"{nameof(ClientId)} = {ClientId}, ");
+        builder.Append($"{nameof(ClientSecret)} = <redacted>, ");
+        builder.Append($"{nameof(Scope)} = {Scope}, ");
+        builder.Append($"{nameof(ValidatorUserId)} = {ValidatorUserId}");
+        return true;
+    }
+}
 
 /// <summary>
 /// Resolves the URLs and credentials a <see cref="LocalnetFixture"/> needs from

@@ -54,6 +54,15 @@ type Fixture struct {
 	validators   map[Role]*ValidatorFixture
 }
 
+// String formats the fixture with its endpoints' ClientSecret redacted, so
+// logging a Fixture never writes the secret.
+func (f *Fixture) String() string {
+	return fmt.Sprintf("Fixture{Endpoints:%s}", f.endpoints.String())
+}
+
+// GoString implements fmt.GoStringer so %#v redacts ClientSecret as String does.
+func (f *Fixture) GoString() string { return f.String() }
+
 // New constructs a Fixture from the supplied Config. It does not perform any
 // network I/O; call Setup before issuing requests.
 func New(cfg Config) (*Fixture, error) {

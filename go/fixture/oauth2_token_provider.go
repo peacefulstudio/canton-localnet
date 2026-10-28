@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -32,6 +31,17 @@ type OAuth2TokenProviderConfig struct {
 	Now          func() time.Time
 }
 
+// String formats the config with ClientSecret redacted, so logging a config
+// never writes the secret. HTTPClient and Now are omitted.
+func (c OAuth2TokenProviderConfig) String() string {
+	return fmt.Sprintf(
+		"OAuth2TokenProviderConfig{TokenURL:%q, ClientID:%q, ClientSecret:<redacted>, Audience:%q, Scope:%q}",
+		c.TokenURL, c.ClientID, c.Audience, c.Scope)
+}
+
+// GoString implements fmt.GoStringer so %#v redacts ClientSecret as String does.
+func (c OAuth2TokenProviderConfig) GoString() string { return c.String() }
+
 // OAuth2TokenProvider obtains and caches OAuth2 access tokens via the
 // client_credentials grant. It is safe for concurrent use; in-flight refreshes
 // are coalesced so concurrent callers don't trigger redundant token requests.
@@ -45,6 +55,15 @@ type OAuth2TokenProvider struct {
 	refreshDone chan struct{}
 	refreshErr  error
 }
+
+// String formats the provider with its config's ClientSecret redacted and
+// without the cached access token, so logging a provider never writes either.
+func (p *OAuth2TokenProvider) String() string {
+	return fmt.Sprintf("OAuth2TokenProvider{Config:%s}", p.cfg.String())
+}
+
+// GoString implements fmt.GoStringer so %#v redacts as String does.
+func (p *OAuth2TokenProvider) GoString() string { return p.String() }
 
 // NewOAuth2TokenProvider constructs an OAuth2TokenProvider.
 //
@@ -189,7 +208,7 @@ func (p *OAuth2TokenProvider) fetchToken(ctx context.Context) (string, time.Time
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readBoundedBody(resp.Body)
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("oauth2: read token response: %w", err)
 	}

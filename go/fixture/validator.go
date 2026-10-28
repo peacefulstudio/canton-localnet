@@ -27,6 +27,15 @@ type ValidatorFixture struct {
 	users     *UserBuilder
 }
 
+// String formats the validator view with its endpoints' ClientSecret
+// redacted, so logging a ValidatorFixture never writes the secret.
+func (v *ValidatorFixture) String() string {
+	return fmt.Sprintf("ValidatorFixture{Role:%q, Endpoints:%s}", v.role, v.endpoints.String())
+}
+
+// GoString implements fmt.GoStringer so %#v redacts ClientSecret as String does.
+func (v *ValidatorFixture) GoString() string { return v.String() }
+
 // Role returns the slot this view is bound to.
 func (v *ValidatorFixture) Role() Role { return v.role }
 

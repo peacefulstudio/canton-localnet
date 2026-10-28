@@ -27,9 +27,9 @@ xUnit fixtures for Canton LocalNet integration tests. Sub-modules:
   cryptographic random per fixture instance. Allocates on the global
   synchronizer by default, resolved by alias, unless a `synchronizerId` is
   passed explicitly.
-- `UserBuilder` — `POST /v2/users` followed by `POST /v2/users/{id}/rights`
-  to grant `CanActAs` / `CanReadAs`, `PATCH /v2/users/{id}/rights` to revoke
-  them again, and `GrantRightsLeaseAsync` for a grant that hands the rights
+- `UserBuilder` — `POST /v2/users` carrying the `CanActAs` / `CanReadAs`
+  rights, `POST /v2/users/{id}/rights` to grant more later,
+  `PATCH /v2/users/{id}/rights` to revoke them again, and `GrantRightsLeaseAsync` for a grant that hands the rights
   back on dispose. A participant caps a user at 1000 rights, so on a
   long-lived shared stack take the lease — see *User rights on a shared
   stack* in `docs/public/integration-testing.md` for what it owns, when its

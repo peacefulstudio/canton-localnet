@@ -30,6 +30,22 @@ x-vars:
     path: ${MODULES_DIR}/pqs/onboarding/c-validator-1/${PQS_C_VALIDATOR_1_PROFILE}/${AUTH_MODE}.env
     required: false
 
+  a-validator-1-pqs-database-env: &a-validator-1-pqs-database-env
+    path: ${MODULES_DIR}/pqs/env/a-validator-1/${PQS_A_VALIDATOR_1_PROFILE}/postgres.env
+    required: false
+
+  b-validator-1-pqs-database-env: &b-validator-1-pqs-database-env
+    path: ${MODULES_DIR}/pqs/env/b-validator-1/${PQS_B_VALIDATOR_1_PROFILE}/postgres.env
+    required: false
+
+  c-validator-1-pqs-database-env: &c-validator-1-pqs-database-env
+    path: ${MODULES_DIR}/pqs/env/c-validator-1/${PQS_C_VALIDATOR_1_PROFILE}/postgres.env
+    required: false
+
+  sv-pqs-database-env: &sv-pqs-database-env
+    path: ${MODULES_DIR}/pqs/env/sv-validator-1/${PQS_SV_VALIDATOR_1_PROFILE}/postgres.env
+    required: false
+
 volumes:
   onboarding:
 
@@ -138,8 +154,8 @@ services:
       - ${MODULES_DIR}/pqs/onboarding/sv-validator-1/env.sh:/app/scripts/${PQS_SV_VALIDATOR_1_PROFILE}/sv-pqs.sh
 
   postgres:
-    environment:
-      - CREATE_DATABASE_pqs_app_provider=pqs-a-validator-1
-      - CREATE_DATABASE_pqs_app_user=pqs-b-validator-1
-      - CREATE_DATABASE_pqs_c_validator_1=pqs-c-validator-1
-      - CREATE_DATABASE_pqs_sv=pqs-sv-validator-1
+    env_file:
+      - *a-validator-1-pqs-database-env
+      - *b-validator-1-pqs-database-env
+      - *c-validator-1-pqs-database-env
+      - *sv-pqs-database-env

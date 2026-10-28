@@ -56,6 +56,12 @@ Each slot accepts:
 | `clientId`     | string | empty   | OAuth2 client ID for the validator's app realm.                                                              |
 | `clientSecret` | string | empty   | Literal client secret, or `${ENV_VAR}` reference. The reference is resolved at parse time; unset vars fail. |
 
+Only the CLI reads these values: `canton-localnet auth token` uses them
+as the credentials for its own `client_credentials` request. They must
+match a client that already exists in the slot's Keycloak realm. They do
+not configure Keycloak or any compose service; the realm's client
+secrets are fixed in `compose/modules/keycloak/env/<slot>/on/oauth2.env`.
+
 ### `parties`
 
 A list of `{ name: string, primary?: bool }` entries. `name` is
@@ -64,8 +70,12 @@ through; party allocation lives in the test fixture.
 
 ## Translation to env vars
 
-After parsing and merging, the loader emits the following env vars,
-which the existing compose pipeline already consumes:
+After parsing and merging, the loader emits the following env vars and
+`up` passes them to `docker compose`. The profile and party-hint
+variables are read by the compose files. The two OAuth variables are
+not read by any compose service or Keycloak realm file; they are
+exported only, and the CLI reads `auth.clientId` / `auth.clientSecret`
+from the YAML directly (see `auth` above):
 
 - `OBS_PROFILE` ← `modules.obs` (`on` / `off`)
 - `PQS_PROFILE` ← `modules.pqs` (`on` / `off`)

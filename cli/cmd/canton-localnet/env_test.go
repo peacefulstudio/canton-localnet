@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -1003,5 +1004,52 @@ func TestEnvPartyFailsWhenValidatorUserHasNoPrimaryParty(t *testing.T) {
 	err := executeRootError(t, "env", "--slot", "a", "--party", "--repo-root", root)
 	if err == nil || !strings.Contains(err.Error(), "no primaryParty") {
 		t.Fatalf("expected a no-primaryParty error, got %v", err)
+	}
+}
+
+func TestEnvPqsExportsPqsForSlotsAThroughC(t *testing.T) {
+	root := newEnvTestRepoRoot(t, "0.8.3-pin")
+	t.Setenv("CANTON_LOCALNET_HOST", "localhost")
+	for _, slotLetter := range []string{"A", "B", "C"} {
+		t.Setenv("CANTON_LOCALNET_"+slotLetter+"_VALIDATOR_1_CLIENT_SECRET", "x")
+	}
+
+	stdout := captureRoot(t, "env", "--slot", "a", "--slot", "b", "--slot", "c", "--pqs", "--format", "json", "--repo-root", root)
+
+	var got map[string]string
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("decode: %v\n%s", err, stdout)
+	}
+	var pqsDatabases []string
+	for key, value := range got {
+		if strings.HasSuffix(key, "_PQS_DATABASE") {
+			pqsDatabases = append(pqsDatabases, key+"="+value)
+		}
+	}
+	sort.Strings(pqsDatabases)
+	want := []string{
+		"CANTON_LOCALNET_A_VALIDATOR_1_PQS_DATABASE=pqs-a-validator-1",
+		"CANTON_LOCALNET_B_VALIDATOR_1_PQS_DATABASE=pqs-b-validator-1",
+		"CANTON_LOCALNET_C_VALIDATOR_1_PQS_DATABASE=pqs-c-validator-1",
+	}
+	if strings.Join(pqsDatabases, " ") != strings.Join(want, " ") {
+		t.Errorf("PQS databases: got %v, want %v", pqsDatabases, want)
+	}
+	wantB := "Host=localhost;Port=5432;Database=pqs-b-validator-1;Username=cnadmin;Password=supersafe"
+	if got["CANTON_LOCALNET_B_VALIDATOR_1_PQS_CONNECTION_STRING"] != wantB {
+		t.Errorf("b connection string: got %q, want %q", got["CANTON_LOCALNET_B_VALIDATOR_1_PQS_CONNECTION_STRING"], wantB)
+	}
+}
+
+func TestEnvPqsRefusesSlotD(t *testing.T) {
+	root := newEnvTestRepoRoot(t, "0.8.3-pin")
+	t.Setenv("CANTON_LOCALNET_HOST", "localhost")
+	t.Setenv("CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET", "x")
+	t.Setenv("CANTON_LOCALNET_D_VALIDATOR_1_CLIENT_SECRET", "x")
+
+	err := executeRootError(t, "env", "--slot", "a", "--slot", "d", "--pqs", "--format", "json", "--repo-root", root)
+	want := "env: --pqs is not supported for slot d-validator-1: only sv-validator-1, a-validator-1, b-validator-1, c-validator-1 have a PQS pipeline"
+	if err == nil || err.Error() != want {
+		t.Fatalf("want %q, got %v", want, err)
 	}
 }

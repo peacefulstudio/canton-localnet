@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.4-1] - 2026-10-28
+
+The vendored Splice moves to 0.9.4 and the Canton inside to 3.6.4.
+
+### Added
+
+- Slot `b` is a supported PQS slot. With PQS on (`canton-localnet up --pqs`, `modules.pqs`, or the Action's `pqs: true`) and `b-validator-1` enabled, its Scribe starts alongside those of `a` and `c`. `env --pqs` exports `b`'s `_PQS_*` variables, which now point at a running pipeline. `wait-ready --pqs --slot b` waits on its watermark, and so does the Action.
+
+### Changed
+
+- The vendored Splice moves from 0.9.3 to 0.9.4. The Canton inside moves from 3.6.3 to 3.6.4, a security maintenance release that updates the Canton docker base image with the refreshed CA certificate bundle. Upstream's `cluster/compose/localnet` tree is byte-identical between the two tags, so upstream brings no compose, env or conf change: only the image tag (`SPLICE_VERSION`) moves. The default protocol version stays at 36, so the bump does not require recreating volumes. The Hetzner LocalNet VM still wipes its volumes on any `SPLICE_VERSION` change.
+- A slot's PQS database is created only when that slot's PQS is on. Connecting to an off slot now fails with `database "pqs-<slot>" does not exist` instead of reaching an empty database that answers SQLSTATE 42883. Volumes from an earlier release keep their databases until `canton-localnet down --volumes`.
+- `DarUploader` and `PartyAllocator` take an optional trailing `JsonLedgerAdminClient? adminClient` constructor parameter, and `LocalnetFixture` passes them the admin client it registers. Synchronizer discovery during an upload or a party allocation now logs through the fixture's logger factory; both classes used to build a private admin client with no logger, so it logged to nothing. Existing call sites compile unchanged and keep the private client when they pass none; the added parameter changes the constructor signature for binary consumers, so recompile against this version.
+- `Peaceful.Canton.Localnet.Testing` no longer lists `Microsoft.Extensions.Options` as a direct dependency: no code in the package used it. Consumers still receive it transitively through `Microsoft.Extensions.Http`, so nothing changes for a restore.
+- The integration-testing guide states that `canton-localnet env` assumes the default OAuth2 stack: against a stack started with `AUTH_MODE=secret` it still exports the OAuth2 token URL, client id and client secret, none of which authenticate there. Use `env` only with the default `AUTH_MODE=oauth2`.
+
+### Fixed
+
+- `PartyAllocator` (.NET fixture) retries a transient `503` or `504`, a `409` `REQUEST_ALREADY_IN_FLIGHT` (the participant is still allocating the same party after the JSON API timed out), or a request timeout, from `POST /v2/parties` with the exponential backoff `DarUploader` uses (6 attempts, 1s base, 16s cap), instead of failing on the first one. A participant that times out under host load may still create the party, so when a retry is answered `Party already exists` the allocator looks the party up by its hint (`GET /v2/parties?filter-party=<hint>::`) and returns the existing party id. The first attempt keeps the old behaviour: an already-existing party is still an error. The constructor takes an optional trailing `DarUploaderRetryOptions? retryOptions`; existing call sites compile unchanged, and binary consumers recompile.
+- `canton-localnet vm tunnel --help` lists all eight forwarded ports (`10975`, `11975`, `12975`, `13975`, `14975`, `11901`, `7575`, `8082`) instead of three, and `vm tunnel` and `vm provision` report a missing `terraform` binary up front instead of failing when reading the outputs. The README marks the AWS `vm provision|destroy` verbs as deprecated and points to the Hetzner VM.
+- The Go fixture (`go/fixture`) rejects any HTTP response body over 16 MiB with a `response exceeds 16777216 bytes` error instead of reading it into memory. The cap covers ledger-API calls and the OAuth2 token endpoint.
+- `canton-localnet up` with PQS on no longer starts the `a-validator-1` Scribe when slot `a` is disabled. That Scribe restarted against a ledger port nothing listened on while the boot reported success. With PQS on and none of `a`, `b` and `c` enabled, no Scribe starts.
+- The Action refuses `pqs: true` with `d` in `validators` in its first second. It used to boot the whole stack and then fail at the env export.
+- `LocalnetEndpoints.ToString()` and `OAuth2TokenProviderOptions.ToString()` (C#), and `Endpoints` and `OAuth2TokenProviderConfig` under `%v`, `%+v`, `%#v` and `%s` (Go fixture), and the Go `*Fixture`, `*ValidatorFixture` and `*OAuth2TokenProvider` handles, print `ClientSecret` as `<redacted>` instead of the secret, so logging the endpoints, the options or a Go fixture handle no longer writes the client secret to the log. The other members print as before and C# equality still compares the secret.
+- `UserBuilder.CreateAsync` (.NET fixture) and `UserBuilder.Create` (Go fixture) create the user and its `actAs`/`readAs` rights in one `POST /v2/users` request instead of a create followed by a `POST /v2/users/{id}/rights`. A failure between the two requests can no longer leave a user with no rights behind.
+- The Hetzner LocalNet VM (`terraform/hetzner/`) wipes its docker volumes when the LocalNet version changes, instead of starting the new Canton on the previous version's database. Provisioning records `SPLICE_VERSION`, `POSTGRES_VERSION` and `CANTON_PROTOCOL_VERSION` on the persistent volume after each successful `make up`, and runs `make clean` before `make up` when they differ or were never recorded. Canton validates its schema rather than migrating it, so a box carried across a Canton bump used to fail Flyway validation and halt at every boot until someone ran `make clean` by hand. An unchanged version still keeps the volumes, so ledger state carries over across the nightly rebuild as before.
+
 ## [0.9.3-1] - 2026-10-21
 
 The vendored Splice moves to 0.9.3 and the Canton inside to 3.6.3.
@@ -1899,6 +1926,7 @@ final was drafted but never pushed to nuget.org.
   SHA-pinned third-party action `dependabot/fetch-metadata`, added
   `set -euo pipefail` and fork-PR-token guards on write-API steps.
 
-[Unreleased]: https://github.com/peacefulstudio/canton-localnet/compare/v0.9.3-1...HEAD
+[Unreleased]: https://github.com/peacefulstudio/canton-localnet/compare/v0.9.4-1...HEAD
+[0.9.4-1]: https://github.com/peacefulstudio/canton-localnet/compare/v0.9.3-1...v0.9.4-1
 [0.9.3-1]: https://github.com/peacefulstudio/canton-localnet/compare/v0.9.1-1...v0.9.3-1
 [0.9.1-1]: https://github.com/peacefulstudio/canton-localnet/compare/v0.9.0-2...v0.9.1-1

@@ -16,12 +16,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-)
 
-// SlotSV is the non-toggleable Super Validator slot. It is always
-// activated in the assembled compose plan regardless of the contents
-// of Options.EnabledSlots.
-const SlotSV = "sv-validator-1"
+	"github.com/peacefulstudio/canton-localnet/cli/internal/slot"
+)
 
 // AuthMode selects the authentication profile applied to the stack.
 type AuthMode string
@@ -75,12 +72,13 @@ func DefaultOptions(repoRoot string) Options {
 }
 
 func defaultEnabledSlots() []string {
-	return []string{SlotSV, "a-validator-1", "b-validator-1", "c-validator-1", "d-validator-1"}
+	return slot.Canonicals()
 }
 
-// PqsProfiles lists every compose profile the PQS module can start. A
-// teardown activates all of them so no PQS container outlives `down`.
-var PqsProfiles = []string{"pqs-a-validator-1", "pqs-b-validator-1", "pqs-c-validator-1", "pqs-sv-validator-1"}
+// PqsProfiles lists every compose profile the PQS module defines, one per
+// slot.PqsSlots. A teardown activates all of them so no PQS container
+// outlives `down`, whatever started it.
+var PqsProfiles = pqsProfiles(slot.PqsSlots())
 
 // Plan is a resolved set of docker compose arguments and environment
 // variables. It is deterministic for any given Options, which lets us
@@ -185,9 +183,9 @@ func Build(opts Options) (Plan, error) {
 			args = append(args, "--profile", profile)
 		}
 	} else if opts.Pqs {
-		args = append(args, "--profile", "pqs-a-validator-1")
-		if containsSlot(enabledSlots, "c-validator-1") {
-			args = append(args, "--profile", "pqs-c-validator-1")
+		scribeSlots := enabledPqsDefaultSlots(enabledSlots)
+		for _, profile := range pqsProfiles(scribeSlots) {
+			args = append(args, "--profile", profile)
 		}
 	}
 	if opts.Obs {
@@ -202,33 +200,63 @@ func Build(opts Options) (Plan, error) {
 		"LOCALNET_DIR=" + localnetDir,
 		"AUTH_MODE=" + string(opts.AuthMode),
 	}
-	if opts.Pqs && containsSlot(enabledSlots, "c-validator-1") {
-		env = append(env, "PQS_C_VALIDATOR_1_PROFILE=on")
+	if opts.Pqs && !opts.Teardown {
+		env = append(env, pqsProfileToggles(enabledSlots)...)
 	}
 	env = append(env, opts.ExtraEnv...)
 
 	return Plan{Args: args, Env: env}, nil
 }
 
+func pqsProfiles(slots []slot.Slot) []string {
+	profiles := make([]string, 0, len(slots))
+	for _, s := range slots {
+		profiles = append(profiles, "pqs-"+s.Canonical)
+	}
+	return profiles
+}
+
+func enabledPqsDefaultSlots(enabledSlots []string) []slot.Slot {
+	var out []slot.Slot
+	for _, s := range slot.PqsDefaultSlots() {
+		if containsSlot(enabledSlots, s.Canonical) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func pqsProfileToggles(enabledSlots []string) []string {
+	toggles := make([]string, 0, len(slot.PqsSlots()))
+	for _, s := range slot.PqsSlots() {
+		state := "off"
+		if s.PqsByDefault && containsSlot(enabledSlots, s.Canonical) {
+			state = "on"
+		}
+		toggles = append(toggles, "PQS_"+s.EnvPrefix()+"_PROFILE="+state)
+	}
+	return toggles
+}
+
 func normalizeEnabledSlots(slots []string) []string {
 	out := make([]string, 0, len(slots)+1)
 	seen := map[string]bool{}
 	sawSV := false
-	for _, slot := range slots {
-		if slot == "" {
+	for _, slotName := range slots {
+		if slotName == "" {
 			continue
 		}
-		if seen[slot] {
+		if seen[slotName] {
 			continue
 		}
-		seen[slot] = true
-		if slot == SlotSV {
+		seen[slotName] = true
+		if slotName == slot.SVCanonical {
 			sawSV = true
 		}
-		out = append(out, slot)
+		out = append(out, slotName)
 	}
 	if !sawSV {
-		out = append([]string{SlotSV}, out...)
+		out = append([]string{slot.SVCanonical}, out...)
 	}
 	return out
 }

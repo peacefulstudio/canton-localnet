@@ -365,3 +365,98 @@ func TestUpRejectsNegativeTimeout(t *testing.T) {
 		t.Fatalf("expected a negative --timeout to be rejected")
 	}
 }
+
+func TestUpWithPqsAndSlotADisabledStartsNoSlotAScribe(t *testing.T) {
+	t.Parallel()
+	root := newTestRepoRoot(t)
+	cfgPath := filepath.Join(root, "c-only.yaml")
+	body := "schemaVersion: preview-1\n" +
+		"modules:\n" +
+		"  obs: false\n" +
+		"  pqs: true\n" +
+		"validators:\n" +
+		"  a-validator-1: { enabled: false }\n" +
+		"  b-validator-1: { enabled: false }\n" +
+		"  c-validator-1: { enabled: true }\n" +
+		"  d-validator-1: { enabled: false }\n"
+	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runner, _, err := runRoot(t, "up", "--repo-root", root, "--config", cfgPath)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	plan := runner.calls[0].plan
+	if containsPair(plan.Args, "--profile", "pqs-a-validator-1") {
+		t.Errorf("slot a is disabled — expected no --profile pqs-a-validator-1, got %v", plan.Args)
+	}
+	if !containsPair(plan.Args, "--profile", "pqs-c-validator-1") {
+		t.Errorf("expected --profile pqs-c-validator-1, got %v", plan.Args)
+	}
+	if !containsString(plan.Env, "PQS_A_VALIDATOR_1_PROFILE=off") {
+		t.Errorf("expected PQS_A_VALIDATOR_1_PROFILE=off so slot a's PQS onboarding and database stay off, got %v", plan.Env)
+	}
+}
+
+func TestUpWithPqsAndSlotBEnabledStartsTheSlotBScribe(t *testing.T) {
+	t.Parallel()
+	root := newTestRepoRoot(t)
+	cfgPath := filepath.Join(root, "b-only.yaml")
+	body := "schemaVersion: preview-1\n" +
+		"modules:\n" +
+		"  obs: false\n" +
+		"  pqs: true\n" +
+		"validators:\n" +
+		"  a-validator-1: { enabled: false }\n" +
+		"  b-validator-1: { enabled: true }\n" +
+		"  c-validator-1: { enabled: false }\n" +
+		"  d-validator-1: { enabled: false }\n"
+	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runner, _, err := runRoot(t, "up", "--repo-root", root, "--config", cfgPath)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	plan := runner.calls[0].plan
+	for _, absent := range []string{"pqs-a-validator-1", "pqs-sv-validator-1"} {
+		if containsPair(plan.Args, "--profile", absent) {
+			t.Errorf("expected no --profile %s, got %v", absent, plan.Args)
+		}
+	}
+	if !containsPair(plan.Args, "--profile", "pqs-b-validator-1") {
+		t.Errorf("expected --profile pqs-b-validator-1, got %v", plan.Args)
+	}
+	if !containsString(plan.Env, "PQS_B_VALIDATOR_1_PROFILE=on") {
+		t.Errorf("expected PQS_B_VALIDATOR_1_PROFILE=on, got %v", plan.Env)
+	}
+}
+
+func TestUpWithPqsAndNoPqsSlotEnabledStartsNoScribe(t *testing.T) {
+	t.Parallel()
+	root := newTestRepoRoot(t)
+	cfgPath := filepath.Join(root, "d-only.yaml")
+	body := "schemaVersion: preview-1\n" +
+		"modules:\n" +
+		"  obs: false\n" +
+		"  pqs: true\n" +
+		"validators:\n" +
+		"  a-validator-1: { enabled: false }\n" +
+		"  b-validator-1: { enabled: false }\n" +
+		"  c-validator-1: { enabled: false }\n" +
+		"  d-validator-1: { enabled: true }\n"
+	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runner, _, err := runRoot(t, "up", "--repo-root", root, "--config", cfgPath)
+	if err != nil {
+		t.Fatalf("up: %v", err)
+	}
+	for _, call := range runner.calls {
+		for _, arg := range call.plan.Args {
+			if strings.HasPrefix(arg, "pqs-") {
+				t.Errorf("want no PQS profile, got %q in %v", arg, call.plan.Args)
+			}
+		}
+	}
+}

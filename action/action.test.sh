@@ -655,6 +655,61 @@ assert_contains "boot.sh (pqs: true): the PQS wait-ready call carries the select
 bash "$here/host-diagnostics.sh" stop-sampler "$boot_dir/runner-temp/canton-localnet/memory-samples.txt"
 rm -rf "$boot_dir"
 
+## boot.sh follows the PQS slot list: a slot with no PQS pipeline is skipped, and a topology with none fails first
+
+boot_dir="$(mktemp -d)"
+cat >"$boot_dir/canton-localnet" <<'EOF'
+#!/usr/bin/env bash
+echo "$*" >>"$BOOT_ARGV_LOG"
+EOF
+cat >"$boot_dir/make" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+cat >"$boot_dir/timeout" <<'EOF'
+#!/usr/bin/env bash
+shift
+exec "$@"
+EOF
+chmod +x "$boot_dir/canton-localnet" "$boot_dir/make" "$boot_dir/timeout"
+
+run_boot_with_pqs_validators() {
+  local validators="$1"
+  boot_runner_temp="$(mktemp -d)"
+  : >"$boot_dir/argv.log"
+  : >"$boot_dir/step-summary"
+  : >"$boot_dir/github-output"
+  set +e
+  PATH="$boot_dir:$PATH" BOOT_ARGV_LOG="$boot_dir/argv.log" \
+    CLI_PATH="$boot_dir/canton-localnet" ACTION_PATH="$here/.." VALIDATORS="$validators" PQS=true \
+    OBSERVABILITY=false MULTI_SYNC=false DIALECT=native ROLES="" JWT=false TIMEOUT=10m \
+    CONFIG_INPUT="" RUNNER_TEMP="$boot_runner_temp" \
+    RUNNER_ENVIRONMENT=github-hosted GITHUB_WORKSPACE="$boot_dir" \
+    GITHUB_OUTPUT="$boot_dir/github-output" GITHUB_STEP_SUMMARY="$boot_dir/step-summary" \
+    bash "$here/boot.sh" >"$boot_dir/boot.log" 2>&1
+  status=$?
+  set -e
+  if [ -f "$boot_runner_temp/canton-localnet/memory-samples.txt" ]; then
+    bash "$here/host-diagnostics.sh" stop-sampler "$boot_runner_temp/canton-localnet/memory-samples.txt"
+  fi
+}
+
+run_boot_with_pqs_validators "a,b"
+assert_status "boot.sh (validators: a,b, pqs: true): runs to completion" "0" "$status"
+assert_eq "boot.sh (validators: a,b, pqs: true): the PQS watermark of a and b is awaited" \
+  "--slot a-validator-1 --slot b-validator-1" "$(grep '^wait-ready.* --pqs ' "$boot_dir/argv.log" | grep -o -- '--slot [a-z]*-validator-1' | paste -sd ' ' -)"
+assert_contains "boot.sh (validators: a,b, pqs: true): env runs with --pqs for both slots" \
+  "$(grep '^env ' "$boot_dir/argv.log")" "--pqs --slot a --slot b"
+
+for validators in "d" "a,d"; do
+  run_boot_with_pqs_validators "$validators"
+  assert_status "boot.sh (validators: ${validators}, pqs: true): fails" "1" "$status"
+  assert_contains "boot.sh (validators: ${validators}, pqs: true): names d and the PQS validators" \
+    "$(cat "$boot_dir/boot.log")" "d-validator-1 has none (PQS validators: a b c; the PQS module covers sv a b c)"
+  assert_eq "boot.sh (validators: ${validators}, pqs: true): fails before any CLI call" "0" "$(wc -l <"$boot_dir/argv.log" | tr -d ' ')"
+done
+rm -rf "$boot_dir"
+
 ## boot.sh caps each up attempt at up-timeout, and captures host diagnostics when the first attempt fails
 
 boot_dir="$(mktemp -d)"

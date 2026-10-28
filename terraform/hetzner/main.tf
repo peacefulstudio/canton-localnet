@@ -58,10 +58,11 @@ resource "hcloud_server" "localnet" {
   }
 
   user_data = templatefile("${path.module}/templates/cloud-init.yaml.tftpl", {
-    volume_id  = hcloud_volume.localnet.id
-    repo_url   = var.repo_url
-    repo_ref   = var.repo_ref
-    repo_token = var.repo_token
+    volume_id                = hcloud_volume.localnet.id
+    repo_url                 = var.repo_url
+    repo_ref                 = var.repo_ref
+    repo_token               = var.repo_token
+    bring_up_localnet_script = file("${path.module}/scripts/bring-up-localnet.sh")
   })
 }
 
