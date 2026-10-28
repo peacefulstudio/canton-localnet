@@ -10,9 +10,13 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Peaceful.Canton.Localnet.Testing;
 
 /// <summary>
-/// Thin wrapper over the Canton JSON Ledger API v2. v0 implements only
-/// <c>GET /v2/parties/participant-id</c>; subsequent slices will add DAR
-/// upload, party allocation, and user binding.
+/// Thin read-only wrapper over the Canton JSON Ledger API v2. It serves
+/// <c>GET /v2/parties/participant-id</c> (<see cref="GetParticipantIdAsync"/>),
+/// <c>GET /v2/state/connected-synchronizers</c> (<see cref="GetConnectedSynchronizersAsync"/>
+/// and the app and global synchronizer id lookups built on it), and
+/// <c>GET /v2/packages/{package-id}</c> (<see cref="PackageExistsAsync"/>).
+/// DAR upload, party allocation and user binding live in <see cref="DarUploader"/>,
+/// <see cref="PartyAllocator"/> and <see cref="UserBuilder"/>.
 /// </summary>
 public sealed class JsonLedgerAdminClient
 {

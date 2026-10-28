@@ -35,7 +35,7 @@ topology.
 
 ## Quickstart
 
-Boot a complete Canton LocalNet (Splice 0.9.3) on your machine:
+Boot a complete Canton LocalNet (Splice 0.9.4) on your machine:
 
 ```bash
 make up           # docker compose up -d, OAuth2 mode by default
@@ -86,7 +86,13 @@ When iterating with observability on, `make stop-app` (and `make clean-app`)
 restart the application stack while leaving Grafana / Prometheus / Loki / Tempo
 running so dashboards stay populated.
 
-### Remote VM (AWS)
+### Remote VM (AWS, deprecated)
+
+> **Deprecated.** The AWS EC2 box and the `vm provision|destroy` verbs are
+> end-of-life; the shared LocalNet VM now runs on Hetzner (`terraform/hetzner`,
+> `make hetzner-up`, see [`skills/localnet-vm/SKILL.md`](skills/localnet-vm/SKILL.md)).
+> `canton-localnet vm tunnel --host <hetzner-ip>` still reaches it. Whether the
+> verbs are retired or gain a Hetzner adapter is still open.
 
 For consumers that prefer running LocalNet on a shared EC2 instance, the
 `vm` subcommand wraps the `terraform/` stack and an ssh tunnel:

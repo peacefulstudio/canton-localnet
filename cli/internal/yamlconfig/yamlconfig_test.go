@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/peacefulstudio/canton-localnet/cli/internal/slot"
 )
 
 func TestDefaultsAllSlotsOn(t *testing.T) {
@@ -17,17 +19,17 @@ func TestDefaultsAllSlotsOn(t *testing.T) {
 	if !cfg.Modules.Obs || !cfg.Modules.Pqs {
 		t.Errorf("default modules: want obs=true pqs=true, got %+v", cfg.Modules)
 	}
-	for _, slot := range KnownSlots {
-		v, ok := cfg.Validators[slot]
+	for _, slotName := range slot.Canonicals() {
+		v, ok := cfg.Validators[slotName]
 		if !ok {
-			t.Errorf("default Validators missing slot %q", slot)
+			t.Errorf("default Validators missing slot %q", slotName)
 			continue
 		}
 		if !v.Enabled {
-			t.Errorf("slot %q: expected default Enabled=true", slot)
+			t.Errorf("slot %q: expected default Enabled=true", slotName)
 		}
-		if v.PartyHint != slot {
-			t.Errorf("slot %q: expected default PartyHint=%q, got %q", slot, slot, v.PartyHint)
+		if v.PartyHint != slotName {
+			t.Errorf("slot %q: expected default PartyHint=%q, got %q", slotName, slotName, v.PartyHint)
 		}
 	}
 }

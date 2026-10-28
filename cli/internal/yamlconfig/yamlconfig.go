@@ -19,6 +19,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/peacefulstudio/canton-localnet/cli/internal/slot"
 )
 
 // FileName is the on-disk name the CLI walks up looking for.
@@ -26,21 +28,6 @@ const FileName = "canton-localnet.yaml"
 
 // SchemaVersion is the only schema version this loader accepts.
 const SchemaVersion = "preview-1"
-
-// SlotSV is the non-toggleable Super Validator slot. Every topology
-// must include exactly one SV.
-const SlotSV = "sv-validator-1"
-
-// KnownSlots is the fixed-cardinality set of validator slots baked
-// into the compose graph. References to slots outside this set are
-// rejected as configuration errors.
-var KnownSlots = []string{
-	SlotSV,
-	"a-validator-1",
-	"b-validator-1",
-	"c-validator-1",
-	"d-validator-1",
-}
 
 // Config is the in-memory representation of a fully-merged
 // canton-localnet.yaml. The zero value is not valid — use Defaults or
@@ -59,7 +46,7 @@ type Modules struct {
 	Pqs bool
 }
 
-// Validator captures the per-slot configuration. SlotSV is always
+// Validator captures the per-slot configuration. The SV slot is always
 // enabled; for non-SV slots Enabled gates the corresponding compose
 // profile.
 type Validator struct {
@@ -124,10 +111,10 @@ func Defaults() Config {
 		Modules:       Modules{Obs: true, Pqs: true},
 		Validators:    map[string]Validator{},
 	}
-	for _, slot := range KnownSlots {
-		cfg.Validators[slot] = Validator{
+	for _, slotName := range slot.Canonicals() {
+		cfg.Validators[slotName] = Validator{
 			Enabled:   true,
-			PartyHint: slot,
+			PartyHint: slotName,
 		}
 	}
 	return cfg
@@ -224,7 +211,7 @@ func Parse(data []byte, sourceLabel string) (Config, error) {
 	}
 	for name := range raw.Validators {
 		if !isKnownSlot(name) {
-			return Config{}, fmt.Errorf("yamlconfig: %s: unknown validator slot %q (known slots: %s)", sourceLabel, name, strings.Join(KnownSlots, ", "))
+			return Config{}, fmt.Errorf("yamlconfig: %s: unknown validator slot %q (known slots: %s)", sourceLabel, name, strings.Join(slot.Canonicals(), ", "))
 		}
 	}
 	cfg := Defaults()
@@ -249,14 +236,14 @@ func Parse(data []byte, sourceLabel string) (Config, error) {
 	return cfg, nil
 }
 
-func mergeValidator(base Validator, rv *rawValidator, slot, sourceLabel string) (Validator, error) {
+func mergeValidator(base Validator, rv *rawValidator, slotName, sourceLabel string) (Validator, error) {
 	out := base
 	if rv == nil {
 		return out, nil
 	}
 	if rv.Enabled != nil {
-		if slot == SlotSV && !*rv.Enabled {
-			return Validator{}, fmt.Errorf("yamlconfig: %s: slot %q cannot be disabled (SV is non-toggleable)", sourceLabel, slot)
+		if slotName == slot.SVCanonical && !*rv.Enabled {
+			return Validator{}, fmt.Errorf("yamlconfig: %s: slot %q cannot be disabled (SV is non-toggleable)", sourceLabel, slotName)
 		}
 		out.Enabled = *rv.Enabled
 	}
@@ -270,7 +257,7 @@ func mergeValidator(base Validator, rv *rawValidator, slot, sourceLabel string) 
 		if rv.Auth.ClientSecret != nil {
 			resolved, err := resolveSecret(*rv.Auth.ClientSecret)
 			if err != nil {
-				return Validator{}, fmt.Errorf("yamlconfig: %s: slot %q clientSecret: %w", sourceLabel, slot, err)
+				return Validator{}, fmt.Errorf("yamlconfig: %s: slot %q clientSecret: %w", sourceLabel, slotName, err)
 			}
 			out.Auth.ClientSecret = resolved
 		}
@@ -279,7 +266,7 @@ func mergeValidator(base Validator, rv *rawValidator, slot, sourceLabel string) 
 		out.Parties = make([]Party, 0, len(rv.Parties))
 		for _, p := range rv.Parties {
 			if p.Name == "" {
-				return Validator{}, fmt.Errorf("yamlconfig: %s: slot %q parties: name is required", sourceLabel, slot)
+				return Validator{}, fmt.Errorf("yamlconfig: %s: slot %q parties: name is required", sourceLabel, slotName)
 			}
 			out.Parties = append(out.Parties, Party(p))
 		}
@@ -303,7 +290,7 @@ func resolveSecret(raw string) (string, error) {
 }
 
 func isKnownSlot(name string) bool {
-	for _, s := range KnownSlots {
+	for _, s := range slot.Canonicals() {
 		if s == name {
 			return true
 		}
@@ -319,9 +306,9 @@ func (c Config) Env() []string {
 		"OBS_PROFILE": profileFlag(c.Modules.Obs),
 		"PQS_PROFILE": profileFlag(c.Modules.Pqs),
 	}
-	for slot, v := range c.Validators {
-		prefix := slotEnvPrefix(slot)
-		enabled := v.Enabled || slot == SlotSV
+	for slotName, v := range c.Validators {
+		prefix := slotEnvPrefix(slotName)
+		enabled := v.Enabled || slotName == slot.SVCanonical
 		pairs[prefix+"_PROFILE"] = profileFlag(enabled)
 		if v.PartyHint != "" {
 			pairs[prefix+"_PARTY_HINT"] = v.PartyHint
@@ -350,20 +337,20 @@ func (c Config) Env() []string {
 // slots are filtered by their Enabled flag.
 func (c Config) EnabledSlots() []string {
 	out := make([]string, 0, len(c.Validators))
-	for _, slot := range KnownSlots {
-		v, ok := c.Validators[slot]
+	for _, slotName := range slot.Canonicals() {
+		v, ok := c.Validators[slotName]
 		if !ok {
 			continue
 		}
-		if slot == SlotSV || v.Enabled {
-			out = append(out, slot)
+		if slotName == slot.SVCanonical || v.Enabled {
+			out = append(out, slotName)
 		}
 	}
 	return out
 }
 
-func slotEnvPrefix(slot string) string {
-	return strings.ReplaceAll(strings.ToUpper(slot), "-", "_")
+func slotEnvPrefix(slotName string) string {
+	return strings.ReplaceAll(strings.ToUpper(slotName), "-", "_")
 }
 
 func profileFlag(on bool) string {

@@ -45,6 +45,16 @@ type Slot struct {
 	// vendored compose env tree. Empty for slots whose user id follows
 	// their token subject instead; Resolve fills that case in.
 	ValidatorUserID string
+
+	// Pqs reports whether the PQS module defines a Scribe pipeline and a
+	// database for the slot, so `make up PQS_SLOTS=...` can start it and
+	// `wait-ready --pqs` can wait on it.
+	Pqs bool
+
+	// PqsByDefault reports whether turning PQS on (`up --pqs`,
+	// modules.pqs, the Action's `pqs: true`) starts the slot's Scribe
+	// when the slot is enabled. Only a Pqs slot can carry it.
+	PqsByDefault bool
 }
 
 func (s Slot) JSONLedgerPort() string     { return s.PortPrefix + "975" }
@@ -63,11 +73,15 @@ func (s Slot) EnvPrefix() string {
 	return strings.ReplaceAll(strings.ToUpper(s.Canonical), "-", "_")
 }
 
+// SVCanonical is the canonical name of the non-toggleable Super
+// Validator slot. Every topology includes it.
+const SVCanonical = "sv-validator-1"
+
 var all = []Slot{
-	{Canonical: "sv-validator-1", Short: "sv", Realm: "", PortPrefix: "10", AuthKind: AuthKindHS256},
-	{Canonical: "a-validator-1", Short: "a", Realm: "AValidator1", PortPrefix: "11", AuthKind: AuthKindOAuth2, ValidatorUserID: "c87743ab-80e0-4b83-935a-4c0582226691"},
-	{Canonical: "b-validator-1", Short: "b", Realm: "BValidator1", PortPrefix: "12", AuthKind: AuthKindOAuth2, ValidatorUserID: "97bb6cef-a7a9-410b-ba8c-ada08451a5c9"},
-	{Canonical: "c-validator-1", Short: "c", Realm: "CValidator1", PortPrefix: "13", AuthKind: AuthKindOAuth2, ValidatorUserID: "f902df23-9d11-4836-94c1-b9b584112755"},
+	{Canonical: SVCanonical, Short: "sv", Realm: "", PortPrefix: "10", AuthKind: AuthKindHS256, Pqs: true},
+	{Canonical: "a-validator-1", Short: "a", Realm: "AValidator1", PortPrefix: "11", AuthKind: AuthKindOAuth2, ValidatorUserID: "c87743ab-80e0-4b83-935a-4c0582226691", Pqs: true, PqsByDefault: true},
+	{Canonical: "b-validator-1", Short: "b", Realm: "BValidator1", PortPrefix: "12", AuthKind: AuthKindOAuth2, ValidatorUserID: "97bb6cef-a7a9-410b-ba8c-ada08451a5c9", Pqs: true, PqsByDefault: true},
+	{Canonical: "c-validator-1", Short: "c", Realm: "CValidator1", PortPrefix: "13", AuthKind: AuthKindOAuth2, ValidatorUserID: "f902df23-9d11-4836-94c1-b9b584112755", Pqs: true, PqsByDefault: true},
 	{Canonical: "d-validator-1", Short: "d", Realm: "DValidator1", PortPrefix: "14", AuthKind: AuthKindOAuth2, ValidatorUserID: "d82c7c58-f453-4961-9c34-4dd539994264"},
 }
 
@@ -75,6 +89,48 @@ var all = []Slot{
 func All() []Slot {
 	out := make([]Slot, len(all))
 	copy(out, all)
+	return out
+}
+
+// Canonicals returns the canonical name of every known slot in
+// canonical order (sv first, then a..d).
+func Canonicals() []string {
+	out := make([]string, len(all))
+	for i, s := range all {
+		out[i] = s.Canonical
+	}
+	return out
+}
+
+// PqsSlots returns every slot the PQS module can run a pipeline for, in
+// canonical order.
+func PqsSlots() []Slot {
+	return slotsWhere(func(s Slot) bool { return s.Pqs })
+}
+
+// PqsDefaultSlots returns every slot whose Scribe starts when PQS is on
+// and the slot is enabled, in canonical order.
+func PqsDefaultSlots() []Slot {
+	return slotsWhere(func(s Slot) bool { return s.PqsByDefault })
+}
+
+// JoinCanonicals joins the canonical names of slots with ", ", for error
+// messages that name a set of slots.
+func JoinCanonicals(slots []Slot) string {
+	names := make([]string, 0, len(slots))
+	for _, s := range slots {
+		names = append(names, s.Canonical)
+	}
+	return strings.Join(names, ", ")
+}
+
+func slotsWhere(keep func(Slot) bool) []Slot {
+	var out []Slot
+	for _, s := range all {
+		if keep(s) {
+			out = append(out, s)
+		}
+	}
 	return out
 }
 

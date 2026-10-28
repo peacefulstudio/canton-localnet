@@ -41,6 +41,11 @@ public sealed class DarUploader
     /// <param name="options">
     /// Transient-503 retry policy; defaults to <see cref="DarUploaderRetryOptions.Default"/>.
     /// </param>
+    /// <param name="adminClient">
+    /// Admin client used for synchronizer discovery and package read-back;
+    /// defaults to a private, unlogged client over <paramref name="httpClient"/>.
+    /// <see cref="LocalnetFixture"/> passes the one it registers.
+    /// </param>
     /// <exception cref="ArgumentException">
     /// <paramref name="httpClient"/> has no <see cref="HttpClient.BaseAddress"/>.
     /// </exception>
@@ -48,7 +53,8 @@ public sealed class DarUploader
         HttpClient httpClient,
         OAuth2TokenProvider tokenProvider,
         ILogger<DarUploader>? logger = null,
-        DarUploaderRetryOptions? options = null)
+        DarUploaderRetryOptions? options = null,
+        JsonLedgerAdminClient? adminClient = null)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _tokenProvider = tokenProvider ?? throw new ArgumentNullException(nameof(tokenProvider));
@@ -62,7 +68,7 @@ public sealed class DarUploader
                 nameof(httpClient));
         }
 
-        _adminClient = new JsonLedgerAdminClient(_httpClient, _tokenProvider);
+        _adminClient = adminClient ?? new JsonLedgerAdminClient(_httpClient, _tokenProvider);
     }
 
     /// <summary>

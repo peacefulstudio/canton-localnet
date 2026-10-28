@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/peacefulstudio/canton-localnet/cli/internal/terraform"
@@ -153,7 +154,7 @@ func newVMTunnelCommand(deps vmDeps) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "tunnel",
 		Short: "Open an ssh -L tunnel to the canton-localnet VM",
-		Long:  "Opens `ssh -L 11901:localhost:11901 -L 7575:localhost:7575 -L 8082:localhost:8082` against the provisioned VM. By default the host, user, and identity file are read from `terraform output -json`; --host, --user, and --identity override the discovered values.",
+		Long:  "Opens an `ssh -L` tunnel forwarding ports " + joinPorts(tunnel.DefaultPorts) + " against the provisioned VM. By default the host, user, and identity file are read from `terraform output -json`; --host, --user, and --identity override the discovered values.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			repoRoot, err := resolveRepoRoot(cmd)
 			if err != nil {
@@ -261,4 +262,12 @@ func stdinIsTerminal() bool {
 		return false
 	}
 	return info.Mode()&os.ModeCharDevice != 0
+}
+
+func joinPorts(ports []int) string {
+	parts := make([]string, len(ports))
+	for i, port := range ports {
+		parts[i] = strconv.Itoa(port)
+	}
+	return strings.Join(parts, ", ")
 }

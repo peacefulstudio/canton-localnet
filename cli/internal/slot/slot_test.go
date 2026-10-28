@@ -94,3 +94,43 @@ func TestEnvPrefixIsScreamingSnake(t *testing.T) {
 		t.Errorf("env prefix for a: got %q, want A_VALIDATOR_1", a.EnvPrefix())
 	}
 }
+
+func TestCanonicalsListsEverySlotWithSVFirst(t *testing.T) {
+	t.Parallel()
+	want := []string{"sv-validator-1", "a-validator-1", "b-validator-1", "c-validator-1", "d-validator-1"}
+	got := Canonicals()
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("Canonicals() = %v, want %v", got, want)
+	}
+}
+
+func TestSVCanonicalIsTheSuperValidatorSlot(t *testing.T) {
+	t.Parallel()
+	if SVCanonical != "sv-validator-1" {
+		t.Errorf("SVCanonical = %q, want %q", SVCanonical, "sv-validator-1")
+	}
+}
+
+func TestPqsSlotsAreSvABAndC(t *testing.T) {
+	t.Parallel()
+	var got []string
+	for _, s := range PqsSlots() {
+		got = append(got, s.Canonical)
+	}
+	want := []string{"sv-validator-1", "a-validator-1", "b-validator-1", "c-validator-1"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("PqsSlots: got %v, want %v", got, want)
+	}
+}
+
+func TestPqsDefaultSlotsAreABAndC(t *testing.T) {
+	t.Parallel()
+	var got []string
+	for _, s := range PqsDefaultSlots() {
+		got = append(got, s.Canonical)
+	}
+	want := []string{"a-validator-1", "b-validator-1", "c-validator-1"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("PqsDefaultSlots: got %v, want %v", got, want)
+	}
+}

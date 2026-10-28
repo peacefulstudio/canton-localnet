@@ -218,6 +218,8 @@ The CLI binary embeds the version via `-ldflags "-X main.version=<version>"`;
 - All third-party actions are SHA-pinned with the version tag in a
   trailing comment for Dependabot, per
   [oss-prep `references/ci-hardening.md`](https://github.com/peacefulstudio/github-actions).
+  Our own `peacefulstudio/*` actions and reusable workflows are the exception:
+  they stay on their major tag (`@v1`, `@v2`), and Dependabot ignores them.
 - Every multi-line `run:` step starts with `set -euo pipefail`.
 - Workflow-level `permissions:` are empty; each job asks for the least
   it needs: `contents: write` to draft, attach and publish the release,

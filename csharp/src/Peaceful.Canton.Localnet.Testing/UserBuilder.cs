@@ -60,9 +60,9 @@ public sealed class UserBuilder
     /// <summary>
     /// Creates a ledger user with the supplied <paramref name="userId"/> and
     /// optionally grants the listed <paramref name="actAs"/> /
-    /// <paramref name="readAs"/> rights in a follow-up
-    /// <c>POST /v2/users/{id}/rights</c> request. Returns the created user id
-    /// as reported by the participant. Duplicate parties within
+    /// <paramref name="readAs"/> rights in the same <c>POST /v2/users</c>
+    /// request, so the user and its rights are created atomically. Returns the
+    /// created user id as reported by the participant. Duplicate parties within
     /// <paramref name="actAs"/> or within <paramref name="readAs"/> are
     /// collapsed; the same party in both is two distinct rights.
     /// </summary>
@@ -83,15 +83,8 @@ public sealed class UserBuilder
         }
 
         var token = await _tokenProvider.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
-        var created = await PostCreateUserAsync(token, userId, primaryParty, cancellationToken).ConfigureAwait(false);
-
         var rights = BuildRights(actAs, readAs);
-        if (rights.Count > 0)
-        {
-            await PostGrantRightsAsync(token, created, rights, cancellationToken).ConfigureAwait(false);
-        }
-
-        return created;
+        return await PostCreateUserAsync(token, userId, primaryParty, rights, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -449,6 +442,7 @@ public sealed class UserBuilder
         string token,
         string userId,
         string? primaryParty,
+        IReadOnlyList<JsonElement> rights,
         CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, UsersPath)
@@ -459,13 +453,13 @@ public sealed class UserBuilder
                     IsDeactivated: false,
                     PrimaryParty: primaryParty ?? string.Empty,
                     IdentityProviderId: string.Empty),
-                Rights: Array.Empty<JsonElement>())),
+                Rights: rights)),
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-        _logger.LogDebug("POST {Uri} (userId: {UserId}, primaryParty: {PrimaryParty})",
-            new Uri(_httpClient.BaseAddress!, UsersPath), userId, primaryParty ?? "<none>");
+        _logger.LogDebug("POST {Uri} (userId: {UserId}, primaryParty: {PrimaryParty}, {Rights} rights)",
+            new Uri(_httpClient.BaseAddress!, UsersPath), userId, primaryParty ?? "<none>", rights.Count);
 
         using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)

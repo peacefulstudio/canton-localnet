@@ -20,11 +20,23 @@ The volume mounts at `/mnt/canton-localnet-data` and holds both the git checkout
 provisioning). Images, named volumes, and container state are therefore all on
 the persistent tier.
 
-Provisioning runs `make down` — without `-v` — before `make up`, so a
-delete/recreate resets containers but never removes docker volumes. Anything
-that needs the volumes gone, such as a Postgres major upgrade whose new image
-cannot read the previous major's data directory, has to be done deliberately on
-the server:
+Provisioning brings LocalNet up through `scripts/bring-up-localnet.sh`, which
+decides whether the docker volumes survive. After every successful `make up` it
+records a state key in `/mnt/canton-localnet-data/localnet-state-key`:
+`SPLICE_VERSION` (which pins the Canton image), `POSTGRES_VERSION` and
+`CANTON_PROTOCOL_VERSION`. On the next boot it compares that key with the one the
+checkout now resolves:
+
+- **Unchanged:** `make down`, which resets containers and keeps the volumes, so
+  ledger state carries over.
+- **Changed or missing:** `make clean` (down with volumes), then `make up` on
+  fresh volumes. A failed `make clean` aborts provisioning instead of starting
+  the new version on the old data.
+
+The key is written only after `make up` succeeds, so a failed bring-up wipes
+again on the next boot. The decision and both keys are logged to
+`/var/log/canton-localnet-bootstrap.log`. To force a wipe without a version
+bump, delete the key file and re-provision, or run `make clean` on the server:
 
 ```bash
 cd /mnt/canton-localnet-data/canton-localnet && make clean

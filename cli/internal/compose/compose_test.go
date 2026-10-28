@@ -6,7 +6,9 @@ package compose
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -445,4 +447,128 @@ func indexOfPair(args []string, flag, value string) int {
 		}
 	}
 	return -1
+}
+
+func TestBuildStartsAScribeOnlyForEachEnabledPqsSlot(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name         string
+		enabledSlots []string
+		wantProfiles []string
+		wantToggles  []string
+	}{
+		{
+			name:         "a alone",
+			enabledSlots: []string{"sv-validator-1", "a-validator-1"},
+			wantProfiles: []string{"pqs-a-validator-1"},
+			wantToggles:  []string{"PQS_SV_VALIDATOR_1_PROFILE=off", "PQS_A_VALIDATOR_1_PROFILE=on", "PQS_B_VALIDATOR_1_PROFILE=off", "PQS_C_VALIDATOR_1_PROFILE=off"},
+		},
+		{
+			name:         "c alone starts no slot-a Scribe",
+			enabledSlots: []string{"sv-validator-1", "c-validator-1"},
+			wantProfiles: []string{"pqs-c-validator-1"},
+			wantToggles:  []string{"PQS_SV_VALIDATOR_1_PROFILE=off", "PQS_A_VALIDATOR_1_PROFILE=off", "PQS_B_VALIDATOR_1_PROFILE=off", "PQS_C_VALIDATOR_1_PROFILE=on"},
+		},
+		{
+			name:         "b alone",
+			enabledSlots: []string{"sv-validator-1", "b-validator-1"},
+			wantProfiles: []string{"pqs-b-validator-1"},
+			wantToggles:  []string{"PQS_SV_VALIDATOR_1_PROFILE=off", "PQS_A_VALIDATOR_1_PROFILE=off", "PQS_B_VALIDATOR_1_PROFILE=on", "PQS_C_VALIDATOR_1_PROFILE=off"},
+		},
+		{
+			name:         "a and d",
+			enabledSlots: []string{"sv-validator-1", "a-validator-1", "d-validator-1"},
+			wantProfiles: []string{"pqs-a-validator-1"},
+			wantToggles:  []string{"PQS_SV_VALIDATOR_1_PROFILE=off", "PQS_A_VALIDATOR_1_PROFILE=on", "PQS_B_VALIDATOR_1_PROFILE=off", "PQS_C_VALIDATOR_1_PROFILE=off"},
+		},
+		{
+			name:         "all five never starts the sv Scribe",
+			enabledSlots: []string{"sv-validator-1", "a-validator-1", "b-validator-1", "c-validator-1", "d-validator-1"},
+			wantProfiles: []string{"pqs-a-validator-1", "pqs-b-validator-1", "pqs-c-validator-1"},
+			wantToggles:  []string{"PQS_SV_VALIDATOR_1_PROFILE=off", "PQS_A_VALIDATOR_1_PROFILE=on", "PQS_B_VALIDATOR_1_PROFILE=on", "PQS_C_VALIDATOR_1_PROFILE=on"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			plan, err := Build(Options{RepoRoot: newTestRepoRoot(t), AuthMode: AuthOAuth2, Pqs: true, EnabledSlots: tc.enabledSlots})
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			if got := pqsProfilesIn(plan.Args); !slices.Equal(got, tc.wantProfiles) {
+				t.Errorf("PQS profiles: got %v, want %v", got, tc.wantProfiles)
+			}
+			if got := pqsTogglesIn(plan.Env); !slices.Equal(got, tc.wantToggles) {
+				t.Errorf("PQS toggles: got %v, want %v", got, tc.wantToggles)
+			}
+		})
+	}
+}
+
+func TestBuildStartsNoScribeWhenNoEnabledSlotRunsOne(t *testing.T) {
+	t.Parallel()
+	for _, enabled := range [][]string{
+		{"sv-validator-1"},
+		{"sv-validator-1", "d-validator-1"},
+	} {
+		plan, err := Build(Options{RepoRoot: newTestRepoRoot(t), AuthMode: AuthOAuth2, Pqs: true, EnabledSlots: enabled})
+		if err != nil {
+			t.Fatalf("enabled %v: Build: %v", enabled, err)
+		}
+		if got := pqsProfilesIn(plan.Args); len(got) != 0 {
+			t.Errorf("enabled %v: want no PQS profile, got %v", enabled, got)
+		}
+		for _, toggle := range pqsTogglesIn(plan.Env) {
+			if !strings.HasSuffix(toggle, "=off") {
+				t.Errorf("enabled %v: want every toggle off, got %q", enabled, toggle)
+			}
+		}
+	}
+}
+
+func TestBuildTeardownAcceptsPqsWithNoPqsSlotEnabled(t *testing.T) {
+	t.Parallel()
+	_, err := Build(Options{RepoRoot: newTestRepoRoot(t), AuthMode: AuthOAuth2, Pqs: true, Teardown: true, EnabledSlots: []string{"sv-validator-1", "d-validator-1"}})
+	if err != nil {
+		t.Fatalf("teardown must not reject the PQS topology: %v", err)
+	}
+}
+
+func pqsProfilesIn(args []string) []string {
+	var profiles []string
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "--profile" && strings.HasPrefix(args[i+1], "pqs-") {
+			profiles = append(profiles, args[i+1])
+		}
+	}
+	return profiles
+}
+
+func pqsTogglesIn(env []string) []string {
+	var toggles []string
+	for _, entry := range env {
+		if strings.HasPrefix(entry, "PQS_") && strings.Contains(entry, "_PROFILE=") {
+			toggles = append(toggles, entry)
+		}
+	}
+	return toggles
+}
+
+func TestPqsProfilesMatchEveryProfileThePqsModuleDefines(t *testing.T) {
+	t.Parallel()
+	module, err := os.ReadFile(filepath.Join("..", "..", "..", "compose", "modules", "pqs", "compose.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var defined []string
+	for _, m := range regexp.MustCompile(`(?m)^      - (pqs-[a-z]+-validator-1)$`).FindAllStringSubmatch(string(module), -1) {
+		defined = append(defined, m[1])
+	}
+	want := []string{"pqs-a-validator-1", "pqs-b-validator-1", "pqs-c-validator-1", "pqs-sv-validator-1"}
+	if !slices.Equal(defined, want) {
+		t.Errorf("compose/modules/pqs/compose.yaml profiles: got %v, want %v", defined, want)
+	}
+	if got := slices.Sorted(slices.Values(PqsProfiles)); !slices.Equal(got, want) {
+		t.Errorf("PqsProfiles: got %v, want %v", got, want)
+	}
 }

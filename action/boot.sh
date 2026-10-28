@@ -61,8 +61,9 @@ primary_slot="${enabled[0]}"
 
 if [ "$PQS" = "true" ]; then
   for s in "${enabled[@]}"; do
-    if [ "$s" = "b" ]; then
-      canton_localnet_log_warning "pqs: true with validators including 'b': compose only starts the PQS pipeline for a-validator-1 and c-validator-1 (cli/internal/compose/compose.go); CANTON_LOCALNET_B_VALIDATOR_1_PQS_* will still be exported but point at a database no pipeline ever writes to. Use 'a' and/or 'c' with pqs: true."
+    if ! canton_localnet_slot_has_default_pqs "$s"; then
+      canton_localnet_log_error "canton-localnet action: 'pqs: true' runs a PQS pipeline on each listed validator, and $(canton_localnet_slot_canonical "$s") has none (PQS validators: $(canton_localnet_pqs_default_slots); the PQS module covers $(canton_localnet_pqs_slots)). Drop $s from validators, or set pqs: false."
+      exit 1
     fi
   done
 fi
@@ -205,7 +206,7 @@ canton_localnet_record_phase "Wait ready" "$wait_ready_started"
 if [ "$PQS" = "true" ]; then
   pqs_wait_started="$(date +%s)"
   for short in "${enabled[@]}"; do
-    { [ "$short" = "a" ] || [ "$short" = "c" ]; } || continue
+    canton_localnet_slot_has_default_pqs "$short" || continue
     remaining="$(canton_localnet_deadline_remaining "$deadline" "the PQS watermark wait for ${short}")"
     prefix="$(canton_localnet_slot_prefix "$short")"
     echo "::group::Wait for the PQS watermark on ${short}"

@@ -38,6 +38,17 @@ type Endpoints struct {
 	Scope            string
 }
 
+// String formats the endpoints with ClientSecret redacted, so logging an
+// Endpoints value never writes the secret.
+func (e Endpoints) String() string {
+	return fmt.Sprintf(
+		"Endpoints{Role:%q, JSONLedgerAPIURL:%q, TokenURL:%q, ClientID:%q, ClientSecret:<redacted>, Audience:%q, Scope:%q}",
+		e.Role, e.JSONLedgerAPIURL, e.TokenURL, e.ClientID, e.Audience, e.Scope)
+}
+
+// GoString implements fmt.GoStringer so %#v redacts ClientSecret as String does.
+func (e Endpoints) GoString() string { return e.String() }
+
 // EndpointDiscovery resolves LocalNet endpoints from environment variables,
 // falling back to the defaults baked into the compose stack.
 //

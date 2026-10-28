@@ -360,13 +360,12 @@ func TestOAuth2TokenProvider_CoalescesRefreshAfterCachedExpiry(t *testing.T) {
 func TestOAuth2TokenProvider_FollowerRetriesOnLeaderContextCancel(t *testing.T) {
 	var hits int32
 	leaderEntered := make(chan struct{})
-	releaseLeader := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := atomic.AddInt32(&hits, 1)
 		if n == 1 {
+			_, _ = io.Copy(io.Discard, r.Body)
 			close(leaderEntered)
-			<-releaseLeader
-			writeToken(t, w, "leader-tok", 300)
+			<-r.Context().Done()
 			return
 		}
 		writeToken(t, w, "follower-tok", 300)
@@ -398,7 +397,6 @@ func TestOAuth2TokenProvider_FollowerRetriesOnLeaderContextCancel(t *testing.T) 
 	time.Sleep(50 * time.Millisecond)
 
 	cancelLeader()
-	close(releaseLeader)
 
 	select {
 	case err := <-leaderDone:
@@ -519,3 +517,19 @@ func staticClock(t time.Time) func() time.Time {
 	return func() time.Time { return t }
 }
 
+func TestOAuth2TokenProvider_RejectsTokenResponseOverTheCap(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(make([]byte, 16777217))
+	}))
+	t.Cleanup(server.Close)
+
+	p := newProvider(t, server.URL, "client-x", "secret-x", "", "", staticClock(time.Unix(1_700_000_000, 0)))
+
+	_, err := p.Token(context.Background())
+	if err == nil {
+		t.Fatal("expected error for oversized token response, got nil")
+	}
+	if !strings.Contains(err.Error(), "oauth2: read token response: response exceeds 16777216 bytes") {
+		t.Errorf("error = %v, want it to name the 16777216-byte cap", err)
+	}
+}

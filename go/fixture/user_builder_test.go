@@ -83,7 +83,7 @@ func TestUserBuilder_CreateUserRequestShape(t *testing.T) {
 	}
 }
 
-func TestUserBuilder_GrantsActAsAndReadAs(t *testing.T) {
+func TestUserBuilder_SendsRightsInTheSingleCreateRequest(t *testing.T) {
 	var (
 		mu    sync.Mutex
 		calls []recordedCall
@@ -93,11 +93,6 @@ func TestUserBuilder_GrantsActAsAndReadAs(t *testing.T) {
 		mu.Lock()
 		calls = append(calls, recordedCall{method: r.Method, path: r.URL.Path, body: body})
 		mu.Unlock()
-		if strings.HasSuffix(r.URL.Path, "/rights") {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = io.WriteString(w, `{"newlyGrantedRights":[]}`)
-			return
-		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"user":{"id":"bob"}}`)
 	}))
@@ -119,74 +114,37 @@ func TestUserBuilder_GrantsActAsAndReadAs(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	if len(calls) != 2 {
-		t.Fatalf("got %d calls, want 2 (user + rights)", len(calls))
+	if len(calls) != 1 {
+		t.Fatalf("got %d calls, want 1 (user with rights)", len(calls))
 	}
-	if calls[1].path != "/v2/users/bob/rights" {
-		t.Errorf("rights path = %q, want /v2/users/bob/rights", calls[1].path)
+	if calls[0].method != http.MethodPost || calls[0].path != "/v2/users" {
+		t.Errorf("call = %s %s, want POST /v2/users", calls[0].method, calls[0].path)
 	}
-	var grant grantRightsRequest
-	if err := json.Unmarshal(calls[1].body, &grant); err != nil {
-		t.Fatalf("decode grant: %v", err)
+	var payload createUserRequest
+	if err := json.Unmarshal(calls[0].body, &payload); err != nil {
+		t.Fatalf("decode create: %v", err)
 	}
-	if grant.UserID != "bob" {
-		t.Errorf("rights.userId = %q", grant.UserID)
+	if payload.User.ID != "bob" {
+		t.Errorf("user.id = %q", payload.User.ID)
 	}
-	if len(grant.Rights) != 3 {
-		t.Fatalf("rights count = %d, want 3", len(grant.Rights))
+	if len(payload.Rights) != 3 {
+		t.Fatalf("rights count = %d, want 3", len(payload.Rights))
 	}
-	if grant.Rights[0].Kind.CanActAs == nil || grant.Rights[0].Kind.CanActAs.Value.Party != "alice::ns" {
-		t.Errorf("rights[0] = %+v, want CanActAs alice::ns", grant.Rights[0])
+	if payload.Rights[0].Kind.CanActAs == nil || payload.Rights[0].Kind.CanActAs.Value.Party != "alice::ns" {
+		t.Errorf("rights[0] = %+v, want CanActAs alice::ns", payload.Rights[0])
 	}
-	if grant.Rights[1].Kind.CanActAs == nil || grant.Rights[1].Kind.CanActAs.Value.Party != "bob::ns" {
-		t.Errorf("rights[1] = %+v, want CanActAs bob::ns", grant.Rights[1])
+	if payload.Rights[1].Kind.CanActAs == nil || payload.Rights[1].Kind.CanActAs.Value.Party != "bob::ns" {
+		t.Errorf("rights[1] = %+v, want CanActAs bob::ns", payload.Rights[1])
 	}
-	if grant.Rights[2].Kind.CanReadAs == nil || grant.Rights[2].Kind.CanReadAs.Value.Party != "carol::ns" {
-		t.Errorf("rights[2] = %+v, want CanReadAs carol::ns", grant.Rights[2])
-	}
-}
-
-func TestUserBuilder_OrdersCreateBeforeRights(t *testing.T) {
-	var (
-		mu    sync.Mutex
-		order []string
-	)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		order = append(order, r.URL.Path)
-		mu.Unlock()
-		if strings.HasSuffix(r.URL.Path, "/rights") {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = io.WriteString(w, `{}`)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"user":{"id":"c"}}`)
-	}))
-	t.Cleanup(server.Close)
-
-	b, err := NewUserBuilder(server.URL, staticTokenProvider{token: "tok"})
-	if err != nil {
-		t.Fatalf("NewUserBuilder: %v", err)
-	}
-	if _, err := b.Create(context.Background(), UserOptions{UserID: "c", PrimaryParty: "c::ns", ActAs: []string{"c::ns"}}); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	if len(order) != 2 || order[0] != "/v2/users" || order[1] != "/v2/users/c/rights" {
-		t.Fatalf("call order = %v, want [/v2/users /v2/users/c/rights]", order)
+	if payload.Rights[2].Kind.CanReadAs == nil || payload.Rights[2].Kind.CanReadAs.Value.Party != "carol::ns" {
+		t.Errorf("rights[2] = %+v, want CanReadAs carol::ns", payload.Rights[2])
 	}
 }
 
-func TestUserBuilder_PropagatesCreateFailureBeforeRights(t *testing.T) {
-	var rightsHit int
+func TestUserBuilder_PropagatesCreateFailure(t *testing.T) {
+	var requests int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/rights") {
-			rightsHit++
-			w.WriteHeader(http.StatusOK)
-			return
-		}
+		requests++
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = io.WriteString(w, `boom`)
 	}))
@@ -203,20 +161,15 @@ func TestUserBuilder_PropagatesCreateFailureBeforeRights(t *testing.T) {
 	if !strings.Contains(err.Error(), "500") {
 		t.Errorf("error %q missing 500", err.Error())
 	}
-	if rightsHit != 0 {
-		t.Errorf("rights endpoint hit %d times, want 0 — create failure must short-circuit", rightsHit)
+	if requests != 1 {
+		t.Errorf("server saw %d requests, want 1", requests)
 	}
 }
 
-func TestUserBuilder_PropagatesRightsFailure(t *testing.T) {
+func TestUserBuilder_PropagatesRejectedRights(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/rights") {
-			w.WriteHeader(http.StatusForbidden)
-			_, _ = io.WriteString(w, `denied`)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"user":{"id":"x"}}`)
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = io.WriteString(w, `denied`)
 	}))
 	t.Cleanup(server.Close)
 

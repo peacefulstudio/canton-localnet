@@ -86,6 +86,29 @@ canton_localnet_slot_canonical() {
   esac
 }
 
+# canton_localnet_pqs_slots prints the short names of the slots the PQS
+# module has a pipeline for, matching slot.go's Pqs field.
+canton_localnet_pqs_slots() {
+  echo "sv a b c"
+}
+
+# canton_localnet_pqs_default_slots prints the short names of the slots
+# whose PQS pipeline starts with pqs: true when the slot is enabled,
+# matching slot.go's PqsByDefault field.
+canton_localnet_pqs_default_slots() {
+  echo "a b c"
+}
+
+# canton_localnet_slot_has_default_pqs succeeds when the short slot name
+# is one of canton_localnet_pqs_default_slots.
+canton_localnet_slot_has_default_pqs() {
+  local pqs_slot
+  for pqs_slot in $(canton_localnet_pqs_default_slots); do
+    [ "$pqs_slot" = "$1" ] && return 0
+  done
+  return 1
+}
+
 # canton_localnet_trim_space prints value with leading and trailing
 # whitespace removed, matching Go's strings.TrimSpace as used by the CLI's
 # own EnvIsSet/pick (cli/internal/slot/resolve.go) — the "set" definition

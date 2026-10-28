@@ -27,8 +27,8 @@ type UserOptions struct {
 	Annotations map[string]string
 }
 
-// UserBuilder creates ledger users (POST /v2/users) and grants act-as /
-// read-as rights (POST /v2/users/{id}/rights).
+// UserBuilder creates ledger users with their act-as / read-as rights in a
+// single POST /v2/users request.
 type UserBuilder struct {
 	baseURL    string
 	tokens     TokenProvider
@@ -67,10 +67,8 @@ func NewUserBuilder(baseURL string, tokens TokenProvider, opts ...UserBuilderOpt
 }
 
 type createUserRequest struct {
-	User createUserPayload `json:"user"`
-	// Rights here is always the empty array; rights are granted via the
-	// rights sub-resource below.
-	Rights []any `json:"rights"`
+	User   createUserPayload `json:"user"`
+	Rights []right           `json:"rights"`
 }
 
 type createUserPayload struct {
@@ -92,12 +90,6 @@ type createUserResponse struct {
 	} `json:"user"`
 }
 
-type grantRightsRequest struct {
-	UserID             string  `json:"userId"`
-	IdentityProviderID string  `json:"identityProviderId"`
-	Rights             []right `json:"rights"`
-}
-
 type right struct {
 	Kind rightKind `json:"kind"`
 }
@@ -116,9 +108,9 @@ type partyRef struct {
 }
 
 // Create creates the user and, if any ActAs/ReadAs entries are supplied,
-// grants the corresponding rights. The returned id is the user id echoed by
-// the server. Create returns an error on the first failed step; partial
-// state (user created but rights grant failed) is not rolled back.
+// grants the corresponding rights in the same POST /v2/users request, so the
+// user and its rights are created atomically. The returned id is the user id
+// echoed by the server.
 func (b *UserBuilder) Create(ctx context.Context, opts UserOptions) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
@@ -145,7 +137,7 @@ func (b *UserBuilder) Create(ctx context.Context, opts UserOptions) (string, err
 				Annotations:     annotations,
 			},
 		},
-		Rights: []any{},
+		Rights: buildRights(opts.ActAs, opts.ReadAs),
 	}
 	var createResp createUserResponse
 	if err := b.postJSON(ctx, "/v2/users", createBody, &createResp); err != nil {
@@ -154,18 +146,6 @@ func (b *UserBuilder) Create(ctx context.Context, opts UserOptions) (string, err
 	id := createResp.User.ID
 	if strings.TrimSpace(id) == "" {
 		id = opts.UserID
-	}
-
-	if len(opts.ActAs) == 0 && len(opts.ReadAs) == 0 {
-		return id, nil
-	}
-	grant := grantRightsRequest{
-		UserID:             opts.UserID,
-		IdentityProviderID: "",
-		Rights:             buildRights(opts.ActAs, opts.ReadAs),
-	}
-	if err := b.postJSON(ctx, "/v2/users/"+opts.UserID+"/rights", grant, nil); err != nil {
-		return "", err
 	}
 	return id, nil
 }
