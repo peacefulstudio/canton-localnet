@@ -41,4 +41,3 @@ jobs:
       coverage-pr-comment-header: csharp-coverage
       pack: true
       pack-project: src/Peaceful.Canton.Localnet.Testing/Peaceful.Canton.Localnet.Testing.csproj
-    secrets: inherit
