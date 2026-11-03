@@ -7,7 +7,7 @@ on:
   workflow_call:
     inputs:
       action:
-        description: "'bootstrap' (ensure a draft release exists) or 'finalize' (fill the notes from the CHANGELOG section and publish the draft)."
+        description: "'bootstrap' (ensure a draft release exists) or 'finalize' (publish the draft with release-notes/v<version>.md as its body)."
         required: true
         type: string
       tag:
@@ -70,8 +70,12 @@ jobs:
                 exit 1
               fi
               if is_draft; then
-                notes_file="$RUNNER_TEMP/release-notes.md"
-                .github/scripts/changelog-section.sh "${TAG#v}" > "$notes_file"
+                version="${TAG#v}"
+                notes_file="release-notes/v${version}.md"
+                if [ ! -s "$notes_file" ]; then
+                  echo "::error::release-notes/v${version}.md is missing or empty at ${TAG}; the release body is the curated notes file"
+                  exit 1
+                fi
                 if [ "$PRERELEASE" = "true" ]; then
                   gh release edit "$TAG" --notes-file "$notes_file" --prerelease=true --draft=false
                 else
