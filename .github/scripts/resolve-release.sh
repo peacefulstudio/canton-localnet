@@ -13,7 +13,8 @@ the argument names a release the tree can ship:
 
   - it is v<X.Y.Z>-<N> or v<X.Y.Z>-<N>.<label>, with or without the leading v;
   - it equals <Version> in csharp/Directory.Build.props;
-  - CHANGELOG.md holds a non-empty "## [<version>]" section.
+  - CHANGELOG.md holds a non-empty "## [<version>]" section;
+  - release-notes/v<version>.md exists and is not empty.
 
 Prints key=value lines (appended to \$GITHUB_OUTPUT when it is set):
   tag          v<version>
@@ -64,6 +65,9 @@ source_version="$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' "${props}" | hea
 
 "${script_dir}/changelog-section.sh" "${version}" "${root}/CHANGELOG.md" >/dev/null ||
   refuse "CHANGELOG.md has no non-empty section for ${version}."
+
+[ -s "${root}/release-notes/v${version}.md" ] ||
+  refuse "release-notes/v${version}.md is missing or empty."
 
 {
   echo "tag=v${version}"

@@ -148,7 +148,7 @@ terraform -chdir=terraform/hetzner destroy
 ## Remote tests
 
 ```bash
-canton-localnet vm tunnel          # forwards the host-side *975 JSON-API ports by default
+canton-localnet tunnel --host "$(terraform -chdir=terraform/hetzner output -raw elastic_ip)"   # forwards the host-side *975 JSON-API ports; --user defaults to root
 export CANTON_LOCALNET_HOST=localhost
 go test ./...                      # or the dotnet test suite
 ```

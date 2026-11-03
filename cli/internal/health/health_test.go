@@ -145,3 +145,51 @@ func TestDefaultOptions(t *testing.T) {
 		t.Errorf("expected 5m timeout, got %v", opts.Timeout)
 	}
 }
+
+func TestWaitReadyReturnsTheAbortErrorWithoutWaitingForTheTimeout(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "never ready", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	var aborts int32
+	fatal := errors.New("splice container is crash-looping")
+
+	err := WaitReady(context.Background(), Options{
+		URL:            server.URL,
+		Timeout:        time.Minute,
+		PollInterval:   time.Millisecond,
+		RequestTimeout: 500 * time.Millisecond,
+		Abort: func(context.Context) error {
+			if atomic.AddInt32(&aborts, 1) == 3 {
+				return fatal
+			}
+			return nil
+		},
+	})
+
+	if !errors.Is(err, fatal) {
+		t.Fatalf("want the abort error, got %v", err)
+	}
+	if got := atomic.LoadInt32(&aborts); got != 3 {
+		t.Fatalf("want 3 abort checks, got %d", got)
+	}
+}
+
+func TestWaitReadyDoesNotConsultAbortOnceReady(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	err := WaitReady(context.Background(), Options{
+		URL:     server.URL,
+		Timeout: time.Second,
+		Abort:   func(context.Context) error { return errors.New("must not be called") },
+	})
+
+	if err != nil {
+		t.Fatalf("want nil, got %v", err)
+	}
+}

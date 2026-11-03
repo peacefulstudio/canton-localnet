@@ -11,14 +11,14 @@ import (
 var version = "dev"
 
 func newRootCommand(makeRunner runnerFactory) *cobra.Command {
-	return newRootCommandWithVM(makeRunner, defaultVMDeps())
+	return newRootCommandWithTunnel(makeRunner, defaultTunnelDeps())
 }
 
-func newRootCommandWithVM(makeRunner runnerFactory, vm vmDeps) *cobra.Command {
-	return newRootCommandWithDeps(makeRunner, vm, defaultRightsDeps())
+func newRootCommandWithTunnel(makeRunner runnerFactory, tunnel tunnelDeps) *cobra.Command {
+	return newRootCommandWithDeps(makeRunner, tunnel, defaultRightsDeps())
 }
 
-func newRootCommandWithDeps(makeRunner runnerFactory, vm vmDeps, rights rightsDeps) *cobra.Command {
+func newRootCommandWithDeps(makeRunner runnerFactory, tunnel tunnelDeps, rights rightsDeps) *cobra.Command {
 	if makeRunner == nil {
 		makeRunner = func(dir string) composeRunner { return compose.NewRunner(dir) }
 	}
@@ -35,7 +35,7 @@ func newRootCommandWithDeps(makeRunner runnerFactory, vm vmDeps, rights rightsDe
 	cmd.AddCommand(newUpCommand(makeRunner))
 	cmd.AddCommand(newDownCommand(makeRunner))
 	cmd.AddCommand(newWaitReadyCommand())
-	cmd.AddCommand(newVMCommand(vm))
+	cmd.AddCommand(newTunnelCommand(tunnel))
 	cmd.AddCommand(newAuthCommand())
 	cmd.AddCommand(newInfoCommand())
 	cmd.AddCommand(newEnvCommand())

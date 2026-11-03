@@ -155,7 +155,7 @@ type rightsRun struct {
 func runRightsOnTTY(t *testing.T, isTTY bool, stdin string, args ...string) rightsRun {
 	t.Helper()
 	_, factory := newFakeRunnerFactory()
-	root := newRootCommandWithDeps(factory, defaultVMDeps(), rightsDeps{isTerminal: func() bool { return isTTY }})
+	root := newRootCommandWithDeps(factory, defaultTunnelDeps(), rightsDeps{isTerminal: func() bool { return isTTY }})
 	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
 	root.SetOut(stdout)
 	root.SetErr(stderr)

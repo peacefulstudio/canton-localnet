@@ -10,6 +10,9 @@ fi
 if [ "$A_VALIDATOR_1_PROFILE" = "on" ]; then
   wget --no-verbose --tries=1 --spider "http://localhost:11${VALIDATOR_ADMIN_API_PORT_SUFFIX}/api/validator/readyz"
 fi
+if [ "$C_VALIDATOR_1_PROFILE" = "on" ]; then
+  wget --no-verbose --tries=1 --spider "http://localhost:13${VALIDATOR_ADMIN_API_PORT_SUFFIX}/api/validator/readyz"
+fi
 if [ "$SV_VALIDATOR_1_PROFILE" = "on" ]; then
   wget --no-verbose --tries=1 --spider "http://localhost:10${VALIDATOR_ADMIN_API_PORT_SUFFIX}/api/validator/readyz"
   wget --no-verbose --tries=1 --spider http://localhost:5012/api/scan/readyz

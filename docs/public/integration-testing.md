@@ -25,6 +25,14 @@ canton-localnet wait-ready --timeout 10m --interval 5s
 canton-localnet down --volumes
 ```
 
+While it waits, `wait-ready` watches the `splice` container's restart count. Once the
+container has restarted, `wait-ready` scans its logs for known fatal startup lines and
+stops with the cause instead of running to `--timeout`. The first known line is
+`does not match configured hint`: a postgres volume bootstrapped with one party hint
+while the configuration names another (for example after changing `partyHint:`). The
+error names the recorded and configured hints, the slot and the remediation,
+`canton-localnet down --volumes` (or `make clean`).
+
 With PQS enabled, add `--pqs` and `--slot a`, `b` or `c` to `wait-ready` (or
 `--slot sv` for an SV PQS started through Make). Under Make, `make up PQS=true`
 starts PQS for slot `a` and `make up PQS_SLOTS=a,c` for the listed slots (`a`,
@@ -263,14 +271,12 @@ unreachable stack becomes a `t.Skipf`, not a failure. `Setup` is idempotent;
 
 ## Env-var contract
 
-Both fixtures discover a running stack from environment variables, but their
-contracts differ: the C# fixture takes full per-slot URLs, while the Go fixture
-takes a shared host plus per-slot ports. Neither reads a gRPC variable — both
-speak the JSON Ledger API. (A consumer that also drives the gRPC Ledger API
-supplies that endpoint itself — e.g. `localhost:11901` for `a-validator-1`.)
-
-**C# — `LocalnetFixture` / `EndpointDiscovery`.** Per-slot variables namespaced
-with the canonical slot in `SCREAMING_SNAKE_CASE`. For `a-validator-1`:
+Both fixtures discover a running stack from the same per-slot environment
+variables (ADR-0003), namespaced with the canonical slot in
+`SCREAMING_SNAKE_CASE`. Neither reads a gRPC variable: both speak the JSON
+Ledger API. (A consumer that also drives the gRPC Ledger API supplies that
+endpoint itself, for example `localhost:11901` for `a-validator-1`.) For
+`a-validator-1`:
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -280,41 +286,43 @@ with the canonical slot in `SCREAMING_SNAKE_CASE`. For `a-validator-1`:
 | `CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET` | demo secret | OAuth2 client secret. |
 | `CANTON_LOCALNET_A_VALIDATOR_1_AUDIENCE` | `https://canton.network.global` | Expected `aud` claim. |
 | `CANTON_LOCALNET_A_VALIDATOR_1_SCOPE` | `openid` | OAuth2 scope. |
-| `CANTON_LOCALNET_A_VALIDATOR_1_VALIDATOR_USER_ID` | slot default | Ledger user id the slot's token authenticates as. |
+| `CANTON_LOCALNET_A_VALIDATOR_1_VALIDATOR_USER_ID` | slot default | C# only. Ledger user id the slot's token authenticates as. |
 | `CANTON_LOCALNET_A_VALIDATOR_1_ADMIN_GRPC_URL` | `http://localhost:11902` | Participant admin gRPC endpoint (`canton-localnet env` export). |
 | `CANTON_LOCALNET_A_VALIDATOR_1_PARTY` | none | Validator user's primary party; exported by `canton-localnet env --party` only. |
 | `CANTON_LOCALNET_SCAN_URL` | `http://scan.localhost:10000` | Token-standard registry / Scan; global, needs `*.localhost` to resolve to loopback. |
 
-The C# fixture also honours the un-namespaced `CANTON_LOCALNET_JSON_API_URL` /
-`_TOKEN_URL` / `_CLIENT_ID` / `_CLIENT_SECRET` globals and selects its default
-slot from `CANTON_LOCALNET_PROFILE`.
-
-**Go — `fixture` / `EndpointDiscovery`.** A shared host plus per-slot *ports*;
-the token URL is built from a shared Keycloak host/port and the slot's realm.
-For `a-validator-1`:
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `CANTON_LOCALNET_HOST` | `localhost` | Shared host for every slot's JSON Ledger API. |
-| `CANTON_LOCALNET_A_VALIDATOR_1_JSON_PORT` | `11975` | JSON Ledger API port on that host. |
-| `CANTON_LOCALNET_KEYCLOAK_HOST` | `keycloak.localhost` | Shared Keycloak host. |
-| `CANTON_LOCALNET_KEYCLOAK_PORT` | `8082` | Shared Keycloak port. |
-| `CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_ID` | `a-validator-1-validator` | OAuth2 client id. |
-| `CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET` | demo secret | OAuth2 client secret. |
-| `CANTON_LOCALNET_AUDIENCE` | `https://canton.network.global` | Expected `aud` claim (shared). |
-| `CANTON_LOCALNET_SCOPE` | empty | OAuth2 scope (shared). |
-
 The port prefix encodes the slot: `10`=sv, `11`=a, `12`=b, `13`=c, `14`=d; the
 `975` suffix is the JSON Ledger API, so `b-validator-1` is `12975` against realm
 `BValidator1`. Keycloak is shared on `8082`.
+
+**C# only: legacy globals.** The C# fixture also honours the un-namespaced
+`CANTON_LOCALNET_JSON_API_URL` / `_TOKEN_URL` / `_CLIENT_ID` / `_CLIENT_SECRET`
+/ `_AUDIENCE` / `_SCOPE` globals for its default slot only, and selects that
+slot from `CANTON_LOCALNET_PROFILE`. A per-slot variable wins over the matching
+global. The Go fixture reads none of these globals except `_AUDIENCE` and
+`_SCOPE`, and has no profile selector: its slot is the `Role` you pass.
+
+**Go only: host and port.** When a slot's `_JSON_API_URL` is unset, the Go
+fixture composes it as `http://${CANTON_LOCALNET_HOST}:${CANTON_LOCALNET_<SLOT>_JSON_PORT}`
+(`CANTON_LOCALNET_HOST` default `localhost`, port per the table above). When a
+slot's `_TOKEN_URL` is unset, it composes
+`http://${CANTON_LOCALNET_KEYCLOAK_HOST}:${CANTON_LOCALNET_KEYCLOAK_PORT}/realms/<realm>/protocol/openid-connect/token`
+(host default `localhost`, port default `8082`). A per-slot URL always wins over
+these. The global `CANTON_LOCALNET_AUDIENCE` and `CANTON_LOCALNET_SCOPE` apply to
+every slot that has no per-slot value. The C# fixture ignores all of these.
 
 **Security note — demo credentials only.** The default `CLIENT_SECRET`
 values for `a`/`b`/`c`/`d` are the public demo credentials shipped with the
 LocalNet Keycloak realms. They are valid only against an ephemeral
 `localhost` LocalNet and **must never** be used in any non-`localhost` or
 production deployment. The `sv-validator-1` slot ships **no** OAuth2
-defaults — no SV realm is imported — so its token URL, client id, and secret
-must be supplied explicitly to drive it through this flow.
+defaults (no SV realm is imported), so both fixtures resolve it only when
+`CANTON_LOCALNET_SV_VALIDATOR_1_TOKEN_URL`, `_CLIENT_ID` and `_CLIENT_SECRET`
+are all set, and otherwise fail naming the missing variables.
+
+The same case table, `testdata/endpoint-discovery/cases.json`, is read by a Go
+table test and a C# `[Theory]`, so the two fixtures cannot drift on the shared
+shape.
 
 ## `canton-localnet env` — resolving the contract for you
 
@@ -435,8 +443,10 @@ tests that point at those ports.
   run: go test -tags integration -count=1 ./...
 ```
 
-The CLI's `vm` subcommands (`canton-localnet vm provision|tunnel|destroy`)
-manage the long-lived host and the tunnel directly.
+The CLI's `canton-localnet tunnel --host <host>` opens the same forward
+without a checkout: it forwards every slot's JSON Ledger API port plus
+`11901`, `7575` and `8082`, and connects as `root` unless `--user` says
+otherwise.
 
 ## Who builds on this
 

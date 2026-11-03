@@ -3,7 +3,7 @@
 
 FROM sgaunet/jwt-cli:latest AS jwtcli
 
-FROM alpine:3.21
+FROM alpine:3.24
 COPY --from=jwtcli /jwt-cli /usr/bin/jwt-cli
 RUN apk add --no-cache jq curl bash
 ENTRYPOINT ["/bin/bash"]

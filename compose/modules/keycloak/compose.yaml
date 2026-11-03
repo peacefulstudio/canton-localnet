@@ -38,7 +38,7 @@ x-vars:
 
 services:
   nginx-keycloak:
-    image: "nginx:${NGINX_VERSION}"
+    image: "nginx/nginx-unprivileged:${NGINX_VERSION}"
     container_name: nginx-keycloak
     volumes:
       - ${MODULES_DIR}/keycloak/conf/nginx.conf:/etc/nginx/nginx.conf

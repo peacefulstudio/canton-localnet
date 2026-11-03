@@ -30,6 +30,10 @@ type Options struct {
 	RequestTimeout time.Duration
 	HTTPClient     *http.Client
 	Logger         func(string)
+
+	// Abort, when set, runs after each failed attempt. A non-nil error ends
+	// the wait at once and is returned as is.
+	Abort func(ctx context.Context) error
 }
 
 // DefaultOptions returns sensible defaults: 5 minute overall timeout,
@@ -101,6 +105,12 @@ func WaitReady(ctx context.Context, opts Options) error {
 		} else {
 			lastStatus = status
 			log(fmt.Sprintf("Attempt %d: HTTP %d", attempt, status))
+		}
+
+		if opts.Abort != nil {
+			if abortErr := opts.Abort(ctx); abortErr != nil {
+				return abortErr
+			}
 		}
 
 		if time.Now().Add(opts.PollInterval).After(deadline) {
