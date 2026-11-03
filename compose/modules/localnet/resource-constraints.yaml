@@ -31,7 +31,7 @@
 ##   - 1 validator  (sv only):    canton -Xmx1.5g / mem_limit 2.5g,
 ##                                splice -Xmx1g / mem_limit 1.5g
 ##
-## See also: CONTEXT.md "Resource sizing" section for the Docker Desktop allocation table (per-topology recommended / headroom figures, flagged as estimates pending live bring-up).
+## See also: GLOSSARY.md "Resource sizing" section for the Docker Desktop allocation table (per-topology recommended / headroom figures, flagged as estimates pending live bring-up).
 services:
   nginx:
     mem_limit: 32mb

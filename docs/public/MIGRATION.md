@@ -1,5 +1,33 @@
 # Migration guide
 
+## v0.9.4-1 → v0.10.0-1: protocol version 37, unprivileged nginx
+
+Splice 0.10.0 bootstraps the global synchronizer on protocol version 37 instead
+of 36. The protocol version is only chosen when a synchronizer is first
+created, so a stack on existing volumes stays on 36.
+
+**Recreate the volumes before bringing an existing stack up on this release:**
+
+```bash
+canton-localnet down --volumes
+canton-localnet up
+```
+
+Ledger state, onboarded parties, and uploaded DARs do not survive the wipe;
+re-run whatever seeds them.
+
+The `nginx` and `nginx-keycloak` containers now run
+`nginx/nginx-unprivileged:1.30.6-alpine-slim`, pinned by digest, as a non-root
+user. If you override `NGINX_VERSION`, give a tag of `nginx/nginx-unprivileged`,
+not of `nginx`. A config you mount into either container must listen on a port
+above 1023 and keep its pid file in a writable path such as `/tmp`.
+
+If you mount your own Splice validator config over a slot's, rename
+`participant-client.admin-api.port` to
+`participant-client.admin-api.client-config.port` and add
+`participant-client.admin-api.auth-config.type = "none"`; Splice 0.10.0 refuses
+to start without both.
+
 ## v0.9.1-1 → v0.9.3-1: protocol version 36
 
 Splice 0.9.3 bootstraps the global synchronizer on protocol version 36 instead

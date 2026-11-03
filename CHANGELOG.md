@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0-1] - 2026-11-03
+
+The vendored Splice moves to 0.10.0 and the Canton inside to 3.7.1.
+
+### Added
+
+- Each release now carries a curated body. The release PR writes `release-notes/v<version>.md`, and the release workflow publishes that file as the GitHub release body instead of the `CHANGELOG.md` section, which stays the exhaustive log. `RELEASE.md` gives the structure, and `release-notes/v0.9.4-1.md` holds the published 0.9.4-1 body as the first example. A version without a non-empty notes file is refused by `resolve-release.sh`, by the finalize step and by the promote tag check, and the manual recovery command reads the file with `--notes-file release-notes/v<version>.md`.
+- `canton-localnet tunnel --host <host>` opens the `ssh -L` forward to a remote LocalNet as a top-level command: the same eight ports (`10975`, `11975`, `12975`, `13975`, `14975`, `11901`, `7575`, `8082`), `--user` defaulting to `root`, and no repository checkout or terraform needed. It replaces `canton-localnet vm tunnel`.
+- `canton-localnet wait-ready` stops early when the `splice` container is crash-looping on a known fatal startup line, instead of running to its timeout. While waiting, it watches the container's `RestartCount`; once it is above 0 it scans the container's logs, starting with `does not match configured hint` (a postgres volume bootstrapped with a different party hint than the configured one). The error names the recorded and configured hints when the log line carries them, the slot whose configured party hint the log line reports (left out when no slot uses that hint), and the remediation (`./canton-localnet down --volumes` or `make clean`). Without a reachable local docker `splice` container (for example against a VM through a tunnel), `wait-ready` behaves as before.
+
+### Changed
+
+- The `canton` and `splice` container health checks now also probe `c-validator-1` when the slot is on: the participant's `/health/ready` on port `13900` and the validator app's `/api/validator/readyz` on port `13903`. Both probed only B, A, SV and D, so a dead `c-validator-1` participant or validator app never made its container unhealthy.
+- The vendored Splice moves from 0.9.4 to 0.10.0. The Canton inside moves from 3.6.4 to 3.7.1, and PQS (scribe) from 3.6.0 to 3.7.0, the first scribe built for Canton 3.7. Upstream's `cluster/compose/localnet` tree changes in five ways, all merged into the five-slot topology. Splice 0.10.0 reads a validator's participant admin endpoint from `participant-client.admin-api.client-config` instead of `participant-client.admin-api`, and requires an explicit `participant-client.admin-api.auth-config`, which every slot sets to `type = "none"`, in the vendored confs and in the Keycloak overlay. The Canton health check probes each participant's HTTP `/health/ready` endpoint with `wget` instead of its gRPC health port with `grpc-health-probe`. Postgres moves from the floating `postgres:18` tag to `18.6-trixie`, pinned by digest. nginx moves from `nginx:1.30.0` to `nginx/nginx-unprivileged:1.30.6-alpine-slim`, pinned by digest and running as a non-root user, and the Keycloak proxy `nginx-keycloak` moves with it because it shares `NGINX_VERSION`. Upstream now binds published ports to `HOST_BIND_IP`, which this repo already did. Ports, slots, env-var names and auth are unchanged. An `NGINX_VERSION` override must now name a tag of `nginx/nginx-unprivileged`. The Splice DARs move one patch version each (for example `splice-amulet` 0.1.24 to 0.1.25, `splice-wallet` 0.1.25 to 0.1.26); the token-standard API packages do not change. The default protocol version moves from 36 to 37, so an existing stack must recreate its volumes (`canton-localnet down --volumes`, see `docs/public/MIGRATION.md`). The Hetzner LocalNet VM wipes its volumes on the `SPLICE_VERSION` change as before.
+- `CANTON_PROTOCOL_VERSION` now sets the found-dso `initial-protocol-version` in the `sv-validator-1` conf. Splice 0.10.0 dropped `protocol-version` from `local-synchronizer-nodes.current`, and its config reader ignores unknown keys, so the variable silently had no effect on a fresh stack. It still applies to fresh volumes only.
+- `--host` is now required by the tunnel command and the remote user defaults to `root` (it was `ubuntu`). The host is no longer read from `terraform output`, so the old `--host`-less form is gone.
+- The Go fixture (`go/fixture`) discovers endpoints the way the C# fixture does (ADR-0003). `EndpointDiscovery.For` reads the per-slot `CANTON_LOCALNET_<SLOT>_JSON_API_URL`, `_TOKEN_URL`, `_AUDIENCE` and `_SCOPE` first. It then falls back to the existing `CANTON_LOCALNET_HOST` plus `_JSON_PORT` and `CANTON_LOCALNET_KEYCLOAK_HOST` plus `_KEYCLOAK_PORT` composition and the global `CANTON_LOCALNET_AUDIENCE` and `_SCOPE`, then to the defaults. Two defaults change: the Keycloak host is `localhost` instead of `keycloak.localhost`, and the scope is `openid` instead of empty. `For(RoleSvValidator1)` now has no defaults and returns an error naming `CANTON_LOCALNET_SV_VALIDATOR_1_TOKEN_URL`, `_CLIENT_ID` and `_CLIENT_SECRET` unless all three are set; it used to build a `sv-validator-1` realm URL that the stack does not ship, and to default the client id to `sv-validator`. Set `CANTON_LOCALNET_KEYCLOAK_HOST=keycloak.localhost` to keep the old Keycloak host.
+
+### Removed
+
+- `canton-localnet vm provision` and `canton-localnet vm destroy`, and with them the `vm` command group: `canton-localnet vm ...` now fails as an unknown command. Use `canton-localnet tunnel` for the tunnel; the Hetzner VM is brought up and down with `make hetzner-up` and `make hetzner-down` or the scheduled workflow.
+- The AWS terraform stack at the root of `terraform/` (the EC2 spot instance, its IAM policy and user-data). `terraform/hetzner` and `terraform/github-oidc` remain.
+
 ## [0.9.4-1] - 2026-10-28
 
 The vendored Splice moves to 0.9.4 and the Canton inside to 3.6.4.
@@ -1926,7 +1949,8 @@ final was drafted but never pushed to nuget.org.
   SHA-pinned third-party action `dependabot/fetch-metadata`, added
   `set -euo pipefail` and fork-PR-token guards on write-API steps.
 
-[Unreleased]: https://github.com/peacefulstudio/canton-localnet/compare/v0.9.4-1...HEAD
+[Unreleased]: https://github.com/peacefulstudio/canton-localnet/compare/v0.10.0-1...HEAD
+[0.10.0-1]: https://github.com/peacefulstudio/canton-localnet/compare/v0.9.4-1...v0.10.0-1
 [0.9.4-1]: https://github.com/peacefulstudio/canton-localnet/compare/v0.9.3-1...v0.9.4-1
 [0.9.3-1]: https://github.com/peacefulstudio/canton-localnet/compare/v0.9.1-1...v0.9.3-1
 [0.9.1-1]: https://github.com/peacefulstudio/canton-localnet/compare/v0.9.0-2...v0.9.1-1

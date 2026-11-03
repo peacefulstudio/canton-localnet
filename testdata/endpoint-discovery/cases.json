@@ -1,0 +1,180 @@
+{
+  "cases": [
+    {
+      "name": "a-validator-1 defaults",
+      "slot": "a-validator-1",
+      "env": {},
+      "expect": {
+        "jsonApiUrl": "http://localhost:11975",
+        "tokenUrl": "http://localhost:8082/realms/AValidator1/protocol/openid-connect/token",
+        "audience": "https://canton.network.global",
+        "scope": "openid",
+        "clientId": "a-validator-1-validator"
+      }
+    },
+    {
+      "name": "b-validator-1 defaults",
+      "slot": "b-validator-1",
+      "env": {},
+      "expect": {
+        "jsonApiUrl": "http://localhost:12975",
+        "tokenUrl": "http://localhost:8082/realms/BValidator1/protocol/openid-connect/token",
+        "audience": "https://canton.network.global",
+        "scope": "openid",
+        "clientId": "b-validator-1-validator"
+      }
+    },
+    {
+      "name": "c-validator-1 defaults",
+      "slot": "c-validator-1",
+      "env": {},
+      "expect": {
+        "jsonApiUrl": "http://localhost:13975",
+        "tokenUrl": "http://localhost:8082/realms/CValidator1/protocol/openid-connect/token",
+        "audience": "https://canton.network.global",
+        "scope": "openid",
+        "clientId": "c-validator-1-validator"
+      }
+    },
+    {
+      "name": "d-validator-1 defaults",
+      "slot": "d-validator-1",
+      "env": {},
+      "expect": {
+        "jsonApiUrl": "http://localhost:14975",
+        "tokenUrl": "http://localhost:8082/realms/DValidator1/protocol/openid-connect/token",
+        "audience": "https://canton.network.global",
+        "scope": "openid",
+        "clientId": "d-validator-1-validator"
+      }
+    },
+    {
+      "name": "a-validator-1 per-slot overrides for all four discovery variables",
+      "slot": "a-validator-1",
+      "env": {
+        "CANTON_LOCALNET_A_VALIDATOR_1_JSON_API_URL": "https://ledger.example.test:7575",
+        "CANTON_LOCALNET_A_VALIDATOR_1_TOKEN_URL": "https://auth.example.test/realms/custom/protocol/openid-connect/token",
+        "CANTON_LOCALNET_A_VALIDATOR_1_AUDIENCE": "https://audience.example.test",
+        "CANTON_LOCALNET_A_VALIDATOR_1_SCOPE": "daml_ledger_api"
+      },
+      "expect": {
+        "jsonApiUrl": "https://ledger.example.test:7575",
+        "tokenUrl": "https://auth.example.test/realms/custom/protocol/openid-connect/token",
+        "audience": "https://audience.example.test",
+        "scope": "daml_ledger_api",
+        "clientId": "a-validator-1-validator"
+      }
+    },
+    {
+      "name": "a-validator-1 per-slot URLs win over host and port variables",
+      "slot": "a-validator-1",
+      "env": {
+        "CANTON_LOCALNET_HOST": "ignored-host.example.test",
+        "CANTON_LOCALNET_A_VALIDATOR_1_JSON_PORT": "9001",
+        "CANTON_LOCALNET_KEYCLOAK_HOST": "ignored-auth.example.test",
+        "CANTON_LOCALNET_KEYCLOAK_PORT": "9002",
+        "CANTON_LOCALNET_A_VALIDATOR_1_JSON_API_URL": "http://per-slot.example.test:1111",
+        "CANTON_LOCALNET_A_VALIDATOR_1_TOKEN_URL": "http://per-slot-auth.example.test:2222/token"
+      },
+      "expect": {
+        "jsonApiUrl": "http://per-slot.example.test:1111",
+        "tokenUrl": "http://per-slot-auth.example.test:2222/token",
+        "audience": "https://canton.network.global",
+        "scope": "openid",
+        "clientId": "a-validator-1-validator"
+      }
+    },
+    {
+      "name": "a-validator-1 per-slot audience and scope win over the global ones",
+      "slot": "a-validator-1",
+      "env": {
+        "CANTON_LOCALNET_AUDIENCE": "https://global-audience.example.test",
+        "CANTON_LOCALNET_SCOPE": "global_scope",
+        "CANTON_LOCALNET_A_VALIDATOR_1_AUDIENCE": "https://slot-audience.example.test",
+        "CANTON_LOCALNET_A_VALIDATOR_1_SCOPE": "slot_scope"
+      },
+      "expect": {
+        "jsonApiUrl": "http://localhost:11975",
+        "tokenUrl": "http://localhost:8082/realms/AValidator1/protocol/openid-connect/token",
+        "audience": "https://slot-audience.example.test",
+        "scope": "slot_scope",
+        "clientId": "a-validator-1-validator"
+      }
+    },
+    {
+      "name": "b-validator-1 override applies to slot b",
+      "slot": "b-validator-1",
+      "env": {
+        "CANTON_LOCALNET_B_VALIDATOR_1_JSON_API_URL": "http://b.example.test:5555",
+        "CANTON_LOCALNET_B_VALIDATOR_1_TOKEN_URL": "http://b-auth.example.test:6666/token",
+        "CANTON_LOCALNET_B_VALIDATOR_1_AUDIENCE": "https://b-audience.example.test",
+        "CANTON_LOCALNET_B_VALIDATOR_1_SCOPE": "b_scope"
+      },
+      "expect": {
+        "jsonApiUrl": "http://b.example.test:5555",
+        "tokenUrl": "http://b-auth.example.test:6666/token",
+        "audience": "https://b-audience.example.test",
+        "scope": "b_scope",
+        "clientId": "b-validator-1-validator"
+      }
+    },
+    {
+      "name": "b-validator-1 override leaves slot a on its defaults",
+      "slot": "a-validator-1",
+      "env": {
+        "CANTON_LOCALNET_B_VALIDATOR_1_JSON_API_URL": "http://b.example.test:5555",
+        "CANTON_LOCALNET_B_VALIDATOR_1_TOKEN_URL": "http://b-auth.example.test:6666/token",
+        "CANTON_LOCALNET_B_VALIDATOR_1_AUDIENCE": "https://b-audience.example.test",
+        "CANTON_LOCALNET_B_VALIDATOR_1_SCOPE": "b_scope"
+      },
+      "expect": {
+        "jsonApiUrl": "http://localhost:11975",
+        "tokenUrl": "http://localhost:8082/realms/AValidator1/protocol/openid-connect/token",
+        "audience": "https://canton.network.global",
+        "scope": "openid",
+        "clientId": "a-validator-1-validator"
+      }
+    },
+    {
+      "name": "sv-validator-1 with nothing set names the missing token url",
+      "slot": "sv-validator-1",
+      "env": {},
+      "error": ["CANTON_LOCALNET_SV_VALIDATOR_1_TOKEN_URL"]
+    },
+    {
+      "name": "sv-validator-1 without a client id names the client id",
+      "slot": "sv-validator-1",
+      "env": {
+        "CANTON_LOCALNET_SV_VALIDATOR_1_TOKEN_URL": "http://sv-auth.example.test/token",
+        "CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET": "sv-secret"
+      },
+      "error": ["CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_ID"]
+    },
+    {
+      "name": "sv-validator-1 without a client secret names the client secret",
+      "slot": "sv-validator-1",
+      "env": {
+        "CANTON_LOCALNET_SV_VALIDATOR_1_TOKEN_URL": "http://sv-auth.example.test/token",
+        "CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_ID": "sv-client"
+      },
+      "error": ["CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET"]
+    },
+    {
+      "name": "sv-validator-1 with token url, client id and client secret resolves",
+      "slot": "sv-validator-1",
+      "env": {
+        "CANTON_LOCALNET_SV_VALIDATOR_1_TOKEN_URL": "http://sv-auth.example.test/token",
+        "CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_ID": "sv-client",
+        "CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET": "sv-secret"
+      },
+      "expect": {
+        "jsonApiUrl": "http://localhost:10975",
+        "tokenUrl": "http://sv-auth.example.test/token",
+        "audience": "https://canton.network.global",
+        "scope": "openid",
+        "clientId": "sv-client",
+        "clientSecret": "sv-secret"
+      }
+    }
+  ]
+}

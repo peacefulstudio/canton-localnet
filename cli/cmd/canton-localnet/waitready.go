@@ -7,15 +7,22 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os/exec"
 	"time"
 
 	"github.com/peacefulstudio/canton-localnet/cli/internal/health"
 	"github.com/peacefulstudio/canton-localnet/cli/internal/pqs"
 	"github.com/peacefulstudio/canton-localnet/cli/internal/slot"
+	"github.com/peacefulstudio/canton-localnet/cli/internal/startupfatal"
+	"github.com/peacefulstudio/canton-localnet/cli/internal/yamlconfig"
 	"github.com/spf13/cobra"
 )
 
 var pqsCommandRunner pqs.CommandRunner = pqs.ExecRunner
+
+var startupFatalRunner startupfatal.Runner = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, name, args...).CombinedOutput()
+}
 
 func newWaitReadyCommand() *cobra.Command {
 	opts := health.DefaultOptions()
@@ -27,10 +34,13 @@ func newWaitReadyCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "wait-ready",
 		Short: "Poll the JSON Ledger API until the participant is ready",
-		Long:  "Polls the host-exposed JSON Ledger API readiness endpoint (default http://localhost:11975/readyz) until HTTP 200. With --synchronizers > 1, additionally waits until the slot's participant reports that many connected synchronizers (the multi-sync profile). With --pqs, additionally waits until the slot's PQS (Scribe) pipeline has set its watermark (latest_offset() is non-null), so a contract created right after readiness is streamed with its effective time instead of being seeded from an ACS snapshot that has none. Exit code 0 on ready, non-zero on timeout.",
+		Long:  "Polls the host-exposed JSON Ledger API readiness endpoint (default http://localhost:11975/readyz) until HTTP 200. With --synchronizers > 1, additionally waits until the slot's participant reports that many connected synchronizers (the multi-sync profile). With --pqs, additionally waits until the slot's PQS (Scribe) pipeline has set its watermark (latest_offset() is non-null), so a contract created right after readiness is streamed with its effective time instead of being seeded from an ACS snapshot that has none. While waiting, aborts early when the `splice` container is crash-looping on a known fatal startup line (a postgres volume bootstrapped with a different party hint than the configured one), naming the mismatch and the remediation. Exit code 0 on ready, non-zero on timeout or fatal startup failure.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			log := func(msg string) { cmd.PrintErrln(msg) }
 			opts.Logger = log
+			opts.Abort = func(ctx context.Context) error {
+				return startupfatal.Check(ctx, startupFatalRunner, slotsByPartyHint(cmd))
+			}
 			ctx, cancel := context.WithTimeout(cmd.Context(), opts.Timeout)
 			defer cancel()
 			if err := health.WaitReady(ctx, opts); err != nil {
@@ -63,6 +73,22 @@ func newWaitReadyCommand() *cobra.Command {
 	cmd.Flags().StringVar(&slotFlag, "slot", "a-validator-1", "Slot to check for connected synchronizers or PQS readiness (used with --synchronizers and --pqs)")
 	cmd.Flags().BoolVar(&waitForPqs, "pqs", false, "Also wait until the slot's PQS (Scribe) pipeline has set its watermark")
 	return cmd
+}
+
+func slotsByPartyHint(cmd *cobra.Command) map[string]string {
+	configPath, err := cmd.Flags().GetString("config")
+	if err != nil {
+		return nil
+	}
+	cfg, _, err := yamlconfig.Resolve(configPath, "")
+	if err != nil {
+		return nil
+	}
+	slots := map[string]string{}
+	for slotName, validator := range cfg.Validators {
+		slots[validator.PartyHint] = slotName
+	}
+	return slots
 }
 
 func waitForPqsWatermark(ctx context.Context, cmd *cobra.Command, ep slot.Endpoints, opts health.Options, log func(string)) error {

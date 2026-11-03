@@ -23,7 +23,7 @@ If you're an external contributor, **start by forking the repo** (see
 "Opening a pull request" below for the full fork/upstream flow).
 
 This repo is a multi-language artifact: it ships Docker Compose
-fixtures, a CLI, AWS Terraform, a Go test fixture, and an xUnit (.NET)
+fixtures, a CLI, Hetzner Terraform, a Go test fixture, and an xUnit (.NET)
 test fixture. Build and test commands depend on which surface you are
 touching:
 
@@ -40,10 +40,11 @@ touching:
 (cd csharp && dotnet restore && dotnet build)
 (cd csharp && dotnet test)
 
-# Terraform module
-terraform -chdir=terraform fmt -check
-terraform -chdir=terraform init -backend=false
-terraform -chdir=terraform validate
+# Terraform modules (terraform/hetzner and terraform/github-oidc)
+terraform -chdir=terraform/hetzner fmt -check
+terraform -chdir=terraform/hetzner init -backend=false
+terraform -chdir=terraform/hetzner validate
+terraform -chdir=terraform/hetzner test
 ```
 
 You'll need [Go 1.23+](https://go.dev/dl/) for the fixture module and
@@ -120,7 +121,7 @@ Bug fixes and new features must follow red-green TDD:
 
 ## Documentation
 
-Public documentation (Compose layout, CLI usage, fixture APIs, AWS
+Public documentation (Compose layout, CLI usage, fixture APIs, Hetzner
 Terraform inputs/outputs) lives under `docs/` or in the relevant
 package's README. Update it in the same PR that changes the public
 surface.

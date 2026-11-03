@@ -46,10 +46,10 @@ services:
     image: "postgres:${POSTGRES_VERSION}"
     container_name: postgres
     volumes:
-      # postgres:18+ images store data in major-version-specific subdirectories and
-      # reject a mount at the old /var/lib/postgresql/data path
-      # (docker-library/postgres#1259). Upstream Splice still defaults to postgres:14.
+      # Postgres 18 and above
       - postgres:/var/lib/postgresql
+      # Postgres 17 and below. Replace the volume above with this one if you haven't yet upgraded to Postgres >=18.
+      #- postgres:/var/lib/postgresql/data
       - ${LOCALNET_DIR}/docker/postgres/postgres-entrypoint.sh:/postgres-entrypoint.sh
     env_file:
       - ${LOCALNET_ENV_DIR}/common.env
@@ -77,7 +77,7 @@ services:
       - multi-sync
 
   nginx:
-    image: "nginx:${NGINX_VERSION}"
+    image: "nginx/nginx-unprivileged:${NGINX_VERSION}"
     container_name: nginx
     env_file:
       - ${LOCALNET_ENV_DIR}/common.env
@@ -269,7 +269,7 @@ services:
 
   multi-sync-ready:
     container_name: multi-sync-ready
-    image: busybox:1.37.0
+    image: busybox:1.38.0
     depends_on:
       multi-sync-startup:
         condition: service_completed_successfully

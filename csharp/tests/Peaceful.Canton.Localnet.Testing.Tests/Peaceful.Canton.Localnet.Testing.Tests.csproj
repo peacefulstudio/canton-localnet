@@ -13,6 +13,9 @@
     <PackageReference Include="Microsoft.Extensions.Logging" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="..\..\..\testdata\endpoint-discovery\cases.json" Link="endpoint-discovery\cases.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Peaceful.Canton.Localnet.Testing\Peaceful.Canton.Localnet.Testing.csproj" />
   </ItemGroup>
 </Project>

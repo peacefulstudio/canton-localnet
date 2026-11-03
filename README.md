@@ -4,19 +4,19 @@
 
 A shared, reusable, flexibly-topological Canton LocalNet that Peaceful Studio's
 repositories build their integration tests on — compose + xUnit/Go fixtures +
-CLI + AWS terraform.
+CLI + Hetzner terraform.
 
 ## Capabilities
 
 | Capability | What ships today |
 |---|---|
 | Declarative config | Single-file `canton-localnet.yaml` (topology, slots, parties, auth) |
-| CLI lifecycle | `up` / `down` / `wait-ready` / `auth token` / `tap` / `info` / `vm` |
+| CLI lifecycle | `up` / `down` / `wait-ready` / `auth token` / `tap` / `info` / `tunnel` |
 | Flexible topology | 1 SV + N validators across 5 named slots; SV-only → all-five |
 | Programmatic fixtures | C# `LocalnetFixture` + Go `fixture`: query + mutate a live ledger |
 | Observability & PQS | Grafana/Prometheus/Loki/Tempo + per-slot Participant Query Store |
 | Multi-synchronizer | Second synchronizer profile for cross-domain scenarios |
-| Infra | AWS spot + part-time Hetzner Terraform, scheduled up/down |
+| Infra | Part-time Hetzner Terraform, scheduled up/down |
 | Release artifacts | NuGet + Go module + CLI binaries + OCI compose artifact, in lockstep |
 
 ## Use cases
@@ -35,7 +35,7 @@ topology.
 
 ## Quickstart
 
-Boot a complete Canton LocalNet (Splice 0.9.4) on your machine:
+Boot a complete Canton LocalNet (Splice 0.10.0) on your machine:
 
 ```bash
 make up           # docker compose up -d, OAuth2 mode by default
@@ -86,30 +86,22 @@ When iterating with observability on, `make stop-app` (and `make clean-app`)
 restart the application stack while leaving Grafana / Prometheus / Loki / Tempo
 running so dashboards stay populated.
 
-### Remote VM (AWS, deprecated)
+### Tunnel to a remote LocalNet
 
-> **Deprecated.** The AWS EC2 box and the `vm provision|destroy` verbs are
-> end-of-life; the shared LocalNet VM now runs on Hetzner (`terraform/hetzner`,
-> `make hetzner-up`, see [`skills/localnet-vm/SKILL.md`](skills/localnet-vm/SKILL.md)).
-> `canton-localnet vm tunnel --host <hetzner-ip>` still reaches it. Whether the
-> verbs are retired or gain a Hetzner adapter is still open.
-
-For consumers that prefer running LocalNet on a shared EC2 instance, the
-`vm` subcommand wraps the `terraform/` stack and an ssh tunnel:
+To reach a LocalNet running on another host (a shared VM, a cloud box), open an
+`ssh -L` tunnel so its ports appear on `localhost`. The command needs no
+repository checkout and no terraform:
 
 ```bash
-canton-localnet vm provision        # terraform apply, prints instance ID + public IP
-canton-localnet vm tunnel           # ssh -L 10975–14975, 11901, 7575, 8082 to the VM (Ctrl-C to close)
-canton-localnet vm destroy --yes    # terraform destroy (interactive prompt without --yes)
+canton-localnet tunnel --host <host>   # --user defaults to root; Ctrl-C closes the tunnel
 ```
 
-The tunnel forwards the host-side JSON Ledger API port of every slot
-(`10975`–`14975`), plus the port set the legacy `tunnel.sh` scripts in
-downstream consumers and `terraform-provider-canton` open: `11901`
-(a-validator-1 participant gRPC ledger API), `7575` (legacy in-container
-Splice JSON Ledger API), and `8082` (Keycloak). The set is documented in
-[`cli/internal/tunnel`](cli/internal/tunnel/tunnel.go). `vm provision` is
-idempotent — re-running on an already-applied state is a no-op refresh.
+It forwards the host-side JSON Ledger API port of every slot (`10975`-`14975`),
+plus `11901` (a-validator-1 participant gRPC ledger API), `7575` (legacy
+in-container Splice JSON Ledger API) and `8082` (Keycloak). `--identity` selects
+the SSH key (default `~/.ssh/canton-localnet` when that file exists), `--user`
+the remote user and `--ssh-port` the remote port. The port set is defined in
+[`cli/internal/tunnel`](cli/internal/tunnel/tunnel.go).
 
 Prerequisites: Docker ≥ 27, Docker Compose ≥ 2.27. The compose stack is
 vendored into `compose/modules/` from `hyperledger-labs/splice` at the SHA

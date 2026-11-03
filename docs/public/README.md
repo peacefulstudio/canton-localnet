@@ -12,12 +12,12 @@ follow the guide that matches your task.
 | Capability | What ships today |
 |---|---|
 | Declarative config | Single-file `canton-localnet.yaml` (topology, slots, parties, auth) |
-| CLI lifecycle | `up` / `down` / `wait-ready` / `auth token` / `tap` / `info` / `vm` |
+| CLI lifecycle | `up` / `down` / `wait-ready` / `auth token` / `tap` / `info` / `tunnel` |
 | Flexible topology | 1 SV + N validators across 5 named slots; SV-only → all-five |
 | Programmatic fixtures | C# `LocalnetFixture` + Go `fixture`: query + mutate a live ledger |
 | Observability & PQS | Grafana/Prometheus/Loki/Tempo + per-slot Participant Query Store |
 | Multi-synchronizer | Second synchronizer profile for cross-domain scenarios |
-| Infra | AWS spot + part-time Hetzner Terraform, scheduled up/down |
+| Infra | Part-time Hetzner Terraform, scheduled up/down |
 | Release artifacts | NuGet + Go module + CLI binaries + OCI compose artifact, in lockstep |
 
 ## Guides

@@ -91,6 +91,22 @@ steps 4–7 here.
      parentheses, and move maintainer-only entries under `### Internal`. The
      promotion strips the PR references and drops `### Internal`, and writes
      the compare links itself, so do not write any.
+   - Write `release-notes/v<version>.md`, the curated body of the GitHub
+     release. Start from the most recent file in `release-notes/`. The
+     `CHANGELOG.md` stays the exhaustive log; the release body is this file,
+     and `### Internal` entries never reach it. The release PR carries the
+     file, the `CHANGELOG.md` promotion and the `<Version>` bump together.
+     Shape it as a `# canton-localnet v<version>` headline, one sentence
+     summarising the release, then `## What's new since <previous version>`
+     with one short paragraph per feature, `## Upgrading` with each breaking
+     change and its migration steps (omitted when there are none), `## Fixed`
+     with the fixes a reader would notice and a line saying the full list is
+     in the `CHANGELOG.md`, and `## Full changelog` with a link to
+     `CHANGELOG.md` at the tag and the compare link
+     `https://github.com/peacefulstudio/canton-localnet/compare/v<previous>...v<version>`.
+     Keep it prose first: commit-log dumps belong in the `CHANGELOG.md`. The
+     file is published on the public repository, so it names no pull request
+     numbers and no private repository.
    - Move the version citations along (the example tag in `action.yml`, the
      pins in the docs). The release PR changes `<Version>`, which makes the
      LocalNet lanes run on the merge commit.
@@ -103,10 +119,12 @@ steps 4–7 here.
    ```
    The tag push starts the source repository's promote workflow. It refuses
    unless the tag equals `v<Version>`, the top released `CHANGELOG.md`
-   heading equals `<Version>`, the tagged commit is on `dev`, and the public
-   twin has no such tag yet.
+   heading equals `<Version>`, `release-notes/v<version>.md` exists and is not
+   empty, the tagged commit is on `dev`, and the public twin has no such tag
+   yet.
 3. The promote workflow overlays the paths the source `.gitpublic` lists
-   onto this repository's `dev`, derives this repository's `CHANGELOG.md`
+   onto this repository's `dev`, deletes the paths the source
+   `.gitpublic-retired` names, derives this repository's `CHANGELOG.md`
    from the source one, runs a content leak-scan over the result, and opens
    (or reuses) the `Release v<version>` PR here from `promote/v<version>`,
    committed by the promote GitHub App so the commit is signed. To re-run
@@ -114,13 +132,21 @@ steps 4–7 here.
    ```bash
    gh workflow run promote-public-overlay.yaml -R <source repository> -f tag=v<version>
    ```
+   Removing a path from `.gitpublic` leaves it on the twin. Add it to
+   `.gitpublic-retired` in the same PR so the next promote deletes it. Entries
+   must have left both the tree and `.gitpublic`; the Release PR then lists
+   the removal.
 4. **Prep PR for workflow files.** The promote App has no permission to write
    `.github/workflows/`. Before it commits, the promote compares the
    workflow files it would write with this repository's `dev` and, if any
    differ, stops with the list and the commands for the prep PR: open a PR
    here under your own account carrying exactly those files, byte-identical
    to the tag, squash-merge it, then re-run the promote. Most releases need
-   no prep PR; a release that changes a workflow always does.
+   no prep PR; a release that changes a workflow always does. Name the
+   branch `promote-prep/v<version>-workflows`, as the promote's printed
+   commands do, and land it before the promote runs for real: the files it
+   carries are the ones the promote lists, taken from the tag with
+   `git show v<version>:<path>`, never edited by hand.
 5. Review the `Release v<version>` PR, and squash-merge it into `dev`.
    Companion PRs that must ship in the same release merge first, or carry the
    `hold-release` label, which holds the tag back while the PR is open.
@@ -135,13 +161,13 @@ steps 4–7 here.
    leftover draft release: a failed release is re-run by hand, as in
    "Recovering a failed release" below.
 7. [`release.yml`](.github/workflows/release.yml) runs: it checks the tag
-   against `<Version>` and `CHANGELOG.md`, creates a draft release, refuses
+   against `<Version>`, `CHANGELOG.md` and `release-notes/v<version>.md`, creates a draft release, refuses
    a version nuget.org already holds, builds, tests and packs the NuGet
    package and builds the five CLI binaries. Only when every build has
    passed does it push the OCI artifact to GHCR and attach the binaries, the
    package and `checksums.txt` to the draft. It then pushes the package to
-   nuget.org, fills the release body with the `CHANGELOG.md` section for
-   this version, and publishes the release. The GitHub "pre-release" flag
+   nuget.org, publishes the release with `release-notes/v<version>.md` as its
+   body, and refuses to publish when that file is missing or empty. The GitHub "pre-release" flag
    follows the tag shape: on for `v<X.Y.Z>-<N>.<label>`, off for a final
    `v<X.Y.Z>-<N>`.
 
@@ -172,8 +198,7 @@ the failed run got past the nuget.org push, only the release body and the
 publication are left; finish the draft by hand from a checkout of the tag:
 
 ```bash
-.github/scripts/changelog-section.sh <version> > notes.md
-gh release edit v<version> -R peacefulstudio/canton-localnet --notes-file notes.md --draft=false
+gh release edit v<version> -R peacefulstudio/canton-localnet --notes-file release-notes/v<version>.md --draft=false
 ```
 
 Add `--prerelease=false --latest` for a final `v<X.Y.Z>-<N>`; the draft starts as a pre-release, which a preview keeps.
@@ -184,7 +209,7 @@ Add `--prerelease=false --latest` for a final `v<X.Y.Z>-<N>`; the draft starts a
 |---|---|---|
 | **NuGet** `Peaceful.Canton.Localnet.Testing.<version>.nupkg` | nuget.org, as the four-part stable version per the mapping above (e.g. `0.6.2.1`), pushed by [`publish.yaml`](.github/workflows/publish.yaml), which `release.yml` calls after every build has passed. nuget.org is the only NuGet distribution channel — we do not publish to the GitHub Packages NuGet feed. | .NET / xUnit integration tests in downstream Peaceful Studio repos. Add via `dotnet add package Peaceful.Canton.Localnet.Testing`. |
 | **Go module** `github.com/peacefulstudio/canton-localnet/go/fixture@v<version>` | The repo tag itself — Go's module proxy fetches it on demand. | Go integration tests via `go get github.com/peacefulstudio/canton-localnet/go/fixture@v0.6.2-1`. |
-| **CLI binary** `canton-localnet-<version>-<os>-<arch>(.exe)` | GitHub Release assets, with `checksums.txt` (which also covers the `.nupkg` attached to the release, built with the tag spelling `<version>`, not the NuGet spelling) | Engineers, CI jobs that need the `up`/`down`/`wait-ready`/`vm` commands. SHA-256s are in `checksums.txt`. |
+| **CLI binary** `canton-localnet-<version>-<os>-<arch>(.exe)` | GitHub Release assets, with `checksums.txt` (which also covers the `.nupkg` attached to the release, built with the tag spelling `<version>`, not the NuGet spelling) | Engineers, CI jobs that need the `up`/`down`/`wait-ready`/`tunnel` commands. SHA-256s are in `checksums.txt`. |
 | **OCI compose artifact** `ghcr.io/peacefulstudio/canton-localnet:<version>` | GHCR (OCI artifact via `oras`, not a Docker image) | Future CLI runtime pull of the vendored Compose stack so it doesn't have to ship in the binary. |
 
 The CLI binary embeds the version via `-ldflags "-X main.version=<version>"`;

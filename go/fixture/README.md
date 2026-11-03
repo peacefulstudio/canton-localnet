@@ -67,32 +67,28 @@ _ = party
 
 ## Environment variables
 
-All have defaults that match `compose/modules/localnet/env/common.env` and `compose/modules/keycloak/compose.env`. Override per shell or per CI job.
+Every value has a default that matches `compose/modules/localnet/env/common.env` and `compose/modules/keycloak/compose.env`. Override per shell or per CI job. Resolution follows ADR-0003 and is shared with the C# fixture: for each value, the per-slot variable wins, then the host/port composition and global variables below, then the default. `<SLOT>` is `A_VALIDATOR_1`, `B_VALIDATOR_1`, `C_VALIDATOR_1`, `D_VALIDATOR_1` or `SV_VALIDATOR_1`.
 
 | Variable | Default | Notes |
 |---|---|---|
-| `CANTON_LOCALNET_HOST` | `localhost` | Host that exposes the JSON Ledger API. |
-| `CANTON_LOCALNET_SV_VALIDATOR_1_JSON_PORT` | `10975` | `10${PARTICIPANT_JSON_API_PORT_SUFFIX}`. |
-| `CANTON_LOCALNET_A_VALIDATOR_1_JSON_PORT` | `11975` | `11${PARTICIPANT_JSON_API_PORT_SUFFIX}` in compose. |
-| `CANTON_LOCALNET_B_VALIDATOR_1_JSON_PORT` | `12975` | `12${PARTICIPANT_JSON_API_PORT_SUFFIX}`. |
-| `CANTON_LOCALNET_C_VALIDATOR_1_JSON_PORT` | `13975` | `13${PARTICIPANT_JSON_API_PORT_SUFFIX}`. |
-| `CANTON_LOCALNET_D_VALIDATOR_1_JSON_PORT` | `14975` | `14${PARTICIPANT_JSON_API_PORT_SUFFIX}`. |
-| `CANTON_LOCALNET_KEYCLOAK_HOST` | `keycloak.localhost` | Matches the host-exposed nginx-keycloak alias. |
-| `CANTON_LOCALNET_KEYCLOAK_PORT` | `8082` | |
-| `CANTON_LOCALNET_AUDIENCE` | `https://canton.network.global` | Sent as the `audience` form field on token requests. |
-| `CANTON_LOCALNET_SCOPE` | _empty_ | Optional `scope` form field. |
-| `CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_ID` | `sv-validator` | |
-| `CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET` | _empty_ | Required for `RoleSvValidator1` — discovery returns an error if unset. Note: discovery derives a `realms/sv-validator-1` token URL, but no SV realm is currently imported into Keycloak (`compose/modules/keycloak/conf/data/` ships A/B/C/D only), so the URL 404s at runtime — supply an SV realm import or point the fixture at a Keycloak instance that has one. |
-| `CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_ID` | `a-validator-1-validator` | Matches `AUTH_A_VALIDATOR_1_VALIDATOR_CLIENT_ID`. |
-| `CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET` | demo secret | Matches `AUTH_A_VALIDATOR_1_VALIDATOR_CLIENT_SECRET`. |
-| `CANTON_LOCALNET_B_VALIDATOR_1_CLIENT_ID` | `b-validator-1-validator` | |
-| `CANTON_LOCALNET_B_VALIDATOR_1_CLIENT_SECRET` | demo secret | |
-| `CANTON_LOCALNET_C_VALIDATOR_1_CLIENT_ID` | `c-validator-1-validator` | |
-| `CANTON_LOCALNET_C_VALIDATOR_1_CLIENT_SECRET` | demo secret | |
-| `CANTON_LOCALNET_D_VALIDATOR_1_CLIENT_ID` | `d-validator-1-validator` | |
-| `CANTON_LOCALNET_D_VALIDATOR_1_CLIENT_SECRET` | demo secret | |
+| `CANTON_LOCALNET_<SLOT>_JSON_API_URL` | `http://${CANTON_LOCALNET_HOST}:<port>` | JSON Ledger API base URL. Wins over host and port. |
+| `CANTON_LOCALNET_<SLOT>_TOKEN_URL` | `http://${CANTON_LOCALNET_KEYCLOAK_HOST}:${CANTON_LOCALNET_KEYCLOAK_PORT}/realms/<realm>/protocol/openid-connect/token` | Keycloak `client_credentials` endpoint. Wins over Keycloak host and port. No default for sv. |
+| `CANTON_LOCALNET_<SLOT>_CLIENT_ID` | `<slot>-validator`, e.g. `a-validator-1-validator` | Matches `AUTH_<SLOT>_VALIDATOR_CLIENT_ID`. No default for sv. |
+| `CANTON_LOCALNET_<SLOT>_CLIENT_SECRET` | demo secret | Matches `AUTH_<SLOT>_VALIDATOR_CLIENT_SECRET`. No default for sv. |
+| `CANTON_LOCALNET_<SLOT>_AUDIENCE` | `CANTON_LOCALNET_AUDIENCE`, else `https://canton.network.global` | Sent as the `audience` form field on token requests. |
+| `CANTON_LOCALNET_<SLOT>_SCOPE` | `CANTON_LOCALNET_SCOPE`, else `openid` | Sent as the `scope` form field. |
+| `CANTON_LOCALNET_HOST` | `localhost` | Go-only fallback: host of the JSON Ledger API when `_JSON_API_URL` is unset. |
+| `CANTON_LOCALNET_<SLOT>_JSON_PORT` | `10975` (sv), `11975` (a), `12975` (b), `13975` (c), `14975` (d) | Go-only fallback: port when `_JSON_API_URL` is unset. `<prefix>${PARTICIPANT_JSON_API_PORT_SUFFIX}` in compose. |
+| `CANTON_LOCALNET_KEYCLOAK_HOST` | `localhost` | Go-only fallback: Keycloak host when `_TOKEN_URL` is unset. |
+| `CANTON_LOCALNET_KEYCLOAK_PORT` | `8082` | Go-only fallback: Keycloak port when `_TOKEN_URL` is unset. |
+| `CANTON_LOCALNET_AUDIENCE` | `https://canton.network.global` | Fallback for every slot without a per-slot audience. |
+| `CANTON_LOCALNET_SCOPE` | `openid` | Fallback for every slot without a per-slot scope. |
 
-> Security note — demo credentials only. The default `CLIENT_SECRET` values for `RoleAValidator1`, `RoleBValidator1`, `RoleCValidator1`, and `RoleDValidator1` are the demo credentials shipped with the splice quickstart compose files (also visible in `compose/modules/keycloak/env/`). They are public, valid only against an ephemeral LocalNet Keycloak realm, and **must never be used in any non-`localhost` or production deployment**. Override via the `CANTON_LOCALNET_*_CLIENT_SECRET` env vars in any real environment. `RoleSvValidator1` ships with no demo default — its secret must be supplied explicitly.
+The Go fixture does not read the C# fixture's legacy un-namespaced globals (`CANTON_LOCALNET_JSON_API_URL`, `_TOKEN_URL`, `_CLIENT_ID`, `_CLIENT_SECRET`) or `CANTON_LOCALNET_PROFILE`; the slot is the `Role` you pass.
+
+**`RoleSvValidator1` has no defaults.** The keycloak module imports realms for A, B, C and D only, so there is no SV realm to derive a token URL from. `For(RoleSvValidator1)` returns an error naming `CANTON_LOCALNET_SV_VALIDATOR_1_TOKEN_URL`, `CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_ID` and `CANTON_LOCALNET_SV_VALIDATOR_1_CLIENT_SECRET` unless all three are set. The C# fixture behaves the same way.
+
+> Security note — demo credentials only. The default `CLIENT_SECRET` values for `RoleAValidator1`, `RoleBValidator1`, `RoleCValidator1`, and `RoleDValidator1` are the demo credentials shipped with the splice quickstart compose files (also visible in `compose/modules/keycloak/env/`). They are public, valid only against an ephemeral LocalNet Keycloak realm, and **must never be used in any non-`localhost` or production deployment**. Override via the `CANTON_LOCALNET_*_CLIENT_SECRET` env vars in any real environment. `RoleSvValidator1` ships with no demo default: its token URL, client id and secret must be supplied explicitly.
 
 These env vars are the **fixture / test config layer** — distinct from
 `canton-localnet.yaml`, which configures the CLI's stack-boot
