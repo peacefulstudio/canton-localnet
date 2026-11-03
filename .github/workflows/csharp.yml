@@ -14,11 +14,13 @@ on:
     branches: [dev]
     paths:
       - 'csharp/**'
+      - 'testdata/endpoint-discovery/**'
       - '.github/workflows/csharp.yml'
   pull_request:
     branches: [dev]
     paths:
       - 'csharp/**'
+      - 'testdata/endpoint-discovery/**'
       - '.github/workflows/csharp.yml'
 
 concurrency:

@@ -8,11 +8,13 @@ on:
     branches: [dev]
     paths:
       - 'go/fixture/**'
+      - 'testdata/endpoint-discovery/**'
       - '.github/workflows/go-fixture.yaml'
   pull_request:
     branches: [dev]
     paths:
       - 'go/fixture/**'
+      - 'testdata/endpoint-discovery/**'
       - '.github/workflows/go-fixture.yaml'
 
 concurrency:
