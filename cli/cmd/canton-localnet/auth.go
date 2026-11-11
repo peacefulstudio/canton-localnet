@@ -105,11 +105,7 @@ func applyYAMLOverrides(cmd *cobra.Command, s slot.Slot, ep *slot.Endpoints) err
 }
 
 func yamlSlot(cmd *cobra.Command, slotName string) (yamlconfig.Validator, bool, error) {
-	configPath, err := cmd.Flags().GetString("config")
-	if err != nil {
-		return yamlconfig.Validator{}, false, err
-	}
-	cfg, foundPath, err := yamlconfig.Resolve(configPath, "")
+	cfg, foundPath, err := resolveYamlConfig(cmd)
 	if err != nil {
 		return yamlconfig.Validator{}, false, err
 	}

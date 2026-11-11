@@ -1,0 +1,92 @@
+Manifest-Version: 1.0
+Created-By: damlc
+Name: canton-localnet-noop-0.0.1
+Sdk-Version: 3.4.11
+Main-Dalf: canton-localnet-noop-0.0.1-b1008daac9810baa8ca7ff313c13bd48d
+ 65f18040b2d33faabe5b5d39acaac9e/canton-localnet-noop-0.0.1-b1008daac98
+ 10baa8ca7ff313c13bd48d65f18040b2d33faabe5b5d39acaac9e.dalf
+Dalfs: canton-localnet-noop-0.0.1-b1008daac9810baa8ca7ff313c13bd48d65f1
+ 8040b2d33faabe5b5d39acaac9e/canton-localnet-noop-0.0.1-b1008daac9810ba
+ a8ca7ff313c13bd48d65f18040b2d33faabe5b5d39acaac9e.dalf, canton-localne
+ t-noop-0.0.1-b1008daac9810baa8ca7ff313c13bd48d65f18040b2d33faabe5b5d39
+ acaac9e/daml-prim-7cff38e34bd192d498d5a7606aa3b893e35b0f632d582b273f66
+ dab90f2f14ef.dalf, canton-localnet-noop-0.0.1-b1008daac9810baa8ca7ff31
+ 3c13bd48d65f18040b2d33faabe5b5d39acaac9e/daml-prim-DA-Exception-Arithm
+ eticError-ee33fb70918e7aaa3d3fc44d64a399fb2bf5bcefc54201b1690ecd448551
+ ba88.dalf, canton-localnet-noop-0.0.1-b1008daac9810baa8ca7ff313c13bd48
+ d65f18040b2d33faabe5b5d39acaac9e/daml-prim-DA-Exception-AssertionFaile
+ d-6da1f43a10a179524e840e7288b47bda213339b0552d92e87ae811e52f59fc0e.dal
+ f, canton-localnet-noop-0.0.1-b1008daac9810baa8ca7ff313c13bd48d65f1804
+ 0b2d33faabe5b5d39acaac9e/daml-prim-DA-Exception-GeneralError-f181cd661
+ f7af3a60bdaae4b0285a2a67beb55d6910fc8431dbae21a5825ec0f.dalf, canton-l
+ ocalnet-noop-0.0.1-b1008daac9810baa8ca7ff313c13bd48d65f18040b2d33faabe
+ 5b5d39acaac9e/daml-prim-DA-Exception-PreconditionFailed-91e167fa7a256f
+ 21f990c526a0a0df840e99aeef0e67dc1f5415b0309486de74.dalf, canton-localn
+ et-noop-0.0.1-b1008daac9810baa8ca7ff313c13bd48d65f18040b2d33faabe5b5d3
+ 9acaac9e/daml-prim-DA-Internal-Erased-0e4a572ab1fb94744abb02243a6bbed6
+ c78fc6e3c8d3f60c655f057692a62816.dalf, canton-localnet-noop-0.0.1-b100
+ 8daac9810baa8ca7ff313c13bd48d65f18040b2d33faabe5b5d39acaac9e/daml-prim
+ -DA-Internal-NatSyn-e5411f3d75f072b944bd88e652112a14a3d409c491fd9a51f5
+ f6eede6d3a3348.dalf, canton-localnet-noop-0.0.1-b1008daac9810baa8ca7ff
+ 313c13bd48d65f18040b2d33faabe5b5d39acaac9e/daml-prim-DA-Internal-Promo
+ tedText-ab068e2f920d0e06347975c2a342b71f8b8e3b4be0f02ead9442caac51aa88
+ 77.dalf, canton-localnet-noop-0.0.1-b1008daac9810baa8ca7ff313c13bd48d6
+ 5f18040b2d33faabe5b5d39acaac9e/daml-prim-DA-Types-5aee9b21b8e9a4c4975b
+ 5f4c4198e6e6e8469df49e2010820e792f393db870f4.dalf, canton-localnet-noo
+ p-0.0.1-b1008daac9810baa8ca7ff313c13bd48d65f18040b2d33faabe5b5d39acaac
+ 9e/daml-prim-GHC-Prim-fcee8dfc1b81c449b421410edd5041c16ab59c45bbea85bc
+ b094d1b17c3e9df7.dalf, canton-localnet-noop-0.0.1-b1008daac9810baa8ca7
+ ff313c13bd48d65f18040b2d33faabe5b5d39acaac9e/daml-prim-GHC-Tuple-19f0d
+ f5fdaf5a96e137b6ea885fdb378f37bd3166bd9a47ee11518e33fa09a20.dalf, cant
+ on-localnet-noop-0.0.1-b1008daac9810baa8ca7ff313c13bd48d65f18040b2d33f
+ aabe5b5d39acaac9e/daml-prim-GHC-Types-e7e0adfa881e7dbbb07da065ae54444d
+ a7c4bccebcb8872ab0cb5dcf9f3761ce.dalf, canton-localnet-noop-0.0.1-b100
+ 8daac9810baa8ca7ff313c13bd48d65f18040b2d33faabe5b5d39acaac9e/daml-stdl
+ ib-3.4.11-3b25c9b08ac6d895417c604fc0ee4b7e47ef974ff8fa43f139daa43bb431
+ fefc.dalf, canton-localnet-noop-0.0.1-b1008daac9810baa8ca7ff313c13bd48
+ d65f18040b2d33faabe5b5d39acaac9e/daml-stdlib-DA-Action-State-Type-a1fa
+ 18133ae48cbb616c4c148e78e661666778c3087d099067c7fe1868cbb3a1.dalf, can
+ ton-localnet-noop-0.0.1-b1008daac9810baa8ca7ff313c13bd48d65f18040b2d33
+ faabe5b5d39acaac9e/daml-stdlib-DA-Date-Types-fa79192fe1cce03d7d8db3647
+ 1dde4cf6c96e6d0f07e1c391dd49e355af9b38c.dalf, canton-localnet-noop-0.0
+ .1-b1008daac9810baa8ca7ff313c13bd48d65f18040b2d33faabe5b5d39acaac9e/da
+ ml-stdlib-DA-Internal-Any-6f8e6085f5769861ae7a40dccd618d6f747297d59b37
+ cab89b93e2fa80b0c024.dalf, canton-localnet-noop-0.0.1-b1008daac9810baa
+ 8ca7ff313c13bd48d65f18040b2d33faabe5b5d39acaac9e/daml-stdlib-DA-Intern
+ al-Down-86d888f34152dae8729900966b44abcb466b9c111699678de58032de601d2b
+ 04.dalf, canton-localnet-noop-0.0.1-b1008daac9810baa8ca7ff313c13bd48d6
+ 5f18040b2d33faabe5b5d39acaac9e/daml-stdlib-DA-Internal-Fail-Types-7adc
+ 4c2d07fa3a51173c843cba36e610c1168b2dbbf53076e20c0092eae8763d.dalf, can
+ ton-localnet-noop-0.0.1-b1008daac9810baa8ca7ff313c13bd48d65f18040b2d33
+ faabe5b5d39acaac9e/daml-stdlib-DA-Internal-Interface-AnyView-Types-c28
+ 0cc3ef501d237efa7b1120ca3ad2d196e089ad596b666bed59a85f3c9a074.dalf, ca
+ nton-localnet-noop-0.0.1-b1008daac9810baa8ca7ff313c13bd48d65f18040b2d3
+ 3faabe5b5d39acaac9e/daml-stdlib-DA-Internal-Template-9e70a8b3510d617f8
+ a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69.dalf, canton-localnet-
+ noop-0.0.1-b1008daac9810baa8ca7ff313c13bd48d65f18040b2d33faabe5b5d39ac
+ aac9e/daml-stdlib-DA-Logic-Types-cae345b5500ef6f84645c816f88b9f7a85a9f
+ 3c71697984abdf6849f81e80324.dalf, canton-localnet-noop-0.0.1-b1008daac
+ 9810baa8ca7ff313c13bd48d65f18040b2d33faabe5b5d39acaac9e/daml-stdlib-DA
+ -Monoid-Types-52854220dc199884704958df38befd5492d78384a032fd7558c38f00
+ e3d778a2.dalf, canton-localnet-noop-0.0.1-b1008daac9810baa8ca7ff313c13
+ bd48d65f18040b2d33faabe5b5d39acaac9e/daml-stdlib-DA-NonEmpty-Types-bde
+ 4bd30749e99603e5afa354706608601029e225d4983324d617825b634253a.dalf, ca
+ nton-localnet-noop-0.0.1-b1008daac9810baa8ca7ff313c13bd48d65f18040b2d3
+ 3faabe5b5d39acaac9e/daml-stdlib-DA-Random-Types-bfda48f9aa2c89c895cde5
+ 38ec4b4946c7085959e031ad61bde616b9849155d7.dalf, canton-localnet-noop-
+ 0.0.1-b1008daac9810baa8ca7ff313c13bd48d65f18040b2d33faabe5b5d39acaac9e
+ /daml-stdlib-DA-Semigroup-Types-d095a2ccf6dd36b2415adc4fa676f9191ba63c
+ d39828dc5207b36892ec350cbc.dalf, canton-localnet-noop-0.0.1-b1008daac9
+ 810baa8ca7ff313c13bd48d65f18040b2d33faabe5b5d39acaac9e/daml-stdlib-DA-
+ Set-Types-c3bb0c5d04799b3f11bad7c3c102963e115cf53da3e4afcbcfd9f06ebd82
+ b4ff.dalf, canton-localnet-noop-0.0.1-b1008daac9810baa8ca7ff313c13bd48
+ d65f18040b2d33faabe5b5d39acaac9e/daml-stdlib-DA-Stack-Types-60c61c5422
+ 07080e97e378ab447cc355ecc47534b3a3ebbff307c4fb8339bc4d.dalf, canton-lo
+ calnet-noop-0.0.1-b1008daac9810baa8ca7ff313c13bd48d65f18040b2d33faabe5
+ b5d39acaac9e/daml-stdlib-DA-Time-Types-b70db8369e1c461d5c70f1c86f526a2
+ 9e9776c655e6ffc2560f95b05ccb8b946.dalf, canton-localnet-noop-0.0.1-b10
+ 08daac9810baa8ca7ff313c13bd48d65f18040b2d33faabe5b5d39acaac9e/daml-std
+ lib-DA-Validation-Types-3cde94fe9be5c700fc1d9a8ad2277e2c1214609f8c52a5
+ b4db77e466875b8cb7.dalf
+Format: daml-lf
+Encryption: non-encrypted

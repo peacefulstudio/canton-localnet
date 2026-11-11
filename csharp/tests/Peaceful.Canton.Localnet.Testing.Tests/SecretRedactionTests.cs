@@ -9,6 +9,7 @@ public class SecretRedactionTests
 {
     private static LocalnetEndpoints Endpoints() => new(
         JsonLedgerApi: new Uri("http://localhost:11975/"),
+        GrpcLedgerApi: new Uri("http://localhost:11901/"),
         TokenEndpoint: new Uri("https://keycloak.test/token"),
         Audience: "aud-literal",
         ClientId: "client-id-literal",
@@ -40,6 +41,7 @@ public class SecretRedactionTests
         var text = Endpoints().ToString();
 
         Assert.StartsWith("LocalnetEndpoints { JsonLedgerApi = http://localhost:11975/", text);
+        Assert.Contains("GrpcLedgerApi = http://localhost:11901/", text);
         Assert.Contains("ClientId = client-id-literal", text);
         Assert.Contains("ValidatorUserId = validator-user-literal", text);
     }

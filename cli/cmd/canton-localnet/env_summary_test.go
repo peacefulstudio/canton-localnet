@@ -75,6 +75,7 @@ func TestRenderEnvSummaryOmitsSecretVarsIncludingJWTAndPqsConnectionString(t *te
 		{Key: "CANTON_LOCALNET_A_VALIDATOR_1_JWT", Value: "eyJhbGciOiJSUzI1NiJ9.jwt-literal.sig", Secret: true},
 		{Key: "CANTON_LOCALNET_A_VALIDATOR_1_PQS_PASSWORD", Value: "pqs-password-literal", Secret: true},
 		{Key: "CANTON_LOCALNET_A_VALIDATOR_1_PQS_CONNECTION_STRING", Value: "Host=h;Password=pqs-password-literal", Secret: true},
+		{Key: "CANTON_LOCALNET_A_VALIDATOR_1_PQS_URL", Value: "postgresql://u:pqs-url-password-literal@h:5432/d", Secret: true},
 	}
 
 	got := renderEnvSummary(vars)
@@ -84,6 +85,7 @@ func TestRenderEnvSummaryOmitsSecretVarsIncludingJWTAndPqsConnectionString(t *te
 		"eyJhbGciOiJSUzI1NiJ9.jwt-literal.sig",
 		"pqs-password-literal",
 		"Host=h;Password",
+		"pqs-url-password-literal",
 	} {
 		if strings.Contains(got, forbidden) {
 			t.Errorf("summary must not contain %q, got:\n%s", forbidden, got)

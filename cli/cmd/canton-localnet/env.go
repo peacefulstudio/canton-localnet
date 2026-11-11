@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -320,7 +321,7 @@ func staticSlotEnvVars(repoRoot string, ep slot.Endpoints, opts envOptions) ([]e
 		{Key: prefix + "_JSON_API_URL", Value: ep.JSONLedgerAPIURL},
 		{Key: prefix + "_JSON_PORT", Value: jsonPort},
 		{Key: prefix + "_GRPC_URL", Value: "http://" + ep.LedgerGrpcURL},
-		{Key: prefix + "_GRPC_PORT", Value: ep.Slot.LedgerGrpcPort()},
+		{Key: prefix + "_GRPC_PORT", Value: ep.LedgerGrpcPort},
 		{Key: prefix + "_ADMIN_GRPC_URL", Value: "http://" + ep.AdminGrpcURL},
 		{Key: prefix + "_VALIDATOR_API_URL", Value: "http://" + ep.ValidatorAdminURL},
 	}
@@ -357,6 +358,7 @@ func staticSlotEnvVars(repoRoot string, ep slot.Endpoints, opts envOptions) ([]e
 			envVar{Key: prefix + "_PQS_USER", Value: pqs.User},
 			envVar{Key: prefix + "_PQS_PASSWORD", Value: pqs.Password, Secret: true},
 			envVar{Key: prefix + "_PQS_CONNECTION_STRING", Value: pqs.npgsqlConnectionString(), Secret: true},
+			envVar{Key: prefix + "_PQS_URL", Value: pqs.libpqURI(), Secret: true},
 		)
 	}
 
@@ -385,11 +387,21 @@ type pqsFields struct {
 // Username=cnadmin;Password=…`). Neither the Go fixture nor the Rust SDK
 // currently read a canton-localnet-owned PQS variable at all — the
 // Rust SDK's CANTON_PQS_URL is an unrelated, unnamespaced variable of
-// its own — so no second, differently-shaped variant is exported here.
+// its own. Non-.NET clients read the libpq form, _PQS_URL (libpqURI).
 func (f pqsFields) npgsqlConnectionString() string {
 	return fmt.Sprintf("Host=%s;Port=%s;Database=%s;Username=%s;Password=%s",
 		npgsqlEscape(f.Host), npgsqlEscape(f.Port), npgsqlEscape(f.Database),
 		npgsqlEscape(f.User), npgsqlEscape(f.Password))
+}
+
+func (f pqsFields) libpqURI() string {
+	uri := url.URL{
+		Scheme: "postgresql",
+		User:   url.UserPassword(f.User, f.Password),
+		Host:   net.JoinHostPort(f.Host, f.Port),
+		Path:   "/" + f.Database,
+	}
+	return uri.String()
 }
 
 // npgsqlEscape quotes a connection-string value if it contains a Npgsql

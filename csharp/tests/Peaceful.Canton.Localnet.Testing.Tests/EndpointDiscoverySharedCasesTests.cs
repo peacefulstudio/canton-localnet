@@ -41,6 +41,7 @@ public class EndpointDiscoverySharedCasesTests
         var endpoints = EndpointDiscovery.Resolve(profile, sharedCase.Env);
 
         Assert.Equal(new Uri(sharedCase.Expect.JsonApiUrl), endpoints.JsonLedgerApi);
+        Assert.Equal(new Uri(sharedCase.Expect.GrpcLedgerApiUrl), endpoints.GrpcLedgerApi);
         Assert.Equal(new Uri(sharedCase.Expect.TokenUrl), endpoints.TokenEndpoint);
         Assert.Equal(sharedCase.Expect.Audience, endpoints.Audience);
         Assert.Equal(sharedCase.Expect.Scope, endpoints.Scope);
@@ -84,6 +85,7 @@ public class EndpointDiscoverySharedCasesTests
 
     private sealed record SharedExpectation(
         string JsonApiUrl,
+        string GrpcLedgerApiUrl,
         string TokenUrl,
         string Audience,
         string Scope,

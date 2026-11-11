@@ -3,7 +3,7 @@
 
 //go:build integration
 
-package fixture
+package pqsreaderrole
 
 import (
 	"database/sql"

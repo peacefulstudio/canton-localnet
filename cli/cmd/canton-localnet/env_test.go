@@ -80,6 +80,9 @@ func TestEnvShFormatPinsCredentialContractLiterally(t *testing.T) {
 	if strings.Contains(stdout, "_PQS_CONNECTION_STRING=") {
 		t.Errorf("without --pqs, no PQS connection string should be present, got:\n%s", stdout)
 	}
+	if strings.Contains(stdout, "_PQS_URL=") {
+		t.Errorf("without --pqs, no PQS URL should be present, got:\n%s", stdout)
+	}
 }
 
 func TestEnvJSONFormatPinsFieldsLiterally(t *testing.T) {
@@ -250,6 +253,7 @@ func TestEnvPqsFieldsPinnedLiteral(t *testing.T) {
 		"CANTON_LOCALNET_A_VALIDATOR_1_PQS_USER":              "pqs-a-validator-1-reader",
 		"CANTON_LOCALNET_A_VALIDATOR_1_PQS_PASSWORD":          "16DQhDqYqb2D7oeZhOt3tBapz12bo8l7",
 		"CANTON_LOCALNET_A_VALIDATOR_1_PQS_CONNECTION_STRING": "Host=localhost;Port=5432;Database=pqs-a-validator-1;Username=pqs-a-validator-1-reader;Password=16DQhDqYqb2D7oeZhOt3tBapz12bo8l7",
+		"CANTON_LOCALNET_A_VALIDATOR_1_PQS_URL":               "postgresql://pqs-a-validator-1-reader:16DQhDqYqb2D7oeZhOt3tBapz12bo8l7@localhost:5432/pqs-a-validator-1",
 	}
 	for k, v := range want {
 		if got[k] != v {
@@ -298,6 +302,23 @@ func TestEnvPqsQuotesAReaderPasswordContainingNpgsqlDelimiters(t *testing.T) {
 	}
 }
 
+func TestEnvPqsPercentEncodesUserAndPasswordInTheLibpqURI(t *testing.T) {
+	root := newEnvTestRepoRoot(t, "0.8.3-pin")
+	t.Setenv("CANTON_LOCALNET_HOST", "localhost")
+	t.Setenv("CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET", "x")
+	t.Setenv("PQS_A_VALIDATOR_1_READER_PASSWORD", "p@ss:w/rd%#? x")
+
+	stdout := captureRoot(t, "env", "--slot", "a", "--pqs", "--format", "json", "--repo-root", root)
+	var got map[string]string
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatal(err)
+	}
+	want := "postgresql://pqs-a-validator-1-reader:p%40ss%3Aw%2Frd%25%23%3F%20x@localhost:5432/pqs-a-validator-1"
+	if got["CANTON_LOCALNET_A_VALIDATOR_1_PQS_URL"] != want {
+		t.Errorf("pqs url: got %q, want %q", got["CANTON_LOCALNET_A_VALIDATOR_1_PQS_URL"], want)
+	}
+}
+
 func TestEnvPqsHonoursPostgresHostPortHostSegment(t *testing.T) {
 	root := newEnvTestRepoRoot(t, "0.8.3-pin")
 	t.Setenv("CANTON_LOCALNET_HOST", "localhost")
@@ -330,6 +351,7 @@ func TestEnvWithoutPqsFlagOmitsPqsFields(t *testing.T) {
 		"CANTON_LOCALNET_A_VALIDATOR_1_PQS_USER",
 		"CANTON_LOCALNET_A_VALIDATOR_1_PQS_PASSWORD",
 		"CANTON_LOCALNET_A_VALIDATOR_1_PQS_CONNECTION_STRING",
+		"CANTON_LOCALNET_A_VALIDATOR_1_PQS_URL",
 	} {
 		if _, ok := got[missing]; ok {
 			t.Errorf("%s should be absent without --pqs", missing)
@@ -685,6 +707,10 @@ func TestEnvGithubFormatMasksPqsPasswordAndConnectionString(t *testing.T) {
 	if !strings.Contains(stdout, want) {
 		t.Errorf("expected the pqs connection string to be masked on stdout, got:\n%s", stdout)
 	}
+	wantURL := "::add-mask::postgresql://pqs-a-validator-1-reader:16DQhDqYqb2D7oeZhOt3tBapz12bo8l7@localhost:5432/pqs-a-validator-1\n"
+	if !strings.Contains(stdout, wantURL) {
+		t.Errorf("expected the pqs url to be masked on stdout, got:\n%s", stdout)
+	}
 }
 
 func TestEnvGithubFormatMasksEveryLineOfAMultilineSecret(t *testing.T) {
@@ -1035,6 +1061,9 @@ func TestEnvPqsExportsPqsForSlotsAThroughC(t *testing.T) {
 	if strings.Join(pqsDatabases, " ") != strings.Join(want, " ") {
 		t.Errorf("PQS databases: got %v, want %v", pqsDatabases, want)
 	}
+	if got["CANTON_LOCALNET_B_VALIDATOR_1_PQS_URL"] != "postgresql://cnadmin:supersafe@localhost:5432/pqs-b-validator-1" {
+		t.Errorf("b pqs url: got %q", got["CANTON_LOCALNET_B_VALIDATOR_1_PQS_URL"])
+	}
 	wantB := "Host=localhost;Port=5432;Database=pqs-b-validator-1;Username=cnadmin;Password=supersafe"
 	if got["CANTON_LOCALNET_B_VALIDATOR_1_PQS_CONNECTION_STRING"] != wantB {
 		t.Errorf("b connection string: got %q, want %q", got["CANTON_LOCALNET_B_VALIDATOR_1_PQS_CONNECTION_STRING"], wantB)
@@ -1051,5 +1080,32 @@ func TestEnvPqsRefusesSlotD(t *testing.T) {
 	want := "env: --pqs is not supported for slot d-validator-1: only sv-validator-1, a-validator-1, b-validator-1, c-validator-1 have a PQS pipeline"
 	if err == nil || err.Error() != want {
 		t.Fatalf("want %q, got %v", want, err)
+	}
+}
+
+func TestEnvPortsFollowParticipantPortSuffixOverrides(t *testing.T) {
+	root := newEnvTestRepoRoot(t, "0.8.3-pin")
+	t.Setenv("CANTON_LOCALNET_HOST", "localhost")
+	t.Setenv("CANTON_LOCALNET_KEYCLOAK_PORT", "8082")
+	t.Setenv("CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET", "x")
+	t.Setenv("PARTICIPANT_JSON_API_PORT_SUFFIX", "976")
+	t.Setenv("PARTICIPANT_LEDGER_API_PORT_SUFFIX", "911")
+
+	stdout := captureRoot(t, "env", "--slot", "a", "--format", "json", "--repo-root", root)
+
+	var got map[string]string
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"CANTON_LOCALNET_A_VALIDATOR_1_JSON_API_URL": "http://localhost:11976",
+		"CANTON_LOCALNET_A_VALIDATOR_1_JSON_PORT":    "11976",
+		"CANTON_LOCALNET_A_VALIDATOR_1_GRPC_URL":     "http://localhost:11911",
+		"CANTON_LOCALNET_A_VALIDATOR_1_GRPC_PORT":    "11911",
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%s: got %q, want %q", k, got[k], v)
+		}
 	}
 }

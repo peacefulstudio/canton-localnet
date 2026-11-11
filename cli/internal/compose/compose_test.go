@@ -191,6 +191,85 @@ func TestBuildResourceConstraintsFollowBase(t *testing.T) {
 	}
 }
 
+func TestBuildPublishesHostPortsOnlyForEnabledSlots(t *testing.T) {
+	t.Parallel()
+	root := newTestRepoRoot(t)
+	plan, err := Build(Options{
+		RepoRoot:     root,
+		AuthMode:     AuthOAuth2,
+		EnabledSlots: []string{"sv-validator-1", "a-validator-1", "b-validator-1"},
+	})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	for _, fragment := range []string{
+		"compose/modules/localnet/ports-sv-validator-1.yaml",
+		"compose/modules/localnet/ports-a-validator-1.yaml",
+		"compose/modules/localnet/ports-b-validator-1.yaml",
+	} {
+		if !containsPair(plan.Args, "-f", filepath.Join(root, fragment)) {
+			t.Errorf("expected -f %q for an enabled slot, full args: %v", fragment, plan.Args)
+		}
+	}
+	for _, fragment := range []string{
+		"compose/modules/localnet/ports-c-validator-1.yaml",
+		"compose/modules/localnet/ports-d-validator-1.yaml",
+	} {
+		if containsPair(plan.Args, "-f", filepath.Join(root, fragment)) {
+			t.Errorf("did not expect -f %q for a disabled slot, full args: %v", fragment, plan.Args)
+		}
+	}
+}
+
+func TestBuildPublishesHostPortsForEverySlotByDefault(t *testing.T) {
+	t.Parallel()
+	root := newTestRepoRoot(t)
+	plan, err := Build(DefaultOptions(root))
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	for _, fragment := range []string{
+		"compose/modules/localnet/ports-sv-validator-1.yaml",
+		"compose/modules/localnet/ports-a-validator-1.yaml",
+		"compose/modules/localnet/ports-b-validator-1.yaml",
+		"compose/modules/localnet/ports-c-validator-1.yaml",
+		"compose/modules/localnet/ports-d-validator-1.yaml",
+	} {
+		if !containsPair(plan.Args, "-f", filepath.Join(root, fragment)) {
+			t.Errorf("expected -f %q with every slot enabled, full args: %v", fragment, plan.Args)
+		}
+	}
+}
+
+func TestBuildPublishesSvHostPortsWhenEnabledSlotsIsEmpty(t *testing.T) {
+	t.Parallel()
+	root := newTestRepoRoot(t)
+	plan, err := Build(Options{RepoRoot: root, AuthMode: AuthOAuth2})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if !containsPair(plan.Args, "-f", filepath.Join(root, "compose/modules/localnet/ports-sv-validator-1.yaml")) {
+		t.Errorf("expected the sv port fragment even with no slot listed, full args: %v", plan.Args)
+	}
+}
+
+func TestBuildPortFragmentsFollowBase(t *testing.T) {
+	t.Parallel()
+	root := newTestRepoRoot(t)
+	plan, err := Build(Options{RepoRoot: root, AuthMode: AuthOAuth2, EnabledSlots: []string{"sv-validator-1", "a-validator-1"}})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	baseIdx := indexOfPair(plan.Args, "-f", filepath.Join(root, "compose/modules/localnet/compose.yaml"))
+	fragmentIdx := indexOfPair(plan.Args, "-f", filepath.Join(root, "compose/modules/localnet/ports-a-validator-1.yaml"))
+	if baseIdx < 0 || fragmentIdx < 0 {
+		t.Fatalf("expected both base and port fragment present (base=%d, fragment=%d) in %v", baseIdx, fragmentIdx, plan.Args)
+	}
+	if fragmentIdx < baseIdx {
+		t.Errorf("port fragment must come after base compose.yaml (base=%d, fragment=%d)", baseIdx, fragmentIdx)
+	}
+}
+
 func TestBuildAddsCValidator1ProfileWhenEnabled(t *testing.T) {
 	t.Parallel()
 	root := newTestRepoRoot(t)

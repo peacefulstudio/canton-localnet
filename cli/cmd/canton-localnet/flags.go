@@ -20,8 +20,8 @@ type composeFlags struct {
 
 func bindComposeFlags(cmd *cobra.Command, f *composeFlags) {
 	cmd.Flags().StringVar(&f.auth, "auth", string(compose.AuthOAuth2), "Authentication mode: oauth2 (default) or secret")
-	cmd.Flags().BoolVar(&f.obs, "obs", false, "Force-enable the observability stack (overrides canton-localnet.yaml modules.obs)")
-	cmd.Flags().BoolVar(&f.pqs, "pqs", false, "Force-enable the Participant Query Store module (overrides canton-localnet.yaml modules.pqs)")
+	cmd.Flags().BoolVar(&f.obs, "obs", false, "Enable or disable the observability stack (overrides canton-localnet.yaml modules.obs)")
+	cmd.Flags().BoolVar(&f.pqs, "pqs", false, "Enable or disable the Participant Query Store module (overrides canton-localnet.yaml modules.pqs)")
 	cmd.Flags().BoolVar(&f.multiSync, "multi-sync", false, "Enable the multi-synchronizer profile (brings up the app-synchronizer; overrides canton-localnet.yaml multiSync)")
 	cmd.Flags().BoolVar(&f.noLimit, "no-resource-limits", false, "Disable the resource-constraint overlays (RES=false in the Makefile)")
 }
@@ -35,18 +35,14 @@ func (f *composeFlags) options(cmd *cobra.Command) (compose.Options, error) {
 	if err != nil {
 		return compose.Options{}, err
 	}
-	configPath, err := cmd.Flags().GetString("config")
-	if err != nil {
-		return compose.Options{}, err
-	}
-	cfg, _, err := yamlconfig.Resolve(configPath, "")
+	cfg, _, err := resolveYamlConfig(cmd)
 	if err != nil {
 		return compose.Options{}, err
 	}
 	opts := compose.DefaultOptions(repoRoot)
 	opts.AuthMode = authMode
-	opts.Obs = cfg.Modules.Obs || f.obs
-	opts.Pqs = cfg.Modules.Pqs || f.pqs
+	opts.Obs = flagOrYaml(cmd, "obs", f.obs, cfg.Modules.Obs)
+	opts.Pqs = flagOrYaml(cmd, "pqs", f.pqs, cfg.Modules.Pqs)
 	opts.MultiSync = cfg.MultiSync || f.multiSync
 	opts.NoResource = f.noLimit
 	opts.ExtraEnv = cfg.Env()
@@ -63,4 +59,23 @@ func resolveRepoRoot(cmd *cobra.Command) (string, error) {
 		return root, nil
 	}
 	return repo.FindRoot("")
+}
+
+func flagOrYaml(cmd *cobra.Command, name string, flagValue, yamlValue bool) bool {
+	if cmd.Flags().Changed(name) {
+		return flagValue
+	}
+	return yamlValue
+}
+
+func resolveYamlConfig(cmd *cobra.Command) (yamlconfig.Config, string, error) {
+	configPath, err := cmd.Flags().GetString("config")
+	if err != nil {
+		return yamlconfig.Config{}, "", err
+	}
+	repoRoot, err := cmd.Flags().GetString("repo-root")
+	if err != nil {
+		return yamlconfig.Config{}, "", err
+	}
+	return yamlconfig.Resolve(configPath, repoRoot)
 }

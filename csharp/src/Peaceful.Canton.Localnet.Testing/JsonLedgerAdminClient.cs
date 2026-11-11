@@ -14,7 +14,7 @@ namespace Peaceful.Canton.Localnet.Testing;
 /// <c>GET /v2/parties/participant-id</c> (<see cref="GetParticipantIdAsync"/>),
 /// <c>GET /v2/state/connected-synchronizers</c> (<see cref="GetConnectedSynchronizersAsync"/>
 /// and the app and global synchronizer id lookups built on it), and
-/// <c>GET /v2/packages/{package-id}</c> (<see cref="PackageExistsAsync"/>).
+/// <c>POST /v2/package-vetting/list</c> (<see cref="IsPackageVettedAsync"/>).
 /// DAR upload, party allocation and user binding live in <see cref="DarUploader"/>,
 /// <see cref="PartyAllocator"/> and <see cref="UserBuilder"/>.
 /// </summary>
@@ -73,9 +73,9 @@ public sealed class JsonLedgerAdminClient
         using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var body = await BoundedBody.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
             throw new JsonLedgerApiException(
-                $"GET v2/parties/participant-id returned {(int)response.StatusCode} {response.ReasonPhrase}: {body}",
+                $"GET v2/parties/participant-id returned {(int)response.StatusCode} {response.ReasonPhrase}: {BoundedBody.ForMessage(body)}",
                 response.StatusCode,
                 body);
         }
@@ -129,9 +129,9 @@ public sealed class JsonLedgerAdminClient
         using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var body = await BoundedBody.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
             throw new JsonLedgerApiException(
-                $"GET {requestUri} returned {(int)response.StatusCode} {response.ReasonPhrase}: {body}",
+                $"GET {requestUri} returned {(int)response.StatusCode} {response.ReasonPhrase}: {BoundedBody.ForMessage(body)}",
                 response.StatusCode,
                 body);
         }
@@ -170,10 +170,11 @@ public sealed class JsonLedgerAdminClient
 
     /// <summary>
     /// Returns the id of the connected synchronizer whose alias is
-    /// <see cref="AppSynchronizerAlias"/>. Throws if it is absent (multi-sync off).
+    /// <see cref="AppSynchronizerAlias"/>, scoped to <paramref name="party"/>
+    /// or participant-wide when it is <c>null</c> or empty. Throws if it is absent (multi-sync off).
     /// </summary>
     public async Task<string> GetAppSynchronizerIdAsync(
-        string party,
+        string? party = null,
         CancellationToken cancellationToken = default)
     {
         var synchronizers = await GetConnectedSynchronizersAsync(party, cancellationToken).ConfigureAwait(false);
@@ -216,42 +217,82 @@ public sealed class JsonLedgerAdminClient
     }
 
     /// <summary>
-    /// Checks whether the participant holds package <paramref name="packageId"/>,
-    /// via <c>GET /v2/packages/{package-id}</c>. Used by <see cref="DarUploader"/>
-    /// to read back and confirm a package the upload reported as already known.
-    /// Throws <see cref="JsonLedgerApiException"/> for any response other than
-    /// success (present) or 404 (absent).
+    /// Checks whether this participant has vetted <paramref name="packageId"/>,
+    /// via <c>POST /v2/package-vetting/list</c> filtered to the participant
+    /// (<see cref="GetParticipantIdAsync"/>) and, when given, to
+    /// <paramref name="synchronizerId"/>. Follows <c>nextPageToken</c> until a
+    /// match or the last page. Used by <see cref="DarUploader"/> to tell an
+    /// identical re-upload from a different package that shares the name and
+    /// version of a vetted one.
     /// </summary>
-    public async Task<bool> PackageExistsAsync(string packageId, CancellationToken cancellationToken = default)
+    /// <param name="packageId">Package id to look for.</param>
+    /// <param name="synchronizerId">Synchronizer whose topology state to read, or <c>null</c> for any.</param>
+    /// <param name="cancellationToken">Cancels the requests.</param>
+    /// <exception cref="JsonLedgerApiException">The participant returned a non-success status.</exception>
+    internal async Task<bool> IsPackageVettedAsync(
+        string packageId,
+        string? synchronizerId,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(packageId))
         {
             throw new ArgumentException("packageId must be non-empty.", nameof(packageId));
         }
 
+        var participantId = await GetParticipantIdAsync(cancellationToken).ConfigureAwait(false);
+        var pageToken = string.Empty;
+        do
+        {
+            var page = await PostVettingListAsync(packageId, participantId, synchronizerId, pageToken, cancellationToken).ConfigureAwait(false);
+            var vetted = page.VettedPackages?.Any(entry =>
+                string.Equals(entry.ParticipantId, participantId, StringComparison.Ordinal)
+                && entry.Packages?.Any(p => string.Equals(p.PackageId, packageId, StringComparison.Ordinal)) == true) == true;
+            if (vetted)
+            {
+                return true;
+            }
+            pageToken = page.NextPageToken ?? string.Empty;
+        }
+        while (pageToken.Length > 0);
+
+        return false;
+    }
+
+    private async Task<VettingListResponse> PostVettingListAsync(
+        string packageId,
+        string participantId,
+        string? synchronizerId,
+        string pageToken,
+        CancellationToken cancellationToken)
+    {
+        const string requestUri = "v2/package-vetting/list";
         var token = await _tokenProvider.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
-        var requestUri = $"v2/packages/{Uri.EscapeDataString(packageId)}";
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        using var request = new HttpRequestMessage(HttpMethod.Post, requestUri);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Content = JsonContent.Create(new VettingListRequest(
+            new PackageMetadataFilter(new[] { packageId }),
+            new TopologyStateFilter(
+                new[] { participantId },
+                synchronizerId is null ? null : new[] { synchronizerId }),
+            pageToken.Length == 0 ? null : pageToken));
 
-        _logger.LogDebug("GET {Uri}", new Uri(_httpClient.BaseAddress!, requestUri));
+        _logger.LogDebug("POST {Uri}", new Uri(_httpClient.BaseAddress!, requestUri));
 
         using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        if (response.IsSuccessStatusCode)
+        if (!response.IsSuccessStatusCode)
         {
-            return true;
-        }
-        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
-        {
-            return false;
+            var errorBody = await BoundedBody.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
+            throw new JsonLedgerApiException(
+                $"POST {requestUri} returned {(int)response.StatusCode} {response.ReasonPhrase}: {BoundedBody.ForMessage(errorBody)}",
+                response.StatusCode,
+                errorBody);
         }
 
         var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        throw new JsonLedgerApiException(
-            $"GET {requestUri} returned {(int)response.StatusCode} {response.ReasonPhrase}: {body}",
-            response.StatusCode,
-            body);
+
+        return System.Text.Json.JsonSerializer.Deserialize<VettingListResponse>(body)
+            ?? throw new JsonLedgerApiException($"POST {requestUri} returned an empty body.", response.StatusCode, body);
     }
 
     private sealed record ParticipantIdResponse(
@@ -259,6 +300,29 @@ public sealed class JsonLedgerAdminClient
 
     private sealed record ConnectedSynchronizersResponse(
         [property: JsonPropertyName("connectedSynchronizers")] IReadOnlyList<ConnectedSynchronizerDto> ConnectedSynchronizers);
+
+    private sealed record VettingListRequest(
+        [property: JsonPropertyName("packageMetadataFilter")] PackageMetadataFilter PackageMetadataFilter,
+        [property: JsonPropertyName("topologyStateFilter")] TopologyStateFilter TopologyStateFilter,
+        [property: JsonPropertyName("pageToken"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? PageToken);
+
+    private sealed record PackageMetadataFilter(
+        [property: JsonPropertyName("packageIds")] IReadOnlyList<string> PackageIds);
+
+    private sealed record TopologyStateFilter(
+        [property: JsonPropertyName("participantIds")] IReadOnlyList<string> ParticipantIds,
+        [property: JsonPropertyName("synchronizerIds"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? SynchronizerIds);
+
+    private sealed record VettingListResponse(
+        [property: JsonPropertyName("vettedPackages")] IReadOnlyList<VettedPackagesDto>? VettedPackages,
+        [property: JsonPropertyName("nextPageToken")] string? NextPageToken);
+
+    private sealed record VettedPackagesDto(
+        [property: JsonPropertyName("participantId")] string? ParticipantId,
+        [property: JsonPropertyName("packages")] IReadOnlyList<VettedPackageDto>? Packages);
+
+    private sealed record VettedPackageDto(
+        [property: JsonPropertyName("packageId")] string? PackageId);
 
     private sealed record ConnectedSynchronizerDto(
         [property: JsonPropertyName("synchronizerAlias")] string SynchronizerAlias,

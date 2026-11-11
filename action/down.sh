@@ -59,7 +59,7 @@ save_unhealthy_logs() {
   local unhealthy_table="$1" container
   mkdir -p "$diagnostics_dir"
   while IFS=$'\t' read -r container _; do
-    timeout 30 docker logs --tail "$unhealthy_log_lines" "$container" >"$diagnostics_dir/unhealthy-${container}.log" 2>&1 || true
+    timeout 30 docker logs --tail "$unhealthy_log_lines" "$container" 2>&1 | bash "$here/redact-secrets.sh" >"$diagnostics_dir/unhealthy-${container}.log" || true
   done <<<"$unhealthy_table"
   echo "unhealthy=true" >>"$GITHUB_OUTPUT"
 }

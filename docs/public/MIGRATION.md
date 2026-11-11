@@ -1,5 +1,33 @@
 # Migration guide
 
+## v0.10.0-1 → v0.10.1-1: fixture API changes
+
+The stack itself needs no volume wipe: Splice 0.10.1 keeps protocol version 37
+and the Daml SDK. The fixtures change in four ways that can break a build.
+
+- **Party allocation drops `displayName`.** Canton's JSON API ignores it. In
+  .NET, `PartyAllocator.AllocateAsync(string, string?, CancellationToken)`
+  becomes `AllocateAsync(string, CancellationToken)`, and the
+  `AllocateOnSynchronizerAsync`, `AllocateWithHintAsync`,
+  `AllocateWithHintOnSynchronizerAsync` overloads and
+  `LocalnetFixture` / `ValidatorFixture` `AllocatePartyAsync` and
+  `AllocatePartyOnSynchronizerAsync` lose the same argument. In Go,
+  `PartyAllocator.Allocate(ctx, prefix, displayName)` and
+  `AllocateParty(ctx, prefix, displayName)` become `Allocate(ctx, prefix)` and
+  `AllocateParty(ctx, prefix)`. Drop the argument at each call site.
+- **`UploadAndVerifyAsync` is gone.** `DarUploader.UploadAndVerifyAsync`,
+  `LocalnetFixture.UploadAndVerifyDarAsync`,
+  `ValidatorFixture.UploadAndVerifyDarAsync` and
+  `JsonLedgerAdminClient.PackageExistsAsync` are removed. Call `UploadAsync`,
+  which now does the verification.
+- **A DAR whose name and version Canton already vetted under another package
+  id fails.** The upload throws `DarNotVettedException` (.NET) or returns
+  `*DarNotVettedError` (Go) instead of reporting success.
+- **`LocalnetEndpoints` gains `GrpcLedgerApi`.** The .NET record takes it after
+  `JsonLedgerApi` in its positional constructor, so a call that builds one
+  positionally needs the new argument. Named construction and the Go
+  `Endpoints` struct are unaffected.
+
 ## v0.9.4-1 → v0.10.0-1: protocol version 37, unprivileged nginx
 
 Splice 0.10.0 bootstraps the global synchronizer on protocol version 37 instead
@@ -132,7 +160,7 @@ are unchanged.
 > The same release also adds two brand-new slots `c-validator-1`
 > (prefix `13`) and `d-validator-1` (prefix `14`); they don't appear in
 > the rename table above because there is no "before" form for them.
-> See [the README port table](../../README.md#quickstart) for
+> See [the quickstart port table](quickstart.md#local-quickstart) for
 > the full 5-slot picture.
 
 ### Quick-find table for connection strings

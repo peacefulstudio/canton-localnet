@@ -413,19 +413,55 @@ canton_localnet_security_note() {
   echo "Exported secrets, JWTs and PQS connection strings are masked in logs and are never listed here; never print them in a later step."
 }
 
-canton_localnet_unhealthy_containers() {
-  local status_table line state
-  status_table="$(timeout 30 make -C "$1" status-all 2>/dev/null)" || return 0
+canton_localnet_container_problem() {
+  local line="$1" include_unsettled="$2"
+  if [[ "$line" =~ \(unhealthy\) ]]; then
+    echo "unhealthy"
+  elif [[ "$line" =~ [Ee]xited\ \(([1-9][0-9]*)\) ]]; then
+    echo "exited ${BASH_REMATCH[1]}"
+  elif [ "$include_unsettled" = "true" ] && [[ "$line" =~ \(health:\ starting\) ]]; then
+    echo "starting"
+  elif [ "$include_unsettled" = "true" ] && [[ "$line" =~ Restarting ]]; then
+    echo "restarting"
+  fi
+}
+
+canton_localnet_problem_containers() {
+  local repo_root="$1" include_unsettled="$2" status_table line state
+  status_table="$(timeout 30 make -C "$repo_root" status-all 2>/dev/null)" || return 0
   while IFS= read -r line; do
-    if [[ "$line" =~ \(unhealthy\) ]]; then
-      state="unhealthy"
-    elif [[ "$line" =~ [Ee]xited\ \(([1-9][0-9]*)\) ]]; then
-      state="exited ${BASH_REMATCH[1]}"
-    else
-      continue
-    fi
+    state="$(canton_localnet_container_problem "$line" "$include_unsettled")"
+    [ -n "$state" ] || continue
     printf '%s\t%s\n' "${line%%[[:space:]]*}" "$state"
   done <<<"$status_table"
+}
+
+canton_localnet_unhealthy_containers() {
+  canton_localnet_problem_containers "$1" false
+}
+
+canton_localnet_stalled_containers() {
+  canton_localnet_problem_containers "$1" true
+}
+
+canton_localnet_print_stalled_container_logs() {
+  local repo_root="$1" log_lines="$2" max_containers="$3" stalled_table container state shown=0 names=""
+  stalled_table="$(canton_localnet_stalled_containers "$repo_root")"
+  [ -n "$stalled_table" ] || return 0
+  while IFS=$'\t' read -r container state; do
+    names="${names:+${names}, }${container} (${state})"
+  done <<<"$stalled_table"
+  canton_localnet_log_error "canton-localnet action: containers not healthy when the boot failed: ${names}"
+  while IFS=$'\t' read -r container state; do
+    if [ "$shown" -ge "$max_containers" ]; then
+      echo "Logs of the remaining containers are in the diagnostics artifact."
+      break
+    fi
+    echo "::group::Last ${log_lines} log lines of ${container} (${state})"
+    timeout 30 docker logs --tail "$log_lines" "$container" 2>&1 | bash "$(dirname "${BASH_SOURCE[0]}")/redact-secrets.sh" || true
+    echo "::endgroup::"
+    shown=$((shown + 1))
+  done <<<"$stalled_table"
 }
 
 canton_localnet_render_teardown() {

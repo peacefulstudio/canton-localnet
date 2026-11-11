@@ -78,8 +78,8 @@ served on `localhost:3030`. The collector publishes OTLP on `HOST_BIND_IP`
 in Grafana under Explore, Tempo. **Off** in the repo's shipped config, under
 `make up`, and in CI (on only in the no-config fallback). Toggle it with
 `modules.obs` in
-`canton-localnet.yaml`, or force-enable it for a single run with the `--obs`
-flag on `canton-localnet up`.
+`canton-localnet.yaml`, or override it for a single run with `--obs` or
+`--obs=false` on `canton-localnet up`.
 
 ### Participant Query Store (PQS)
 
@@ -87,11 +87,12 @@ Adds a queryable projection of the ledger. **Off** in the repo's shipped config,
 under `make up`, and in CI (on only in the no-config fallback). It is brought up
 for each of `a-validator-1`, `b-validator-1` and `c-validator-1` that is
 enabled; with PQS on and none of them enabled, no Scribe starts.
-Toggle it with `modules.pqs` in `canton-localnet.yaml`, or force-enable it for a
-single run with the `--pqs` flag.
+Toggle it with `modules.pqs` in `canton-localnet.yaml`, or override it for a
+single run with `--pqs` or `--pqs=false`.
 
 Under Make, choose the slots with `PQS_SLOTS`, a comma-separated subset of `a`,
-`b`, `c` and `sv` (`PQS=true` means `PQS_SLOTS=a`):
+`b`, `c` and `sv`. `PQS=true` adds the slots the CLI's `--pqs` starts (`a`, `b`
+and `c`), leaving out a slot whose `<SLOT>_VALIDATOR_1_PROFILE` is `off`:
 
 ```bash
 make up PQS_SLOTS=a,c

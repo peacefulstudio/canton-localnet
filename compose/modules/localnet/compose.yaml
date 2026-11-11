@@ -89,12 +89,6 @@ services:
       - ${LOCALNET_DIR}/conf/nginx/sv-validator-1.conf:/etc/nginx/templates/sv-validator-1.c${SV_VALIDATOR_1_PROFILE}f.template
       - ${LOCALNET_DIR}/conf/nginx/d-validator-1.conf:/etc/nginx/templates/d-validator-1.c${D_VALIDATOR_1_PROFILE}f.template
       - ${LOCALNET_DIR}/conf/nginx/swagger-ui:/etc/nginx/includes
-    ports:
-      - "${HOST_BIND_IP:-127.0.0.1}:${SV_VALIDATOR_1_UI_PORT}:${SV_VALIDATOR_1_UI_PORT}"
-      - "${HOST_BIND_IP:-127.0.0.1}:${A_VALIDATOR_1_UI_PORT}:${A_VALIDATOR_1_UI_PORT}"
-      - "${HOST_BIND_IP:-127.0.0.1}:${B_VALIDATOR_1_UI_PORT}:${B_VALIDATOR_1_UI_PORT}"
-      - "${HOST_BIND_IP:-127.0.0.1}:${C_VALIDATOR_1_UI_PORT}:${C_VALIDATOR_1_UI_PORT}"
-      - "${HOST_BIND_IP:-127.0.0.1}:${D_VALIDATOR_1_UI_PORT}:${D_VALIDATOR_1_UI_PORT}"
     depends_on:
       wallet-web-ui-sv-validator-1:
         condition: service_healthy
@@ -140,22 +134,6 @@ services:
       - ${LOCALNET_DIR}/conf/canton/c-validator-1:/app/c-validator-1/${C_VALIDATOR_1_PROFILE}
       - ${LOCALNET_DIR}/conf/canton/sv-validator-1:/app/sv-validator-1/${SV_VALIDATOR_1_PROFILE}
       - ${LOCALNET_DIR}/conf/canton/d-validator-1:/app/d-validator-1/${D_VALIDATOR_1_PROFILE}
-    ports:
-      - "${HOST_BIND_IP:-127.0.0.1}:${TEST_PORT-10$PARTICIPANT_LEDGER_API_PORT_SUFFIX}:10${PARTICIPANT_LEDGER_API_PORT_SUFFIX}"
-      - "${HOST_BIND_IP:-127.0.0.1}:${TEST_PORT-10$PARTICIPANT_ADMIN_API_PORT_SUFFIX}:10${PARTICIPANT_ADMIN_API_PORT_SUFFIX}"
-      - "${HOST_BIND_IP:-127.0.0.1}:${TEST_PORT-10$PARTICIPANT_JSON_API_PORT_SUFFIX}:10${PARTICIPANT_JSON_API_PORT_SUFFIX}"
-      - "${HOST_BIND_IP:-127.0.0.1}:${TEST_PORT-11$PARTICIPANT_LEDGER_API_PORT_SUFFIX}:11${PARTICIPANT_LEDGER_API_PORT_SUFFIX}"
-      - "${HOST_BIND_IP:-127.0.0.1}:${TEST_PORT-11$PARTICIPANT_ADMIN_API_PORT_SUFFIX}:11${PARTICIPANT_ADMIN_API_PORT_SUFFIX}"
-      - "${HOST_BIND_IP:-127.0.0.1}:${TEST_PORT-11$PARTICIPANT_JSON_API_PORT_SUFFIX}:11${PARTICIPANT_JSON_API_PORT_SUFFIX}"
-      - "${HOST_BIND_IP:-127.0.0.1}:${TEST_PORT-12$PARTICIPANT_LEDGER_API_PORT_SUFFIX}:12${PARTICIPANT_LEDGER_API_PORT_SUFFIX}"
-      - "${HOST_BIND_IP:-127.0.0.1}:${TEST_PORT-12$PARTICIPANT_ADMIN_API_PORT_SUFFIX}:12${PARTICIPANT_ADMIN_API_PORT_SUFFIX}"
-      - "${HOST_BIND_IP:-127.0.0.1}:${TEST_PORT-12$PARTICIPANT_JSON_API_PORT_SUFFIX}:12${PARTICIPANT_JSON_API_PORT_SUFFIX}"
-      - "${HOST_BIND_IP:-127.0.0.1}:${TEST_PORT-13$PARTICIPANT_LEDGER_API_PORT_SUFFIX}:13${PARTICIPANT_LEDGER_API_PORT_SUFFIX}"
-      - "${HOST_BIND_IP:-127.0.0.1}:${TEST_PORT-13$PARTICIPANT_ADMIN_API_PORT_SUFFIX}:13${PARTICIPANT_ADMIN_API_PORT_SUFFIX}"
-      - "${HOST_BIND_IP:-127.0.0.1}:${TEST_PORT-13$PARTICIPANT_JSON_API_PORT_SUFFIX}:13${PARTICIPANT_JSON_API_PORT_SUFFIX}"
-      - "${HOST_BIND_IP:-127.0.0.1}:${TEST_PORT-14$PARTICIPANT_LEDGER_API_PORT_SUFFIX}:14${PARTICIPANT_LEDGER_API_PORT_SUFFIX}"
-      - "${HOST_BIND_IP:-127.0.0.1}:${TEST_PORT-14$PARTICIPANT_ADMIN_API_PORT_SUFFIX}:14${PARTICIPANT_ADMIN_API_PORT_SUFFIX}"
-      - "${HOST_BIND_IP:-127.0.0.1}:${TEST_PORT-14$PARTICIPANT_JSON_API_PORT_SUFFIX}:14${PARTICIPANT_JSON_API_PORT_SUFFIX}"
     healthcheck:
       test: ["CMD", "bash", "/app/health-check.sh"]
       interval: 20s
@@ -204,12 +182,6 @@ services:
       timeout: 40s
       retries: 1000
       start_period: 600s
-    ports:
-      - "${HOST_BIND_IP:-127.0.0.1}:${TEST_PORT-10$VALIDATOR_ADMIN_API_PORT_SUFFIX}:10${VALIDATOR_ADMIN_API_PORT_SUFFIX}"
-      - "${HOST_BIND_IP:-127.0.0.1}:${TEST_PORT-11$VALIDATOR_ADMIN_API_PORT_SUFFIX}:11${VALIDATOR_ADMIN_API_PORT_SUFFIX}"
-      - "${HOST_BIND_IP:-127.0.0.1}:${TEST_PORT-12$VALIDATOR_ADMIN_API_PORT_SUFFIX}:12${VALIDATOR_ADMIN_API_PORT_SUFFIX}"
-      - "${HOST_BIND_IP:-127.0.0.1}:${TEST_PORT-13$VALIDATOR_ADMIN_API_PORT_SUFFIX}:13${VALIDATOR_ADMIN_API_PORT_SUFFIX}"
-      - "${HOST_BIND_IP:-127.0.0.1}:${TEST_PORT-14$VALIDATOR_ADMIN_API_PORT_SUFFIX}:14${VALIDATOR_ADMIN_API_PORT_SUFFIX}"
     depends_on:
       canton:
         condition: service_healthy
@@ -269,7 +241,7 @@ services:
 
   multi-sync-ready:
     container_name: multi-sync-ready
-    image: busybox:1.38.0
+    image: busybox:1.38.0@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4
     depends_on:
       multi-sync-startup:
         condition: service_completed_successfully
@@ -277,7 +249,7 @@ services:
       - multi-sync
 
   swagger-ui:
-    image: swaggerapi/swagger-ui
+    image: swaggerapi/swagger-ui:v5.34.1@sha256:59ee9021a8884437c7fd8aae79e0a46ee6b6dd3afd7f24a587c4501585fde53b
     container_name: swagger-ui
     environment:
       URLS: '[{"url": "http://canton.localhost:${A_VALIDATOR_1_UI_PORT}/docs/openapi", "name": "a-validator-1"},

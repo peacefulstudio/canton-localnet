@@ -3,8 +3,8 @@
 
 # GitHub Actions OIDC role for Terraform state
 
-Bootstrap config that lets the `hetzner-localnet-schedule` workflow reach the
-Terraform state bucket **without long-lived AWS keys**. It creates:
+Bootstrap config that lets the maintainers' scheduled Hetzner LocalNet workflow
+(not shipped in this repository) reach the Terraform state bucket **without long-lived AWS keys**. It creates:
 
 - the account-wide GitHub Actions OIDC provider
   (`token.actions.githubusercontent.com`), and
@@ -21,29 +21,32 @@ live inside the state it manages. It keeps its own state at
 
 This config also manages the GitHub `localnet-infra` deployment environment, so
 it needs a GitHub token with admin rights on the repo in addition to admin AWS
-credentials:
+credentials. `github_repo` (`owner/repo`) has no default: name the repository
+whose `hetzner-localnet-schedule` workflow runs, and pass the same value on
+every apply. A default would re-point the trust policy at another repository
+on the next apply and lock the scheduled lane out.
 
 ```bash
 export GITHUB_TOKEN="$(gh auth token)"
 terraform -chdir=terraform/github-oidc init
-terraform -chdir=terraform/github-oidc apply
+terraform -chdir=terraform/github-oidc apply -var github_repo=<owner/repo>
 ```
 
 Then publish the role ARN to the scheduler workflow:
 
 ```bash
-gh secret set AWS_STATE_ROLE_ARN -R peacefulstudio/canton-localnet \
+gh secret set AWS_STATE_ROLE_ARN -R <owner/repo> \
   --body "$(terraform -chdir=terraform/github-oidc output -raw role_arn)"
 ```
 
 ## Scope
 
-The role can only be assumed by the `hetzner-localnet-schedule` workflow running
+The role can only be assumed by a workflow of this repository running
 on the `dev` branch through the `localnet-infra` environment. Three independent
 gates enforce this:
 
 - **IAM `sub` claim** must equal
-  `repo:peacefulstudio/canton-localnet:environment:localnet-infra` —
+  `repo:<github_repo>:environment:localnet-infra` —
   the job must run through the `localnet-infra` environment.
 - **IAM `ref` claim** must equal `refs/heads/dev` — the run must be on `dev`.
   (`StringEquals` is fail-closed: a missing/absent claim denies the assume.)

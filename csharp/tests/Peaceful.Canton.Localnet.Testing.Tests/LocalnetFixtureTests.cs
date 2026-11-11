@@ -50,6 +50,54 @@ public class LocalnetFixtureTests
         Assert.Contains(logs.Messages(AdminClientCategory), m => m.EndsWith(DiscoveryLogMessageSuffix, StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task GetConnectedSynchronizersAsync_without_a_party_asks_for_the_participant_wide_list()
+    {
+        using var ledger = LoopbackLedger.Start();
+        await using var fixture = LocalnetFixture.FromEndpoints(ledger.Endpoints);
+
+        var synchronizers = await fixture.GetConnectedSynchronizersAsync();
+
+        Assert.Equal(["global", "app-synchronizer"], synchronizers.Select(s => s.Alias));
+        Assert.Equal(["/v2/state/connected-synchronizers"], ledger.RequestedPaths.Where(p => p.Contains("connected-synchronizers")));
+    }
+
+    [Fact]
+    public async Task GetAppSynchronizerIdAsync_without_a_party_asks_for_the_participant_wide_list()
+    {
+        using var ledger = LoopbackLedger.Start();
+        await using var fixture = LocalnetFixture.FromEndpoints(ledger.Endpoints);
+
+        var id = await fixture.GetAppSynchronizerIdAsync();
+
+        Assert.Equal("app-synchronizer::122b", id);
+        Assert.Equal(["/v2/state/connected-synchronizers"], ledger.RequestedPaths.Where(p => p.Contains("connected-synchronizers")));
+    }
+
+    [Fact]
+    public async Task ValidatorFixtureGetConnectedSynchronizersAsync_without_a_party_asks_for_the_participant_wide_list()
+    {
+        using var ledger = LoopbackLedger.Start();
+        await using var fixture = LocalnetFixture.FromEndpoints(ledger.Endpoints);
+
+        var synchronizers = await fixture.Validator(LocalnetProfile.AValidator1).GetConnectedSynchronizersAsync();
+
+        Assert.Equal(["global", "app-synchronizer"], synchronizers.Select(s => s.Alias));
+        Assert.Equal(["/v2/state/connected-synchronizers"], ledger.RequestedPaths.Where(p => p.Contains("connected-synchronizers")));
+    }
+
+    [Fact]
+    public async Task ValidatorFixtureGetAppSynchronizerIdAsync_without_a_party_asks_for_the_participant_wide_list()
+    {
+        using var ledger = LoopbackLedger.Start();
+        await using var fixture = LocalnetFixture.FromEndpoints(ledger.Endpoints);
+
+        var id = await fixture.Validator(LocalnetProfile.AValidator1).GetAppSynchronizerIdAsync();
+
+        Assert.Equal("app-synchronizer::122b", id);
+        Assert.Equal(["/v2/state/connected-synchronizers"], ledger.RequestedPaths.Where(p => p.Contains("connected-synchronizers")));
+    }
+
     private sealed class RecordingLoggerProvider : ILoggerProvider
     {
         private readonly ConcurrentQueue<(string Category, string Message)> _entries = new();
@@ -84,6 +132,7 @@ public class LocalnetFixtureTests
 
         private readonly HttpListener _listener = new();
         private readonly Task _serving;
+        private readonly ConcurrentQueue<string> _requestedPaths = new();
 
         private LoopbackLedger(int port)
         {
@@ -93,6 +142,7 @@ public class LocalnetFixtureTests
             _serving = Task.Run(ServeAsync);
             Endpoints = new LocalnetEndpoints(
                 JsonLedgerApi: new Uri(root),
+                GrpcLedgerApi: new Uri("http://127.0.0.1:1/"),
                 TokenEndpoint: new Uri(root + "token"),
                 Audience: "aud",
                 ClientId: "id",
@@ -102,6 +152,8 @@ public class LocalnetFixtureTests
         }
 
         public LocalnetEndpoints Endpoints { get; }
+
+        public IReadOnlyCollection<string> RequestedPaths => _requestedPaths;
 
         public static LoopbackLedger Start()
         {
@@ -133,11 +185,12 @@ public class LocalnetFixtureTests
                 }
 
                 var path = context.Request.Url!.AbsolutePath;
+                _requestedPaths.Enqueue(context.Request.Url.PathAndQuery);
                 var body = path switch
                 {
                     "/token" => """{"access_token":"tok","token_type":"Bearer","expires_in":3600}""",
                     "/v2/state/connected-synchronizers" =>
-                        $$"""{"connectedSynchronizers":[{"synchronizerAlias":"global","synchronizerId":"{{SynchronizerId}}"}]}""",
+                        $$"""{"connectedSynchronizers":[{"synchronizerAlias":"global","synchronizerId":"{{SynchronizerId}}"},{"synchronizerAlias":"app-synchronizer","synchronizerId":"app-synchronizer::122b"}]}""",
                     "/v2/parties" => """{"partyDetails":{"party":"globex-abc::ns","isLocal":true}}""",
                     _ => "{}",
                 };

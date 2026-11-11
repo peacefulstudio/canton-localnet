@@ -4,6 +4,9 @@
 
 set -eo pipefail
 
+CURL_MAX_TIME_SECONDS="${CURL_MAX_TIME_SECONDS:-30}"
+CURL_UPLOAD_MAX_TIME_SECONDS="${CURL_UPLOAD_MAX_TIME_SECONDS:-300}"
+
 generate_jwt() {
   local sub="$1"
   local aud="$2"
@@ -29,12 +32,12 @@ get_admin_token() {
 
   echo "get_admin_token $clientId $tokenUrl" >&2
 
-  curl -f -s -S "${tokenUrl}" \
+  curl -f -s -S --max-time "${CURL_MAX_TIME_SECONDS}" "${tokenUrl}" \
     -H 'Content-Type: application/x-www-form-urlencoded' \
-    -d 'client_id='${clientId} \
-    -d 'client_secret='${secret} \
-    -d 'grant_type=client_credentials' \
-    -d 'scope=openid' | jq -r .access_token
+    --data-urlencode "client_id=${clientId}" \
+    --data-urlencode "client_secret=${secret}" \
+    --data-urlencode 'grant_type=client_credentials' \
+    --data-urlencode 'scope=openid' | jq -r .access_token
 }
 
 # Idempotently adds a realm's clients and their service-account users
@@ -63,12 +66,12 @@ migrate_realm_clients() {
   # KEYCLOAK_ADMIN_PASSWORD) — a public, well-known credential valid only
   # against an ephemeral local Keycloak, never a production deployment.
   local adminToken
-  adminToken=$(curl -f -s -S "${masterTokenUrl}" \
+  adminToken=$(curl -f -s -S --max-time "${CURL_MAX_TIME_SECONDS}" "${masterTokenUrl}" \
     -H 'Content-Type: application/x-www-form-urlencoded' \
-    -d 'client_id=admin-cli' \
-    -d 'username=admin' \
-    -d 'password=admin' \
-    -d 'grant_type=password' | jq -r .access_token)
+    --data-urlencode 'client_id=admin-cli' \
+    --data-urlencode 'username=admin' \
+    --data-urlencode 'password=admin' \
+    --data-urlencode 'grant_type=password' | jq -r .access_token)
 
   local payload
   payload=$(jq -n \
@@ -81,7 +84,7 @@ migrate_realm_clients() {
       users: [$usersDoc[0].users[] | select((.serviceAccountClientId // "") | startswith($prefix))]
     }')
 
-  curl -f -s -S -X POST "${adminApiUrl}/admin/realms/${realm}/partialImport" \
+  curl -f -s -S --max-time "${CURL_MAX_TIME_SECONDS}" -X POST "${adminApiUrl}/admin/realms/${realm}/partialImport" \
     -H "Authorization: Bearer ${adminToken}" \
     -H 'Content-Type: application/json' \
     -d "${payload}" > /dev/null
@@ -95,13 +98,13 @@ get_user_token() {
 
   echo "get_user_token $user $clientId $tokenUrl" >&2
 
-  curl -f -s -S "${tokenUrl}" \
+  curl -f -s -S --max-time "${CURL_MAX_TIME_SECONDS}" "${tokenUrl}" \
     -H 'Content-Type: application/x-www-form-urlencoded' \
-    -d 'client_id='${clientId} \
-    -d 'username='${user} \
-    -d 'password='${password} \
-    -d 'grant_type=password' \
-    -d 'scope=openid' | jq -r .access_token
+    --data-urlencode "client_id=${clientId}" \
+    --data-urlencode "username=${user}" \
+    --data-urlencode "password=${password}" \
+    --data-urlencode 'grant_type=password' \
+    --data-urlencode 'scope=openid' | jq -r .access_token
 }
 
 create_user() {
@@ -271,7 +274,7 @@ upload_dar_to_synchronizer() {
   local synchronizerId=$4
 
   local response
-  response=$(curl -s -S -w "\n%{http_code}" "http://$participant/v2/packages?synchronizerId=$synchronizerId" \
+  response=$(curl -s -S --max-time "${CURL_UPLOAD_MAX_TIME_SECONDS}" -w "\n%{http_code}" "http://$participant/v2/packages?synchronizerId=$synchronizerId" \
     -H "Authorization: Bearer $token" \
     -H "Content-Type: application/octet-stream" \
     --data-binary @"$file")
@@ -331,7 +334,7 @@ curl_check() {
     echo "${args[@]}" >&2
   fi
 
-  curlArgs=(-s -S -w "\n%{http_code}" "$url")
+  curlArgs=(-s -S --max-time "${CURL_MAX_TIME_SECONDS}" -w "\n%{http_code}" "$url")
   if [ -n "$token" ]; then
     curlArgs+=(-H "Authorization: Bearer $token")
   fi
@@ -362,7 +365,7 @@ curl_status_code() {
     echo "${args[@]}" >&2
   fi
 
-  response=$(curl -s -S -w "\n%{http_code}" "$url" \
+  response=$(curl -s -S --max-time "${CURL_MAX_TIME_SECONDS}" -w "\n%{http_code}" "$url" \
       -H "Authorization: Bearer $token" \
       -H "Content-Type: $contentType" \
       "${args[@]}"

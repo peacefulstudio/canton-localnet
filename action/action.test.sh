@@ -6,9 +6,7 @@
 # parsing, and the resolve-cli/down/diagnose failure branches — run with a
 # stub `canton-localnet` on PATH or no daemon at all, never a real LocalNet
 # boot. This is action-selftest.yaml's T1 job: it proves the shell logic
-# without paying for a multi-minute compose boot, following the same
-# plain-bash-test convention as scripts/gitpublic-paths.test.sh (this repo
-# has no bats dependency).
+# without paying for a multi-minute compose boot.
 #
 # Usage: action/action.test.sh
 
@@ -175,6 +173,85 @@ set -e
 assert_status "resolve-cli: cli: release with a non-tag ref fails closed" "1" "$status"
 assert_contains "resolve-cli: cli: release error names the fix" "$(cat /tmp/resolve-cli-release.log)" "cli: source"
 
+## resolve-cli.sh cli: release bounds its downloads and verifies the build attestation
+
+make_release_stubs() {
+  local stub_dir="$1" gh_exit="$2"
+  mkdir -p "$stub_dir/bin"
+  cat >"$stub_dir/bin/uname" <<'STUB'
+#!/usr/bin/env bash
+echo x86_64
+STUB
+  cat >"$stub_dir/bin/sha256sum" <<'STUB'
+#!/usr/bin/env bash
+exec shasum -a 256 "$@"
+STUB
+  cat >"$stub_dir/bin/curl" <<'STUB'
+#!/usr/bin/env bash
+echo "$*" >>"$STUB_DIR/curl.log"
+out=""
+url=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    http*) url="$1"; shift ;;
+    *) shift ;;
+  esac
+done
+case "$url" in
+  */checksums.txt) cp "$STUB_DIR/checksums.txt" "$out" ;;
+  *) cp "$STUB_DIR/asset" "$out" ;;
+esac
+STUB
+  cat >"$stub_dir/bin/gh" <<STUB
+#!/usr/bin/env bash
+echo "\$*" >>"\$STUB_DIR/gh.log"
+exit $gh_exit
+STUB
+  chmod +x "$stub_dir"/bin/*
+  printf '#!/usr/bin/env bash\necho canton-localnet 0.10.0-1\n' >"$stub_dir/asset"
+  local digest
+  digest="$(shasum -a 256 "$stub_dir/asset" | cut -d' ' -f1)"
+  echo "${digest}  ./canton-localnet-0.10.0-1-linux-amd64" >"$stub_dir/checksums.txt"
+}
+
+run_release_resolve() {
+  local stub_dir="$1"
+  RUNNER_TEMP="$(mktemp -d)"
+  export RUNNER_TEMP
+  set +e
+  STUB_DIR="$stub_dir" PATH="$stub_dir/bin:$PATH" CLI_MODE=release ACTION_PATH="$here/.." ACTION_REF="v0.10.0-1" \
+    GITHUB_OUTPUT="$(mktemp)" GITHUB_PATH="$(mktemp)" \
+    bash "$here/resolve-cli.sh" >"$stub_dir/resolve.log" 2>&1
+  release_status=$?
+  set -e
+}
+
+attested_dir="$(mktemp -d)"
+make_release_stubs "$attested_dir" 0
+run_release_resolve "$attested_dir"
+assert_status "resolve-cli: cli: release with a valid checksum and attestation succeeds" "0" "$release_status"
+assert_eq "resolve-cli: cli: release bounds both downloads with --max-time" "2" \
+  "$(grep -c -- '--max-time 120' "$attested_dir/curl.log")"
+assert_contains "resolve-cli: cli: release verifies the attestation against the release repo and workflow" \
+  "$(cat "$attested_dir/gh.log")" \
+  "attestation verify $RUNNER_TEMP/canton-localnet/release-download/canton-localnet-0.10.0-1-linux-amd64 --repo peacefulstudio/canton-localnet --signer-workflow peacefulstudio/canton-localnet/.github/workflows/release.yml"
+rm -rf "$attested_dir"
+
+unattested_dir="$(mktemp -d)"
+make_release_stubs "$unattested_dir" 1
+run_release_resolve "$unattested_dir"
+assert_status "resolve-cli: cli: release with a failing attestation check fails closed" "1" "$release_status"
+assert_contains "resolve-cli: cli: release names the attestation failure" "$(cat "$unattested_dir/resolve.log")" "attestation"
+if [ -e "$RUNNER_TEMP/canton-localnet/bin/canton-localnet" ]; then
+  echo "FAIL: resolve-cli: cli: release installed a binary whose attestation failed"
+  failures=$((failures + 1))
+else
+  echo "ok: resolve-cli: cli: release installs nothing when the attestation fails"
+fi
+tests_run=$((tests_run + 1))
+rm -rf "$unattested_dir"
+
 ## down.sh (STRICT=true) with no saved boot state fails closed
 
 RUNNER_TEMP="$(mktemp -d)"
@@ -242,6 +319,123 @@ else
   echo "ok: diagnose.sh output carries no secret-bearing file's contents"
 fi
 tests_run=$((tests_run + 1))
+
+## redact-secrets.sh scrubs Bearer tokens, JWTs, secret assignments and the job's own secret values from a log stream
+
+redacted="$(printf '%s\n' \
+  'GET /v2/users Authorization: Bearer abc123.def-456_ghi' \
+  '{"Authorization":"Bearer opaque-token-value"}' \
+  'token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1In0.c2lnbmF0dXJl end' \
+  'A_VALIDATOR_1_CLIENT_SECRET=hunter2hunter2 started' \
+  'POSTGRES_PASSWORD: s3cretpw ready' \
+  'curl -d client_secret=abcdef&grant_type=client_credentials' \
+  'inline LITERAL-JOB-SECRET-77 leaks' \
+  'dial postgresql://pqs-a-validator-1-reader:p%40ss%3Aw0rd@localhost:5432/pqs-a-validator-1 failed' \
+  'redis://cache:6379 and https://example.com/a:b are not userinfo' \
+  '{"clientSecret":"camelCaseSecretValue","clientId":"app"}' \
+  'plain line stays untouched' |
+  DEPLOY_API_TOKEN="LITERAL-JOB-SECRET-77" bash "$here/redact-secrets.sh")"
+assert_eq "redact-secrets.sh: Bearer tokens, JWTs, secret assignments, URI userinfo passwords, camelCase clientSecret, and env secret values" \
+  'GET /v2/users Authorization: Bearer ***
+{"Authorization":"Bearer ***"}
+token *** end
+A_VALIDATOR_1_CLIENT_SECRET=*** started
+POSTGRES_PASSWORD: *** ready
+curl -d client_secret=***&grant_type=client_credentials
+inline *** leaks
+dial postgresql://pqs-a-validator-1-reader:***@localhost:5432/pqs-a-validator-1 failed
+redis://cache:6379 and https://example.com/a:b are not userinfo
+{"clientSecret":"***","clientId":"app"}
+plain line stays untouched' "$redacted"
+
+## diagnose.sh redacts the compose logs it uploads
+
+diag_dir="$(mktemp -d)"
+cat >"$diag_dir/make" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  *logs-recent*) echo 'splice | Authorization: Bearer LEAKED-DIAGNOSTIC-TOKEN-9z' ;;
+  *) echo "stub make $*" ;;
+esac
+EOF
+cat >"$diag_dir/timeout" <<'EOF'
+#!/usr/bin/env bash
+shift
+exec "$@"
+EOF
+cat >"$diag_dir/docker" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$diag_dir/make" "$diag_dir/timeout" "$diag_dir/docker"
+diag_runner_temp="$(mktemp -d)"
+mkdir -p "$diag_runner_temp/canton-localnet"
+echo "CANTON_LOCALNET_ACTION_REPO_ROOT=$diag_dir" >"$diag_runner_temp/canton-localnet/state.env"
+set +e
+PATH="$diag_dir:$PATH" RUNNER_TEMP="$diag_runner_temp" bash "$here/diagnose.sh" >/dev/null 2>&1
+status=$?
+set -e
+assert_status "diagnose.sh: collects diagnostics against a stub make" "0" "$status"
+assert_eq "diagnose.sh: the uploaded compose logs carry no Bearer token" \
+  "splice | Authorization: Bearer ***" "$(cat "$diag_runner_temp/canton-localnet/diagnostics/compose-logs.txt")"
+bash "$here/host-diagnostics.sh" stop-sampler "$diag_runner_temp/canton-localnet/memory-samples.txt"
+rm -rf "$diag_dir" "$diag_runner_temp"
+
+## diagnose.sh prints the stalled containers and their redacted log tails to the step log
+
+stall_dir="$(mktemp -d)"
+cat >"$stall_dir/make" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  *status-all*)
+    printf 'NAME  IMAGE  SERVICE  STATUS\n'
+    printf 'sv-app  splice  sv-app  Up 5 minutes (healthy)\n'
+    printf 'sv-validator_backend  splice  sv-validator_backend  Up 9 minutes (health: starting)\n'
+    ;;
+  *) echo "stub make $*" ;;
+esac
+EOF
+cat >"$stall_dir/timeout" <<'EOF'
+#!/usr/bin/env bash
+shift
+exec "$@"
+EOF
+cat >"$stall_dir/docker" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = "logs" ]; then
+  echo "tail-of-$4 Task initial health check did not complete within 1 minute"
+  echo "Authorization: Bearer LEAKED-STEP-LOG-TOKEN-7q"
+fi
+exit 0
+EOF
+chmod +x "$stall_dir/make" "$stall_dir/timeout" "$stall_dir/docker"
+stall_runner_temp="$(mktemp -d)"
+mkdir -p "$stall_runner_temp/canton-localnet"
+echo "CANTON_LOCALNET_ACTION_REPO_ROOT=$stall_dir" >"$stall_runner_temp/canton-localnet/state.env"
+set +e
+stall_out="$(PATH="$stall_dir:$PATH" RUNNER_TEMP="$stall_runner_temp" bash "$here/diagnose.sh" 2>&1)"
+status=$?
+set -e
+assert_status "diagnose.sh (stalled node): still exits 0" "0" "$status"
+assert_contains "diagnose.sh (stalled node): the step log names the container and its state" "$stall_out" "sv-validator_backend (starting)"
+assert_contains "diagnose.sh (stalled node): the step log carries the container's log tail" "$stall_out" "tail-of-sv-validator_backend Task initial health check did not complete within 1 minute"
+assert_contains "diagnose.sh (stalled node): the log tail is redacted" "$stall_out" "Authorization: Bearer ***"
+if [[ "$stall_out" == *LEAKED-STEP-LOG-TOKEN-7q* ]]; then
+  echo "FAIL: diagnose.sh (stalled node): the step log leaked a bearer token"
+  failures=$((failures + 1))
+else
+  echo "ok: diagnose.sh (stalled node): the step log carries no bearer token"
+fi
+tests_run=$((tests_run + 1))
+if [[ "$stall_out" == *"tail-of-sv-app"* ]]; then
+  echo "FAIL: diagnose.sh (stalled node): a healthy container's logs reached the step log"
+  failures=$((failures + 1))
+else
+  echo "ok: diagnose.sh (stalled node): a healthy container's logs stay out of the step log"
+fi
+tests_run=$((tests_run + 1))
+bash "$here/host-diagnostics.sh" stop-sampler "$stall_runner_temp/canton-localnet/memory-samples.txt"
+rm -rf "$stall_dir" "$stall_runner_temp"
 
 ## canton_localnet_client_secret_overrides / canton_localnet_client_id_overrides
 ## (the client-secret/client-id guard boot.sh fails closed on before ever
@@ -506,6 +700,22 @@ got="$(PATH="$stub_dir:$PATH" canton_localnet_unhealthy_containers "$here/..")"
 assert_eq "unhealthy_containers: lists only unhealthy and non-zero-exit containers" \
   "$(printf 'sv-app\tunhealthy\ninit-job\texited 3')" "$got"
 
+cat >"$stub_dir/make" <<'EOF'
+#!/usr/bin/env bash
+cat <<'OUT'
+NAME                        IMAGE     SERVICE                     STATUS
+a-validator-1-participant   canton    a-validator-1-participant   Up 5 minutes (healthy)
+sv-validator_backend        splice    sv-validator_backend        Up 9 minutes (health: starting)
+sv-app                      splice    sv-app                      Up 5 minutes (unhealthy)
+b-validator-1-backend       splice    b-validator-1-backend       Restarting (1) 12 seconds ago
+init-job                    busybox   init-job                    Exited (3) 4 minutes ago
+setup-done                  busybox   setup-done                  Exited (0) 4 minutes ago
+OUT
+EOF
+got="$(PATH="$stub_dir:$PATH" canton_localnet_stalled_containers "$here/..")"
+assert_eq "stalled_containers: lists starting, unhealthy, restarting and non-zero-exit containers" \
+  "$(printf 'sv-validator_backend\tstarting\nsv-app\tunhealthy\nb-validator-1-backend\trestarting\ninit-job\texited 3')" "$got"
+
 got="$(canton_localnet_render_teardown succeeded "$(printf 'sv-app\tunhealthy')" 'Logs are in the artifact.')"
 assert_contains "render_teardown: states the result" "$got" '`down --volumes` succeeded.'
 assert_contains "render_teardown: lists the unhealthy container row" "$got" '| `sv-app` | unhealthy |'
@@ -710,6 +920,44 @@ for validators in "d" "a,d"; do
 done
 rm -rf "$boot_dir"
 
+## boot.sh waits for the multi-synchronizer connections of every slot the app-synchronizer console joins (a, b and d)
+
+boot_dir="$(mktemp -d)"
+cat >"$boot_dir/canton-localnet" <<'EOF'
+#!/usr/bin/env bash
+echo "$*" >>"$BOOT_ARGV_LOG"
+EOF
+cat >"$boot_dir/make" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+cat >"$boot_dir/timeout" <<'EOF'
+#!/usr/bin/env bash
+shift
+exec "$@"
+EOF
+chmod +x "$boot_dir/canton-localnet" "$boot_dir/make" "$boot_dir/timeout"
+boot_runner_temp="$(mktemp -d)"
+: >"$boot_dir/argv.log"
+: >"$boot_dir/step-summary"
+: >"$boot_dir/github-output"
+set +e
+PATH="$boot_dir:$PATH" BOOT_ARGV_LOG="$boot_dir/argv.log" \
+  CLI_PATH="$boot_dir/canton-localnet" ACTION_PATH="$here/.." VALIDATORS=a,b,d PQS=false \
+  OBSERVABILITY=false MULTI_SYNC=true DIALECT=native ROLES="" JWT=false TIMEOUT=10m \
+  CONFIG_INPUT="" RUNNER_TEMP="$boot_runner_temp" \
+  RUNNER_ENVIRONMENT=github-hosted GITHUB_WORKSPACE="$boot_dir" \
+  GITHUB_OUTPUT="$boot_dir/github-output" GITHUB_STEP_SUMMARY="$boot_dir/step-summary" \
+  bash "$here/boot.sh" >"$boot_dir/boot.log" 2>&1
+status=$?
+set -e
+bash "$here/host-diagnostics.sh" stop-sampler "$boot_runner_temp/canton-localnet/memory-samples.txt"
+assert_status "boot.sh (multi-sync: true, validators: a,b,d): runs to completion" "0" "$status"
+assert_eq "boot.sh (multi-sync: true, validators: a,b,d): the synchronizer connections of a, b and d are each awaited, on that slot's own readyz" \
+  "--url http://localhost:11975/readyz --slot a-validator-1|--url http://localhost:12975/readyz --slot b-validator-1|--url http://localhost:14975/readyz --slot d-validator-1" \
+  "$(grep '^wait-ready.* --synchronizers 2 ' "$boot_dir/argv.log" | sed -E 's/^.*(--url [^ ]+) .*(--slot [a-z0-9-]+) .*$/\1 \2/' | paste -sd '|' -)"
+rm -rf "$boot_dir" "$boot_runner_temp"
+
 ## boot.sh caps each up attempt at up-timeout, and captures host diagnostics when the first attempt fails
 
 boot_dir="$(mktemp -d)"
@@ -836,7 +1084,7 @@ case "$1" in
       echo "stub stats for $*"
     fi
     ;;
-  inspect) shift 3; echo "stub inspect for $*" ;;
+  inspect) printf '%s\n' "$3" >"$(dirname "$0")/inspect-format"; shift 3; echo "stub inspect for $*" ;;
 esac
 EOF
 cat >"$diag_dir/bin/free" <<'EOF'
@@ -863,6 +1111,9 @@ else
 fi
 tests_run=$((tests_run + 1))
 assert_contains "host-diagnostics.sh: container health is captured" "$(cat "$diag_dir/out/container-health.txt")" "stub inspect"
+assert_contains "host-diagnostics.sh: the inspect format records restarts" "$(cat "$diag_dir/bin/inspect-format")" "restarts={{.RestartCount}}"
+assert_contains "host-diagnostics.sh: the inspect format records the OOM kill" "$(cat "$diag_dir/bin/inspect-format")" "oomkilled={{.State.OOMKilled}}"
+assert_contains "host-diagnostics.sh: the inspect format records the exit code" "$(cat "$diag_dir/bin/inspect-format")" "exit={{.State.ExitCode}}"
 assert_contains "host-diagnostics.sh: nproc is captured" "$(ls "$diag_dir/out")" "nproc.txt"
 assert_contains "host-diagnostics.sh: the kernel OOM scan is captured" "$(ls "$diag_dir/out")" "dmesg-oom.txt"
 assert_contains "host-diagnostics.sh: docker stats are captured" "$(cat "$diag_dir/out/docker-stats.txt")" "stub stats for splice canton postgres"

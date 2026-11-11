@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -45,10 +46,10 @@ func TestFixture_SetupWiresTokenAndAdminAgainstStub(t *testing.T) {
 	keycloakHost, keycloakPort := splitHostPort(t, keycloak.URL)
 
 	env := map[string]string{
-		"CANTON_LOCALNET_HOST":                       ledgerHost,
+		"CANTON_LOCALNET_HOST":                        ledgerHost,
 		"CANTON_LOCALNET_A_VALIDATOR_1_JSON_PORT":     ledgerPort,
-		"CANTON_LOCALNET_KEYCLOAK_HOST":              keycloakHost,
-		"CANTON_LOCALNET_KEYCLOAK_PORT":              keycloakPort,
+		"CANTON_LOCALNET_KEYCLOAK_HOST":               keycloakHost,
+		"CANTON_LOCALNET_KEYCLOAK_PORT":               keycloakPort,
 		"CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_ID":     "cid",
 		"CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET": "csecret",
 	}
@@ -139,4 +140,68 @@ func splitHostPort(t *testing.T, rawURL string) (host string, port string) {
 		t.Fatalf("no port in %q", rawURL)
 	}
 	return stripped[:idx], stripped[idx+1:]
+}
+
+func TestFixture_ConcurrentSetupBuildsTheClientsOnce(t *testing.T) {
+	env := map[string]string{
+		"CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_ID":     "cid",
+		"CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET": "csecret",
+	}
+	f, err := New(Config{
+		Role:      RoleAValidator1,
+		Discovery: NewEndpointDiscoveryWithEnv(func(k string) string { return env[k] }),
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	const callers = 16
+	var wg sync.WaitGroup
+	tokenProviders := make([]*OAuth2TokenProvider, callers)
+	for i := range callers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := f.Setup(context.Background()); err != nil {
+				t.Errorf("Setup: %v", err)
+				return
+			}
+			tokenProviders[i] = f.Tokens()
+		}()
+	}
+	wg.Wait()
+
+	for i, tokens := range tokenProviders {
+		if tokens != tokenProviders[0] {
+			t.Fatalf("caller %d got a different token provider than caller 0", i)
+		}
+	}
+}
+
+func TestFixture_ConcurrentSetupAndTeardownDoNotRace(t *testing.T) {
+	env := map[string]string{
+		"CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_ID":     "cid",
+		"CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET": "csecret",
+	}
+	f, err := New(Config{
+		Role:      RoleAValidator1,
+		Discovery: NewEndpointDiscoveryWithEnv(func(k string) string { return env[k] }),
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			_ = f.Setup(context.Background())
+		}()
+		go func() {
+			defer wg.Done()
+			_ = f.Teardown(context.Background())
+		}()
+	}
+	wg.Wait()
 }

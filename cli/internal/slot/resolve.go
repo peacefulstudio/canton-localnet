@@ -34,6 +34,7 @@ type Endpoints struct {
 	LedgerGrpcURL        string
 	AdminGrpcURL         string
 	ValidatorAdminURL    string
+	LedgerGrpcPort       string
 	KeycloakHostBase     string
 	KeycloakInternalBase string
 	TokenURLHost         string
@@ -82,16 +83,21 @@ func Resolve(s Slot, repoRoot string, lookup EnvLookup) (Endpoints, error) {
 		Audience:             envOr(lookup, "CANTON_LOCALNET_"+s.EnvPrefix()+"_AUDIENCE", envOr(lookup, "CANTON_LOCALNET_AUDIENCE", "https://canton.network.global")),
 		Scope:                envOr(lookup, "CANTON_LOCALNET_"+s.EnvPrefix()+"_SCOPE", envOr(lookup, "CANTON_LOCALNET_SCOPE", "")),
 	}
+	suffixes, err := resolvePortSuffixes(repoRoot, lookup)
+	if err != nil {
+		return Endpoints{}, err
+	}
 	jsonURLKey := "CANTON_LOCALNET_" + s.EnvPrefix() + "_JSON_API_URL"
 	if EnvIsSet(lookup, jsonURLKey) {
 		v, _ := lookup(jsonURLKey)
 		out.JSONLedgerAPIURL = v
 	} else {
-		out.JSONLedgerAPIURL = fmt.Sprintf("http://%s:%s", host, envOr(lookup, "CANTON_LOCALNET_"+s.EnvPrefix()+"_JSON_PORT", s.JSONLedgerPort()))
+		out.JSONLedgerAPIURL = fmt.Sprintf("http://%s:%s", host, envOr(lookup, "CANTON_LOCALNET_"+s.EnvPrefix()+"_JSON_PORT", s.PortPrefix+suffixes.jsonLedger))
 	}
-	out.LedgerGrpcURL = fmt.Sprintf("%s:%s", host, s.LedgerGrpcPort())
-	out.AdminGrpcURL = fmt.Sprintf("%s:%s", host, s.AdminGrpcPort())
-	out.ValidatorAdminURL = fmt.Sprintf("%s:%s", host, s.ValidatorAdminPort())
+	out.LedgerGrpcPort = s.PortPrefix + suffixes.ledgerGrpc
+	out.LedgerGrpcURL = fmt.Sprintf("%s:%s", host, out.LedgerGrpcPort)
+	out.AdminGrpcURL = fmt.Sprintf("%s:%s", host, s.PortPrefix+suffixes.adminGrpc)
+	out.ValidatorAdminURL = fmt.Sprintf("%s:%s", host, s.PortPrefix+suffixes.validatorAdmin)
 
 	composeEnv := map[string]string{}
 	if repoRoot != "" && s.AuthKind == AuthKindOAuth2 {
@@ -167,6 +173,49 @@ func Resolve(s Slot, repoRoot string, lookup EnvLookup) (Endpoints, error) {
 
 	out.PartyHint = envOr(lookup, "CANTON_LOCALNET_"+s.EnvPrefix()+"_PARTY_HINT", s.Canonical)
 	return out, nil
+}
+
+type portSuffixes struct {
+	jsonLedger     string
+	ledgerGrpc     string
+	adminGrpc      string
+	validatorAdmin string
+}
+
+func resolvePortSuffixes(repoRoot string, lookup EnvLookup) (portSuffixes, error) {
+	common := map[string]string{}
+	if repoRoot != "" {
+		path := filepath.Join(repoRoot, "compose", "modules", "localnet", "env", "common.env")
+		loaded, err := ReadEnvFile(path)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return portSuffixes{}, fmt.Errorf("slot: reading %s: %w", path, err)
+		}
+		if loaded != nil {
+			common = loaded
+		}
+	}
+	return portSuffixes{
+		jsonLedger:     composeValue(lookup, common, "PARTICIPANT_JSON_API_PORT_SUFFIX", defaultJSONLedgerPortSuffix),
+		ledgerGrpc:     composeValue(lookup, common, "PARTICIPANT_LEDGER_API_PORT_SUFFIX", defaultLedgerGrpcPortSuffix),
+		adminGrpc:      composeValue(lookup, common, "PARTICIPANT_ADMIN_API_PORT_SUFFIX", defaultAdminGrpcPortSuffix),
+		validatorAdmin: composeValue(lookup, common, "VALIDATOR_ADMIN_API_PORT_SUFFIX", defaultValidatorAdminPortSuffix),
+	}, nil
+}
+
+func composeValue(lookup EnvLookup, envFile map[string]string, key, fallback string) string {
+	if EnvIsSet(lookup, key) {
+		v, _ := lookup(key)
+		return v
+	}
+	raw := strings.TrimSpace(envFile[key])
+	prefix, suffix := "${"+key+":-", "}"
+	if strings.HasPrefix(raw, prefix) && strings.HasSuffix(raw, suffix) {
+		raw = raw[len(prefix) : len(raw)-len(suffix)]
+	}
+	if raw == "" {
+		return fallback
+	}
+	return raw
 }
 
 // CIUserCount is the number of shared-runner CI clients provisioned,

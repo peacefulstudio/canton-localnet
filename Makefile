@@ -38,6 +38,11 @@ ENV_FILES     := --env-file $(COMPOSE_DIR)/.env.defaults \
                  --env-file $(LOCALNET_DIR)/env/common.env
 PROFILES      := --profile a-validator-1 --profile b-validator-1 --profile c-validator-1 --profile sv-validator-1 --profile d-validator-1
 
+VALIDATOR_SLOT_NAMES := sv a b c d
+slot_toggle = $(shell echo $(1) | tr a-z A-Z)_VALIDATOR_1_PROFILE
+ENABLED_VALIDATOR_SLOTS := $(foreach s,$(VALIDATOR_SLOT_NAMES),$(if $(filter off,$($(call slot_toggle,$(s)))),,$(s)))
+COMPOSE_FILES += $(foreach s,$(ENABLED_VALIDATOR_SLOTS),-f $(LOCALNET_DIR)/ports-$(s)-validator-1.yaml)
+
 ifeq ($(RES),true)
   COMPOSE_FILES += -f $(LOCALNET_DIR)/resource-constraints.yaml \
                    -f $(ONBOARD_DIR)/resource-constraints.yaml
@@ -53,8 +58,10 @@ ifeq ($(AUTH_MODE),oauth2)
 endif
 
 PQS_SLOT_NAMES := a b c sv
+PQS_DEFAULT_SLOT_NAMES := a b c
 comma := ,
-PQS_ACTIVE_SLOTS := $(sort $(subst $(comma), ,$(PQS_SLOTS)) $(if $(filter true,$(PQS)),a))
+PQS_DEFAULT_ACTIVE_SLOTS := $(foreach s,$(PQS_DEFAULT_SLOT_NAMES),$(if $(filter off,$($(call slot_toggle,$(s)))),,$(s)))
+PQS_ACTIVE_SLOTS := $(sort $(subst $(comma), ,$(PQS_SLOTS)) $(if $(filter true,$(PQS)),$(PQS_DEFAULT_ACTIVE_SLOTS)))
 PQS_UNKNOWN_SLOTS := $(filter-out $(PQS_SLOT_NAMES),$(PQS_ACTIVE_SLOTS))
 ifneq ($(PQS_UNKNOWN_SLOTS),)
   $(error PQS_SLOTS: unknown slot(s) $(PQS_UNKNOWN_SLOTS); expected a subset of $(PQS_SLOT_NAMES))
@@ -122,9 +129,13 @@ help: ## Show this help
 	@awk 'BEGIN{FS=":.*##"; printf "Usage:\n  make \033[36m<target>\033[0m\n\nTargets:\n"} \
 	      /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
+UP_TIMEOUT ?=
+UP_KILL_AFTER ?= 30s
+UP_TIMEOUT_PREFIX := $(if $(UP_TIMEOUT),timeout --kill-after=$(UP_KILL_AFTER) $(UP_TIMEOUT))
+
 .PHONY: up
-up: ## Start LocalNet (auth mode: $(AUTH_MODE))
-	$(DOCKER_COMPOSE) up -d
+up: ## Start LocalNet (auth mode: $(AUTH_MODE)); UP_TIMEOUT=15m kills a start that hangs, UP_KILL_AFTER after a SIGTERM it ignores
+	$(UP_TIMEOUT_PREFIX) $(DOCKER_COMPOSE) up -d
 
 .PHONY: down
 down: ## Stop LocalNet and remove containers
@@ -155,11 +166,11 @@ logs: ## Tail logs
 	$(DOCKER_COMPOSE) logs -f
 
 .PHONY: logs-recent
-logs-recent: ## Print recent logs without following (for diagnostics collection)
-	$(DOCKER_COMPOSE) logs --tail=500
+logs-recent: ## Print recent logs, secrets redacted, without following (for diagnostics collection)
+	@bash -o pipefail -c '$(DOCKER_COMPOSE) logs --tail=500 2>&1 | bash "$(CURDIR)/action/redact-secrets.sh"'
 
 .PHONY: wait-ready
-wait-ready: ## Poll JSON Ledger API until participant accepts requests
+wait-ready: ## Poll the JSON Ledger API of every enabled slot until each accepts requests
 	$(COMPOSE_DIR)/scripts/wait-ready.sh
 
 .PHONY: vendor

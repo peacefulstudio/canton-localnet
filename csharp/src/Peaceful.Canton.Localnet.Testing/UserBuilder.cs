@@ -22,6 +22,7 @@ public sealed class UserBuilder
     private const string UsersPath = "v2/users";
     private const string CanActAsKind = "CanActAs";
     private const string CanReadAsKind = "CanReadAs";
+    private const string UserNotFoundCode = "USER_NOT_FOUND";
 
     private readonly HttpClient _httpClient;
     private readonly OAuth2TokenProvider _tokenProvider;
@@ -245,6 +246,36 @@ public sealed class UserBuilder
     internal ValueTask<string> GetTokenAsync(CancellationToken cancellationToken)
         => _tokenProvider.GetAccessTokenAsync(cancellationToken);
 
+    internal async Task DeleteAsync(string userId, int attempt, CancellationToken cancellationToken)
+    {
+        var token = await _tokenProvider.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
+        var path = UserPath(userId);
+        using var request = new HttpRequestMessage(HttpMethod.Delete, path);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        _logger.LogDebug("DELETE {Uri}", new Uri(_httpClient.BaseAddress!, path));
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        var body = await ReadBodyOfCommittedRequestAsync(response).ConfigureAwait(false);
+        if (response.IsSuccessStatusCode)
+        {
+            _logger.LogInformation("Deleted ledger user {UserId}", userId);
+            return;
+        }
+
+        if (attempt > 1 && IsMissingUser(response.StatusCode, body))
+        {
+            _logger.LogInformation("Ledger user {UserId} is already gone", userId);
+            return;
+        }
+
+        throw new JsonLedgerApiException(
+            $"DELETE {path} (userId={userId}) returned {(int)response.StatusCode} {response.ReasonPhrase}: {BoundedBody.ForMessage(body)}",
+            response.StatusCode,
+            body);
+    }
+
     internal async Task<RevokeOutcome> PatchRevokeRightsAsync(
         string token,
         string userId,
@@ -267,7 +298,7 @@ public sealed class UserBuilder
         if (!response.IsSuccessStatusCode)
         {
             throw new JsonLedgerApiException(
-                $"PATCH {path} (userId={userId}) returned {(int)response.StatusCode} {response.ReasonPhrase}: {body}",
+                $"PATCH {path} (userId={userId}) returned {(int)response.StatusCode} {response.ReasonPhrase}: {BoundedBody.ForMessage(body)}",
                 response.StatusCode,
                 body);
         }
@@ -285,7 +316,7 @@ public sealed class UserBuilder
         => new(
             $"PATCH {outcome.Path} (userId={userId}) left {outstanding} of {requested} rights unconfirmed "
             + $"and possibly still granted; the participant reported {outcome.Revoked.Count} as newly "
-            + $"revoked: {outcome.Body}",
+            + $"revoked: {BoundedBody.ForMessage(outcome.Body)}",
             outcome.StatusCode,
             outcome.Body);
 
@@ -343,8 +374,32 @@ public sealed class UserBuilder
         return owned.Where(right => !identities.Contains(RightIdentity(right))).ToArray();
     }
 
+    private static string UserPath(string userId) =>
+        $"{UsersPath}/{Uri.EscapeDataString(userId)}";
+
     private static string RightsPath(string userId) =>
-        $"{UsersPath}/{Uri.EscapeDataString(userId)}/rights";
+        $"{UserPath(userId)}/rights";
+
+    private static bool IsMissingUser(HttpStatusCode statusCode, string body)
+    {
+        if (statusCode != HttpStatusCode.NotFound || string.IsNullOrWhiteSpace(body))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("code", out var code)
+                && code.ValueKind == JsonValueKind.String
+                && code.GetString() == UserNotFoundCode;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
 
     private static IReadOnlyList<string> DistinctParties(IEnumerable<string>? parties)
         => (parties ?? Array.Empty<string>()).Distinct(StringComparer.Ordinal).ToArray();
@@ -436,7 +491,7 @@ public sealed class UserBuilder
     }
 
     private static Task<string> ReadBodyOfCommittedRequestAsync(HttpResponseMessage response)
-        => response.Content.ReadAsStringAsync(CancellationToken.None);
+        => BoundedBody.ReadAsync(response.Content, CancellationToken.None);
 
     private async Task<string> PostCreateUserAsync(
         string token,
@@ -464,9 +519,9 @@ public sealed class UserBuilder
         using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var body = await BoundedBody.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
             throw new JsonLedgerApiException(
-                $"POST {UsersPath} (userId={userId}) returned {(int)response.StatusCode} {response.ReasonPhrase}: {body}",
+                $"POST {UsersPath} (userId={userId}) returned {(int)response.StatusCode} {response.ReasonPhrase}: {BoundedBody.ForMessage(body)}",
                 response.StatusCode,
                 body);
         }
@@ -513,7 +568,7 @@ public sealed class UserBuilder
         if (!response.IsSuccessStatusCode)
         {
             throw new JsonLedgerApiException(
-                $"POST {path} (userId={userId}) returned {(int)response.StatusCode} {response.ReasonPhrase}: {body}",
+                $"POST {path} (userId={userId}) returned {(int)response.StatusCode} {response.ReasonPhrase}: {BoundedBody.ForMessage(body)}",
                 response.StatusCode,
                 body);
         }

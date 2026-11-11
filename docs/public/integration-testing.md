@@ -33,9 +33,19 @@ while the configuration names another (for example after changing `partyHint:`).
 error names the recorded and configured hints, the slot and the remediation,
 `canton-localnet down --volumes` (or `make clean`).
 
+Once the stack is ready, `wait-ready` fails when a node container has restarted during
+boot. `restart: always` brings a crashed `canton` or `splice` back silently, and the stack
+then comes up degraded, so any container of the `localnet` compose project (or of
+`COMPOSE_PROJECT_NAME`) that Docker restarts without bound and whose `RestartCount` is above
+0 stops `wait-ready` with an error naming it. Containers without a restart policy and the
+bounded `on-failure` PQS pipelines never trip it. Recreate the stack with
+`canton-localnet down --volumes` and bring it up again; the composite action's failure
+diagnostics record each container's restart count, OOM-kill flag and exit code.
+
 With PQS enabled, add `--pqs` and `--slot a`, `b` or `c` to `wait-ready` (or
 `--slot sv` for an SV PQS started through Make). Under Make, `make up PQS=true`
-starts PQS for slot `a` and `make up PQS_SLOTS=a,c` for the listed slots (`a`,
+starts PQS for slots `a`, `b` and `c` (as `up --pqs` does, skipping a slot whose
+`<SLOT>_VALIDATOR_1_PROFILE` is `off`) and `make up PQS_SLOTS=a,c` for the listed slots (`a`,
 `b`, `c`, `sv`; `sv` carries the limit listed in
 [topologies](topologies.md#participant-query-store-pqs)). A slot whose PQS is
 off has no PQS database, so connecting to it fails with
@@ -201,6 +211,26 @@ Three properties worth knowing before you rely on it:
   parties throws the second time. Use it when you know exactly which rights
   you hold; use the lease for teardown.
 
+## Users the fixture created
+
+Parties cannot be deleted, but ledger users can. `LocalnetFixture.CreateUserAsync`
+(and the same method on a `Validator(slot)` view) records every user it creates,
+and `DisposeAsync` deletes them with one `DELETE /v2/users/{id}` each, after
+you have disposed your rights leases: deleting a user drops its rights, so a
+lease disposed afterwards finds no user. `UserBuilder.CreateAsync` called
+directly stays non-owning, so the fixture leaves that user alone.
+
+The first attempt is strict: any non-success response throws, so a user left on
+a shared participant is never silent. A failed delete does not stop the other
+users, and the fixture stays disposable. Call `DisposeAsync()` again to retry
+only the users still outstanding. On that second attempt and later, the
+participant's `404` with code `USER_NOT_FOUND` counts as success, because a
+first delete that committed but whose response never arrived leaves exactly
+that answer. Teardown never issues a `GET`.
+
+The Go `Fixture.CreateUser` and `Teardown` follow the same rules, and a failed
+`Teardown` leaves the fixture set up so that a second call is the retry.
+
 ## Go fixture pattern
 
 Module: `github.com/peacefulstudio/canton-localnet/go/fixture`. The
@@ -246,7 +276,7 @@ func TestLedgerRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	party, err := f.AllocateParty(ctx, "globex", "Globex")
+	party, err := f.AllocateParty(ctx, "globex")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,34 +296,37 @@ The `//go:build integration` tag keeps this test out of the default
 `go test ./...` run; it runs under `go test -tags integration ./...`. The
 `net.DialTimeout` probe is the Go equivalent of the C# availability gate: an
 unreachable stack becomes a `t.Skipf`, not a failure. `Setup` is idempotent;
-`Teardown` invalidates the cached token. For cross-validator scenarios,
+`Teardown` deletes the users `CreateUser` made (see
+[Users the fixture created](#users-the-fixture-created)) and invalidates the
+cached token. For cross-validator scenarios,
 `f.Validator(role)` (or `f.MustValidator(role)`) returns a per-slot view.
 
 ## Env-var contract
 
 Both fixtures discover a running stack from the same per-slot environment
 variables (ADR-0003), namespaced with the canonical slot in
-`SCREAMING_SNAKE_CASE`. Neither reads a gRPC variable: both speak the JSON
-Ledger API. (A consumer that also drives the gRPC Ledger API supplies that
-endpoint itself, for example `localhost:11901` for `a-validator-1`.) For
-`a-validator-1`:
+`SCREAMING_SNAKE_CASE`. Both fixtures speak the JSON Ledger API, and both also
+resolve the slot's gRPC Ledger API address for a consumer that drives it
+directly: `LocalnetEndpoints.GrpcLedgerApi` in C#, `Endpoints.GRPCLedgerAPIURL`
+in Go. For `a-validator-1`:
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `CANTON_LOCALNET_A_VALIDATOR_1_JSON_API_URL` | `http://localhost:11975` | JSON Ledger API base URL. |
+| `CANTON_LOCALNET_A_VALIDATOR_1_GRPC_URL` | `http://localhost:11901` | Participant gRPC Ledger API address (`canton-localnet env` export). |
 | `CANTON_LOCALNET_A_VALIDATOR_1_TOKEN_URL` | `http://localhost:8082/realms/AValidator1/protocol/openid-connect/token` | Keycloak `client_credentials` token endpoint. |
 | `CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_ID` | `a-validator-1-validator` | OAuth2 client id. |
 | `CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET` | demo secret | OAuth2 client secret. |
 | `CANTON_LOCALNET_A_VALIDATOR_1_AUDIENCE` | `https://canton.network.global` | Expected `aud` claim. |
 | `CANTON_LOCALNET_A_VALIDATOR_1_SCOPE` | `openid` | OAuth2 scope. |
-| `CANTON_LOCALNET_A_VALIDATOR_1_VALIDATOR_USER_ID` | slot default | C# only. Ledger user id the slot's token authenticates as. |
+| `CANTON_LOCALNET_A_VALIDATOR_1_VALIDATOR_USER_ID` | slot default | Ledger user id the slot's token authenticates as. Read by the C# fixture and by the `canton-localnet` CLI (`rights`, `env`); the Go fixture does not read it. The CLI also accepts `CANTON_LOCALNET_A_VALIDATOR_1_USER_ID` as a fallback. |
 | `CANTON_LOCALNET_A_VALIDATOR_1_ADMIN_GRPC_URL` | `http://localhost:11902` | Participant admin gRPC endpoint (`canton-localnet env` export). |
 | `CANTON_LOCALNET_A_VALIDATOR_1_PARTY` | none | Validator user's primary party; exported by `canton-localnet env --party` only. |
 | `CANTON_LOCALNET_SCAN_URL` | `http://scan.localhost:10000` | Token-standard registry / Scan; global, needs `*.localhost` to resolve to loopback. |
 
 The port prefix encodes the slot: `10`=sv, `11`=a, `12`=b, `13`=c, `14`=d; the
-`975` suffix is the JSON Ledger API, so `b-validator-1` is `12975` against realm
-`BValidator1`. Keycloak is shared on `8082`.
+`975` suffix is the JSON Ledger API and `901` the gRPC Ledger API, so
+`b-validator-1` is `12975` and `12901` against realm `BValidator1`. Keycloak is shared on `8082`.
 
 **C# only: legacy globals.** The C# fixture also honours the un-namespaced
 `CANTON_LOCALNET_JSON_API_URL` / `_TOKEN_URL` / `_CLIENT_ID` / `_CLIENT_SECRET`
@@ -304,7 +337,8 @@ global. The Go fixture reads none of these globals except `_AUDIENCE` and
 
 **Go only: host and port.** When a slot's `_JSON_API_URL` is unset, the Go
 fixture composes it as `http://${CANTON_LOCALNET_HOST}:${CANTON_LOCALNET_<SLOT>_JSON_PORT}`
-(`CANTON_LOCALNET_HOST` default `localhost`, port per the table above). When a
+(`CANTON_LOCALNET_HOST` default `localhost`, port per the table above), and a
+slot's unset `_GRPC_URL` as `http://${CANTON_LOCALNET_HOST}:${CANTON_LOCALNET_<SLOT>_GRPC_PORT}`. When a
 slot's `_TOKEN_URL` is unset, it composes
 `http://${CANTON_LOCALNET_KEYCLOAK_HOST}:${CANTON_LOCALNET_KEYCLOAK_PORT}/realms/<realm>/protocol/openid-connect/token`
 (host default `localhost`, port default `8082`). A per-slot URL always wins over
@@ -375,7 +409,11 @@ with `--pqs`, its PQS Postgres connection details:
 `_PQS_HOST`/`_PQS_PORT`/`_PQS_DATABASE`/`_PQS_USER`/`_PQS_PASSWORD` plus a
 `_PQS_CONNECTION_STRING` in Npgsql keyword form
 (`Host=…;Port=…;Database=…;Username=…;Password=…`) — the form
-`canton-ledger-api-csharp`'s integration lane already builds by hand.
+`canton-ledger-api-csharp`'s integration lane already builds by hand. A
+`_PQS_URL` carries the same connection as a libpq URI
+(`postgresql://user:password@host:port/database`, user and password
+percent-encoded) for clients that cannot parse the Npgsql form, such as
+`psql` or the Rust SDK.
 
 A bearer token is minted, and the live participant id fetched with it, only
 when `--jwt` is passed — **with `--jwt` and `--party` both off, no token

@@ -95,12 +95,19 @@ func New() *Client {
 // BuildArgs assembles the ssh argument vector for opts. It validates
 // that Host is set and that every requested port is in (0, 65535].
 //
-// The returned slice always ends with the destination
-// (`user@host` or `host`) and never invokes ssh — callers run it
+// The returned slice always ends with `--` followed by the destination
+// (`user@host` or `host`), and rejects a Host or User starting with '-',
+// so neither can be read as an ssh option. It never invokes ssh — callers run it
 // through Runner.
 func BuildArgs(opts Options) ([]string, error) {
 	if strings.TrimSpace(opts.Host) == "" {
 		return nil, fmt.Errorf("tunnel: Host must be set")
+	}
+	if strings.HasPrefix(opts.Host, "-") {
+		return nil, fmt.Errorf("tunnel: Host %q must not start with '-'", opts.Host)
+	}
+	if strings.HasPrefix(opts.User, "-") {
+		return nil, fmt.Errorf("tunnel: User %q must not start with '-'", opts.User)
 	}
 	ports := opts.Ports
 	if len(ports) == 0 {
@@ -134,7 +141,7 @@ func BuildArgs(opts Options) ([]string, error) {
 	if opts.User != "" {
 		dest = opts.User + "@" + opts.Host
 	}
-	args = append(args, dest)
+	args = append(args, "--", dest)
 	return args, nil
 }
 

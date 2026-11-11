@@ -10,8 +10,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
+)
+
+const (
+	allocatePath             = "/v2/parties"
+	partyAlreadyExistsMarker = "Party already exists"
 )
 
 // PartyAllocator allocates parties via POST /v2/parties.
@@ -21,11 +28,20 @@ import (
 // so that two test runs against the same ledger never collide on a party id.
 // The suffix is stable across calls on the same instance, which keeps logs
 // readable when several parties share a test.
+//
+// Unless the caller names a synchronizer (AllocateOnSynchronizer), the party
+// is allocated on the global synchronizer, resolved by alias, so allocation
+// works unchanged on single-sync and multi-sync stacks. A transient 503 or
+// 504, a 409 REQUEST_ALREADY_IN_FLIGHT or a request timeout is retried with
+// bounded backoff; when an earlier attempt may have committed, a 400 "Party
+// already exists" is resolved by looking the party up by its hint.
 type PartyAllocator struct {
 	baseURL    string
 	tokens     TokenProvider
 	httpClient *http.Client
 	suffix     string
+	admin      *JsonLedgerAdminClient
+	retry      retryOptions
 }
 
 // PartyAllocatorOption mutates a PartyAllocator at construction.
@@ -51,6 +67,25 @@ func WithPartyAllocatorSuffix(suffix string) PartyAllocatorOption {
 	}
 }
 
+// withPartyAllocatorAdminClient sets the admin client used for synchronizer
+// discovery. By default the allocator builds its own over the same base URL,
+// token provider and HTTP client.
+func withPartyAllocatorAdminClient(admin *JsonLedgerAdminClient) PartyAllocatorOption {
+	return func(p *PartyAllocator) {
+		if admin != nil {
+			p.admin = admin
+		}
+	}
+}
+
+// withPartyAllocatorRetry overrides the retry policy; the default is
+// defaultRetryOptions. NewPartyAllocator rejects an invalid policy.
+func withPartyAllocatorRetry(retry retryOptions) PartyAllocatorOption {
+	return func(p *PartyAllocator) {
+		p.retry = retry
+	}
+}
+
 // NewPartyAllocator constructs a PartyAllocator.
 func NewPartyAllocator(baseURL string, tokens TokenProvider, opts ...PartyAllocatorOption) (*PartyAllocator, error) {
 	if strings.TrimSpace(baseURL) == "" {
@@ -66,11 +101,22 @@ func NewPartyAllocator(baseURL string, tokens TokenProvider, opts ...PartyAlloca
 	p := &PartyAllocator{
 		baseURL:    normalizeBaseURL(baseURL),
 		tokens:     tokens,
-		httpClient: http.DefaultClient,
+		httpClient: newDefaultHTTPClient(),
 		suffix:     suffix,
+		retry:      defaultRetryOptions(),
 	}
 	for _, opt := range opts {
 		opt(p)
+	}
+	if err := p.retry.validate(); err != nil {
+		return nil, fmt.Errorf("party: %w", err)
+	}
+	if p.admin == nil {
+		admin, err := NewJsonLedgerAdminClient(p.baseURL, p.tokens, WithHTTPClient(p.httpClient))
+		if err != nil {
+			return nil, fmt.Errorf("party: build admin client: %w", err)
+		}
+		p.admin = admin
 	}
 	return p, nil
 }
@@ -94,45 +140,128 @@ func (p *PartyAllocator) Hint(prefix string) string {
 
 type partyAllocateRequest struct {
 	PartyIDHint        string `json:"partyIdHint"`
-	DisplayName        string `json:"displayName,omitempty"`
 	IdentityProviderID string `json:"identityProviderId"`
+	SynchronizerID     string `json:"synchronizerId"`
+}
+
+type partyDetails struct {
+	Party string `json:"party"`
 }
 
 type partyAllocateResponse struct {
-	PartyDetails struct {
-		Party string `json:"party"`
-	} `json:"partyDetails"`
+	PartyDetails partyDetails `json:"partyDetails"`
+}
+
+type listKnownPartiesResponse struct {
+	PartyDetails []partyDetails `json:"partyDetails"`
 }
 
 // Allocate posts a party-allocation request with hint "<prefix>-<suffix>"
-// and returns the allocated party id from partyDetails.party. If
-// displayName is empty the field is omitted from the payload.
-func (p *PartyAllocator) Allocate(ctx context.Context, prefix, displayName string) (string, error) {
+// on the global synchronizer, resolved by GlobalSynchronizerAlias, and
+// returns the allocated party id from partyDetails.party.
+func (p *PartyAllocator) Allocate(ctx context.Context, prefix string) (string, error) {
+	return p.AllocateOnSynchronizer(ctx, prefix, "")
+}
+
+// AllocateOnSynchronizer is Allocate on synchronizerID instead of the global
+// synchronizer default; an empty synchronizerID resolves the global
+// synchronizer by alias.
+func (p *PartyAllocator) AllocateOnSynchronizer(ctx context.Context, prefix, synchronizerID string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
 	if strings.TrimSpace(prefix) == "" {
 		return "", errors.New("party: prefix is required")
 	}
-	payload := partyAllocateRequest{
-		PartyIDHint:        p.Hint(prefix),
-		DisplayName:        displayName,
-		IdentityProviderID: "",
+	if strings.TrimSpace(synchronizerID) == "" {
+		resolved, err := p.admin.GetGlobalSynchronizerId(ctx)
+		if err != nil {
+			return "", fmt.Errorf("party: resolve global synchronizer: %w", err)
+		}
+		synchronizerID = resolved
 	}
-	raw, err := json.Marshal(payload)
+	hint := p.Hint(prefix)
+	raw, err := json.Marshal(partyAllocateRequest{
+		PartyIDHint:        hint,
+		IdentityProviderID: "",
+		SynchronizerID:     synchronizerID,
+	})
 	if err != nil {
 		return "", fmt.Errorf("party: marshal request: %w", err)
 	}
+	return p.postWithRetry(ctx, hint, raw)
+}
+
+func (p *PartyAllocator) postWithRetry(ctx context.Context, hint string, payload []byte) (string, error) {
+	earlierAttemptInconclusive := false
+	for attempt := 1; ; attempt++ {
+		body, err := doRequest(ctx, p.httpClient, p.tokens, p.baseURL, httpRequest{
+			method:      http.MethodPost,
+			path:        allocatePath,
+			body:        payload,
+			contentType: "application/json",
+			errPrefix:   "party",
+		})
+		if err == nil {
+			return decodeAllocatedParty(body)
+		}
+		if ctx.Err() != nil {
+			return "", err
+		}
+
+		var statusErr *httpStatusError
+		switch {
+		case errors.As(err, &statusErr) && isTransientStatus(statusErr):
+			if attempt >= p.retry.MaxAttempts {
+				return "", fmt.Errorf("party: POST %s (hint=%s) failed on all %d attempts: %w", allocatePath, hint, p.retry.MaxAttempts, err)
+			}
+		case isRequestTimeout(err):
+			if attempt >= p.retry.MaxAttempts {
+				return "", fmt.Errorf("party: POST %s (hint=%s) timed out on all %d attempts: %w", allocatePath, hint, p.retry.MaxAttempts, err)
+			}
+		case earlierAttemptInconclusive && statusErr != nil && isPartyAlreadyExists(statusErr):
+			existing, lookupErr := p.findPartyByHint(ctx, hint)
+			if lookupErr != nil {
+				return "", lookupErr
+			}
+			if existing != "" {
+				return existing, nil
+			}
+			return "", err
+		default:
+			return "", err
+		}
+
+		earlierAttemptInconclusive = true
+		if sleepErr := p.retry.Sleep(ctx, p.retry.delayForAttempt(attempt)); sleepErr != nil {
+			return "", sleepErr
+		}
+	}
+}
+
+func (p *PartyAllocator) findPartyByHint(ctx context.Context, hint string) (string, error) {
+	partyIDPrefix := hint + "::"
 	body, err := doRequest(ctx, p.httpClient, p.tokens, p.baseURL, httpRequest{
-		method:      http.MethodPost,
-		path:        "/v2/parties",
-		body:        raw,
-		contentType: "application/json",
-		errPrefix:   "party",
+		method:    http.MethodGet,
+		path:      allocatePath + "?filter-party=" + url.QueryEscape(partyIDPrefix),
+		errPrefix: "party",
 	})
 	if err != nil {
 		return "", err
 	}
+	var decoded listKnownPartiesResponse
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return "", fmt.Errorf("party: decode known parties response: %w", err)
+	}
+	for _, details := range decoded.PartyDetails {
+		if strings.HasPrefix(details.Party, partyIDPrefix) {
+			return details.Party, nil
+		}
+	}
+	return "", nil
+}
+
+func decodeAllocatedParty(body []byte) (string, error) {
 	var decoded partyAllocateResponse
 	if err := json.Unmarshal(body, &decoded); err != nil {
 		return "", fmt.Errorf("party: decode response: %w", err)
@@ -141,6 +270,15 @@ func (p *PartyAllocator) Allocate(ctx context.Context, prefix, displayName strin
 		return "", errors.New("party: response missing partyDetails.party")
 	}
 	return decoded.PartyDetails.Party, nil
+}
+
+func isPartyAlreadyExists(e *httpStatusError) bool {
+	return e.statusCode == http.StatusBadRequest && strings.Contains(string(e.body), partyAlreadyExistsMarker)
+}
+
+func isRequestTimeout(err error) bool {
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 func randomSuffix(n int) (string, error) {

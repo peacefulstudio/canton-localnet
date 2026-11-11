@@ -204,6 +204,51 @@ public class OAuth2TokenProviderTests
         Assert.Equal(scope, form["scope"]);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-5)]
+    public async Task GetAccessTokenAsync_rejects_a_non_positive_expires_in(int expiresIn)
+    {
+        var handler = new RecordingHandler((_, _) => Task.FromResult(TokenResponse("tok-1", expiresIn)));
+        using var http = new HttpClient(handler);
+        using var provider = new OAuth2TokenProvider(http, DefaultOptions());
+
+        var exception = await Assert.ThrowsAsync<OAuth2TokenException>(() => provider.GetAccessTokenAsync().AsTask());
+
+        Assert.Contains($"non-positive expires_in ({expiresIn})", exception.Message);
+    }
+
+    [Fact]
+    public async Task GetAccessTokenAsync_rejects_a_missing_expires_in()
+    {
+        var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"access_token":"tok-1","token_type":"Bearer"}""", Encoding.UTF8, "application/json"),
+        }));
+        using var http = new HttpClient(handler);
+        using var provider = new OAuth2TokenProvider(http, DefaultOptions());
+
+        var exception = await Assert.ThrowsAsync<OAuth2TokenException>(() => provider.GetAccessTokenAsync().AsTask());
+
+        Assert.Contains("non-positive expires_in (0)", exception.Message);
+    }
+
+    [Fact]
+    public async Task GetAccessTokenAsync_bounds_the_error_body_in_the_exception_message()
+    {
+        var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadGateway)
+        {
+            Content = new StringContent(new string('z', 10_000), Encoding.UTF8, "text/html"),
+        }));
+        using var http = new HttpClient(handler);
+        using var provider = new OAuth2TokenProvider(http, DefaultOptions());
+
+        var exception = await Assert.ThrowsAsync<OAuth2TokenException>(() => provider.GetAccessTokenAsync().AsTask());
+
+        Assert.EndsWith(new string('z', 512) + "...[truncated]", exception.Message);
+        Assert.Equal(10_000, exception.ResponseBody.Length);
+    }
+
     private static Dictionary<string, string> ParseForm(string body)
     {
         return body

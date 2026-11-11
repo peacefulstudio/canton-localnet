@@ -308,3 +308,134 @@ func TestResolveOAuth2WalletLoginReadsComposeEnvFileThenEnvOverrides(t *testing.
 		t.Fatalf("overridden = %q / %q / %q", overridden.WalletClientID, overridden.WalletUser, overridden.WalletPassword)
 	}
 }
+
+func writeLocalnetCommonEnv(t *testing.T, root, body string) {
+	t.Helper()
+	dir := filepath.Join(root, "compose", "modules", "localnet", "env")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "common.env"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestResolvePortsFollowComposePortSuffixes(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name               string
+		slot               string
+		commonEnv          string
+		env                map[string]string
+		wantJSONURL        string
+		wantLedgerGrpcURL  string
+		wantLedgerGrpcPort string
+		wantAdminGrpcURL   string
+		wantValidatorURL   string
+	}{
+		{
+			name:               "no common.env and no overrides keeps the built-in suffixes",
+			slot:               "a",
+			wantJSONURL:        "http://localhost:11975",
+			wantLedgerGrpcURL:  "localhost:11901",
+			wantLedgerGrpcPort: "11901",
+			wantAdminGrpcURL:   "localhost:11902",
+			wantValidatorURL:   "localhost:11903",
+		},
+		{
+			name: "common.env defaults replace the built-in suffixes",
+			slot: "b",
+			commonEnv: "PARTICIPANT_LEDGER_API_PORT_SUFFIX=${PARTICIPANT_LEDGER_API_PORT_SUFFIX:-801}\n" +
+				"PARTICIPANT_ADMIN_API_PORT_SUFFIX=${PARTICIPANT_ADMIN_API_PORT_SUFFIX:-802}\n" +
+				"PARTICIPANT_JSON_API_PORT_SUFFIX=${PARTICIPANT_JSON_API_PORT_SUFFIX:-875}\n" +
+				"VALIDATOR_ADMIN_API_PORT_SUFFIX=${VALIDATOR_ADMIN_API_PORT_SUFFIX:-803}\n",
+			wantJSONURL:        "http://localhost:12875",
+			wantLedgerGrpcURL:  "localhost:12801",
+			wantLedgerGrpcPort: "12801",
+			wantAdminGrpcURL:   "localhost:12802",
+			wantValidatorURL:   "localhost:12803",
+		},
+		{
+			name: "process env overrides beat the common.env defaults",
+			slot: "a",
+			commonEnv: "PARTICIPANT_LEDGER_API_PORT_SUFFIX=${PARTICIPANT_LEDGER_API_PORT_SUFFIX:-801}\n" +
+				"PARTICIPANT_JSON_API_PORT_SUFFIX=${PARTICIPANT_JSON_API_PORT_SUFFIX:-875}\n",
+			env: map[string]string{
+				"PARTICIPANT_LEDGER_API_PORT_SUFFIX": "911",
+				"PARTICIPANT_ADMIN_API_PORT_SUFFIX":  "912",
+				"PARTICIPANT_JSON_API_PORT_SUFFIX":   "976",
+				"VALIDATOR_ADMIN_API_PORT_SUFFIX":    "913",
+			},
+			wantJSONURL:        "http://localhost:11976",
+			wantLedgerGrpcURL:  "localhost:11911",
+			wantLedgerGrpcPort: "11911",
+			wantAdminGrpcURL:   "localhost:11912",
+			wantValidatorURL:   "localhost:11913",
+		},
+		{
+			name:               "process env overrides apply without a repo checkout",
+			slot:               "sv",
+			env:                map[string]string{"PARTICIPANT_JSON_API_PORT_SUFFIX": "976", "PARTICIPANT_LEDGER_API_PORT_SUFFIX": "911"},
+			wantJSONURL:        "http://localhost:10976",
+			wantLedgerGrpcURL:  "localhost:10911",
+			wantLedgerGrpcPort: "10911",
+			wantAdminGrpcURL:   "localhost:10902",
+			wantValidatorURL:   "localhost:10903",
+		},
+		{
+			name: "a per-slot JSON port override still beats the suffix",
+			slot: "a",
+			env: map[string]string{
+				"PARTICIPANT_JSON_API_PORT_SUFFIX":        "976",
+				"CANTON_LOCALNET_A_VALIDATOR_1_JSON_PORT": "18080",
+			},
+			wantJSONURL:        "http://localhost:18080",
+			wantLedgerGrpcURL:  "localhost:11901",
+			wantLedgerGrpcPort: "11901",
+			wantAdminGrpcURL:   "localhost:11902",
+			wantValidatorURL:   "localhost:11903",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			if tc.commonEnv != "" {
+				writeLocalnetCommonEnv(t, root, tc.commonEnv)
+			}
+			s, err := Parse(tc.slot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := Resolve(s, root, envFrom(tc.env))
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+			if got.JSONLedgerAPIURL != tc.wantJSONURL {
+				t.Errorf("JSONLedgerAPIURL: got %q, want %q", got.JSONLedgerAPIURL, tc.wantJSONURL)
+			}
+			if got.LedgerGrpcURL != tc.wantLedgerGrpcURL {
+				t.Errorf("LedgerGrpcURL: got %q, want %q", got.LedgerGrpcURL, tc.wantLedgerGrpcURL)
+			}
+			if got.LedgerGrpcPort != tc.wantLedgerGrpcPort {
+				t.Errorf("LedgerGrpcPort: got %q, want %q", got.LedgerGrpcPort, tc.wantLedgerGrpcPort)
+			}
+			if got.AdminGrpcURL != tc.wantAdminGrpcURL {
+				t.Errorf("AdminGrpcURL: got %q, want %q", got.AdminGrpcURL, tc.wantAdminGrpcURL)
+			}
+			if got.ValidatorAdminURL != tc.wantValidatorURL {
+				t.Errorf("ValidatorAdminURL: got %q, want %q", got.ValidatorAdminURL, tc.wantValidatorURL)
+			}
+		})
+	}
+}
+
+func TestResolveSurfacesUnreadableLocalnetCommonEnv(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeLocalnetCommonEnv(t, root, "not a key value line\n")
+	a, _ := Parse("a")
+	if _, err := Resolve(a, root, emptyEnv); err == nil {
+		t.Fatal("expected an error for a malformed common.env")
+	}
+}

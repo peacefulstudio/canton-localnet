@@ -22,6 +22,7 @@ type sharedCase struct {
 
 type sharedExpect struct {
 	JSONAPIURL   string `json:"jsonApiUrl"`
+	GRPCAPIURL   string `json:"grpcLedgerApiUrl"`
 	TokenURL     string `json:"tokenUrl"`
 	Audience     string `json:"audience"`
 	Scope        string `json:"scope"`
@@ -73,6 +74,9 @@ func TestEndpointDiscovery_SharedCases(t *testing.T) {
 			if e.JSONLedgerAPIURL != tc.Expect.JSONAPIURL {
 				t.Errorf("JSONLedgerAPIURL = %q, want %q", e.JSONLedgerAPIURL, tc.Expect.JSONAPIURL)
 			}
+			if e.GRPCLedgerAPIURL != tc.Expect.GRPCAPIURL {
+				t.Errorf("GRPCLedgerAPIURL = %q, want %q", e.GRPCLedgerAPIURL, tc.Expect.GRPCAPIURL)
+			}
 			if e.TokenURL != tc.Expect.TokenURL {
 				t.Errorf("TokenURL = %q, want %q", e.TokenURL, tc.Expect.TokenURL)
 			}
@@ -111,6 +115,31 @@ func TestEndpointDiscovery_HostAndPortCompose(t *testing.T) {
 	}
 	if e.TokenURL != "http://auth.example.com:8443/realms/AValidator1/protocol/openid-connect/token" {
 		t.Errorf("TokenURL = %q", e.TokenURL)
+	}
+}
+
+func TestEndpointDiscovery_HostAndPortComposeTheGRPCLedgerAPIURL(t *testing.T) {
+	env := map[string]string{
+		"CANTON_LOCALNET_HOST":                    "ledger.example.com",
+		"CANTON_LOCALNET_B_VALIDATOR_1_GRPC_PORT": "9101",
+	}
+	e, err := NewEndpointDiscoveryWithEnv(envLookup(env)).For(RoleBValidator1)
+	if err != nil {
+		t.Fatalf("For: %v", err)
+	}
+	if e.GRPCLedgerAPIURL != "http://ledger.example.com:9101" {
+		t.Errorf("GRPCLedgerAPIURL = %q", e.GRPCLedgerAPIURL)
+	}
+}
+
+func TestEndpointDiscovery_HostWithoutPortOverrideKeepsSlotDefaultGRPCPort(t *testing.T) {
+	env := map[string]string{"CANTON_LOCALNET_HOST": "ledger.example.com"}
+	e, err := NewEndpointDiscoveryWithEnv(envLookup(env)).For(RoleCValidator1)
+	if err != nil {
+		t.Fatalf("For: %v", err)
+	}
+	if e.GRPCLedgerAPIURL != "http://ledger.example.com:13901" {
+		t.Errorf("GRPCLedgerAPIURL = %q", e.GRPCLedgerAPIURL)
 	}
 }
 

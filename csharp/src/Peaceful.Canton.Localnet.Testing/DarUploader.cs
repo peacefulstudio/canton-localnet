@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -10,17 +11,19 @@ namespace Peaceful.Canton.Localnet.Testing;
 
 /// <summary>
 /// Uploads DAR archives to the Canton JSON Ledger API
-/// (<c>POST /v2/packages</c>) using the bearer token supplied by
-/// <see cref="OAuth2TokenProvider"/>. The upload is idempotent: a
-/// <c>400 KNOWN_PACKAGE_VERSION</c> response from a repeated upload is
-/// treated as success, matching the splice-onboarding behaviour. Every
-/// connected synchronizer is vetted in turn via <c>?synchronizerId=</c>,
-/// so this works unchanged on both single-sync and multi-sync stacks.
+/// (<c>POST /v2/dars</c>) using the bearer token supplied by
+/// <see cref="OAuth2TokenProvider"/>. Every connected synchronizer is vetted
+/// in turn via <c>?synchronizerId=</c>, so this works unchanged on both
+/// single-sync and multi-sync stacks. A <c>400 KNOWN_PACKAGE_VERSION</c>
+/// response counts as success only when the DAR's own main package (read from
+/// its manifest, see <see cref="DarManifest"/>) is vetted on that synchronizer;
+/// otherwise Canton rejected a different package that shares the name and
+/// version of a vetted one, and <see cref="DarNotVettedException"/> is thrown.
 /// </summary>
-public sealed class DarUploader
+public sealed partial class DarUploader
 {
     private const string KnownPackageVersionMarker = "KNOWN_PACKAGE_VERSION";
-    private const string UploadPath = "v2/packages";
+    private const string UploadPath = "v2/dars";
 
     private readonly HttpClient _httpClient;
     private readonly OAuth2TokenProvider _tokenProvider;
@@ -39,10 +42,10 @@ public sealed class DarUploader
     /// <param name="tokenProvider">Supplies the bearer token for each upload.</param>
     /// <param name="logger">Optional logger; defaults to a no-op logger.</param>
     /// <param name="options">
-    /// Transient-503 retry policy; defaults to <see cref="DarUploaderRetryOptions.Default"/>.
+    /// Retry policy for a transient 503, 504 or 409 REQUEST_ALREADY_IN_FLIGHT; defaults to <see cref="DarUploaderRetryOptions.Default"/>.
     /// </param>
     /// <param name="adminClient">
-    /// Admin client used for synchronizer discovery and package read-back;
+    /// Admin client used for synchronizer discovery and the vetting check;
     /// defaults to a private, unlogged client over <paramref name="httpClient"/>.
     /// <see cref="LocalnetFixture"/> passes the one it registers.
     /// </param>
@@ -75,8 +78,11 @@ public sealed class DarUploader
     /// Uploads a single DAR file at <paramref name="darPath"/>. Returns the
     /// outcome — <see cref="DarUploadOutcome.Uploaded"/> for a fresh package,
     /// <see cref="DarUploadOutcome.AlreadyKnown"/> when the participant returns
-    /// <c>KNOWN_PACKAGE_VERSION</c>.
+    /// <c>KNOWN_PACKAGE_VERSION</c> and the DAR's main package is vetted.
     /// </summary>
+    /// <exception cref="DarNotVettedException">
+    /// <c>KNOWN_PACKAGE_VERSION</c> came back but the DAR's main package is not vetted.
+    /// </exception>
     public async Task<DarUploadOutcome> UploadAsync(string darPath, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(darPath))
@@ -89,49 +95,19 @@ public sealed class DarUploader
     }
 
     /// <summary>
-    /// Uploads a single DAR file at <paramref name="darPath"/>, then, if every
-    /// connected synchronizer reported <c>KNOWN_PACKAGE_VERSION</c>, reads back
-    /// <paramref name="expectedMainPackageId"/> and throws unless it is really
-    /// present on the participant.
-    /// </summary>
-    public async Task<DarUploadOutcome> UploadAndVerifyAsync(
-        string darPath,
-        string? expectedMainPackageId,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(darPath))
-        {
-            throw new ArgumentException("DAR path must be non-empty.", nameof(darPath));
-        }
-
-        var bytes = await File.ReadAllBytesAsync(darPath, cancellationToken).ConfigureAwait(false);
-        return await UploadAndVerifyAsync(bytes, darPath, expectedMainPackageId, cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <summary>
     /// Uploads the raw DAR bytes. <paramref name="sourceLabel"/> is used only
     /// in log lines and the resulting exception message; pass the file path or
     /// any human-readable identifier.
     /// </summary>
-    public Task<DarUploadOutcome> UploadAsync(
+    /// <exception cref="DarNotVettedException">
+    /// <c>KNOWN_PACKAGE_VERSION</c> came back but the DAR's main package is not vetted.
+    /// </exception>
+    /// <exception cref="InvalidDataException">
+    /// <c>KNOWN_PACKAGE_VERSION</c> came back and <paramref name="darBytes"/> carries no readable main package id.
+    /// </exception>
+    public async Task<DarUploadOutcome> UploadAsync(
         byte[] darBytes,
         string sourceLabel,
-        CancellationToken cancellationToken = default)
-        => UploadAndVerifyAsync(darBytes, sourceLabel, expectedMainPackageId: null, cancellationToken);
-
-    /// <summary>
-    /// Uploads the raw DAR bytes, then, if every connected synchronizer
-    /// reported <c>KNOWN_PACKAGE_VERSION</c>, reads back
-    /// <paramref name="expectedMainPackageId"/> (<c>GET /v2/packages/{package-id}</c>)
-    /// and throws <see cref="JsonLedgerApiException"/> naming it unless it is
-    /// really present on the participant. Pass <c>null</c> to skip the check —
-    /// an identical re-upload with no expected id still returns
-    /// <see cref="DarUploadOutcome.AlreadyKnown"/> unconditionally.
-    /// </summary>
-    public async Task<DarUploadOutcome> UploadAndVerifyAsync(
-        byte[] darBytes,
-        string sourceLabel,
-        string? expectedMainPackageId,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(darBytes);
@@ -142,17 +118,17 @@ public sealed class DarUploader
 
         var targets = await ResolveVettingTargetsAsync(cancellationToken).ConfigureAwait(false);
 
+        string? mainPackageId = null;
         var uploadedAnywhere = false;
         foreach (var synchronizerId in targets)
         {
-            var token = await _tokenProvider.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
             var requestUri = BuildUploadUri(synchronizerId);
 
             _logger.LogDebug("POST {Uri} (DAR bytes: {Length}, source: {Source})",
                 new Uri(_httpClient.BaseAddress!, requestUri), darBytes.Length, sourceLabel);
 
-            using var response = await SendWithRetryAsync(darBytes, token, sourceLabel, requestUri, cancellationToken).ConfigureAwait(false);
-            if (response.IsSuccessStatusCode)
+            var response = await SendWithRetryAsync(darBytes, sourceLabel, requestUri, cancellationToken).ConfigureAwait(false);
+            if (response.IsSuccess)
             {
                 _logger.LogInformation(
                     "Uploaded DAR {Source} ({Length} bytes) on synchronizer {SynchronizerId}",
@@ -161,37 +137,52 @@ public sealed class DarUploader
                 continue;
             }
 
-            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var body = response.Body;
             if (response.StatusCode == HttpStatusCode.BadRequest && body.Contains(KnownPackageVersionMarker, StringComparison.Ordinal))
             {
+                mainPackageId ??= DarManifest.ReadMainPackageId(darBytes);
+                if (!await _adminClient.IsPackageVettedAsync(mainPackageId, synchronizerId, cancellationToken).ConfigureAwait(false))
+                {
+                    throw new DarNotVettedException(sourceLabel, mainPackageId, synchronizerId, ConflictingPackageIds(body, mainPackageId), body);
+                }
+
                 _logger.LogInformation(
-                    "DAR {Source} already on ledger (KNOWN_PACKAGE_VERSION) on synchronizer {SynchronizerId} — treating as success.",
-                    sourceLabel, synchronizerId ?? "(default)");
+                    "DAR {Source} already on ledger (KNOWN_PACKAGE_VERSION) and package {PackageId} is vetted on synchronizer {SynchronizerId} — treating as success.",
+                    sourceLabel, mainPackageId, synchronizerId ?? "(default)");
                 continue;
             }
 
             throw new JsonLedgerApiException(
-                $"POST {requestUri} for {sourceLabel} returned {(int)response.StatusCode} {response.ReasonPhrase}: {body}",
+                $"POST {requestUri} for {sourceLabel} returned {(int)response.StatusCode} {response.ReasonPhrase}: {BoundedBody.ForMessage(body)}",
                 response.StatusCode,
                 body);
         }
 
-        if (uploadedAnywhere)
-        {
-            return DarUploadOutcome.Uploaded;
-        }
-
-        if (!string.IsNullOrWhiteSpace(expectedMainPackageId)
-            && !await _adminClient.PackageExistsAsync(expectedMainPackageId, cancellationToken).ConfigureAwait(false))
-        {
-            throw new JsonLedgerApiException(
-                $"DAR {sourceLabel} reported KNOWN_PACKAGE_VERSION on every connected synchronizer, but package '{expectedMainPackageId}' is absent from the participant.",
-                HttpStatusCode.NotFound,
-                string.Empty);
-        }
-
-        return DarUploadOutcome.AlreadyKnown;
+        return uploadedAnywhere ? DarUploadOutcome.Uploaded : DarUploadOutcome.AlreadyKnown;
     }
+
+    private static IReadOnlyList<string> ConflictingPackageIds(string knownPackageVersionBody, string mainPackageId)
+    {
+        string cause;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(knownPackageVersionBody);
+            cause = doc.RootElement.TryGetProperty("cause", out var element) ? element.GetString() ?? string.Empty : string.Empty;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return Array.Empty<string>();
+        }
+
+        return PackageIdPattern().Matches(cause)
+            .Select(m => m.Value)
+            .Where(id => !string.Equals(id, mainPackageId, StringComparison.Ordinal))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+    }
+
+    [GeneratedRegex("(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])")]
+    private static partial Regex PackageIdPattern();
 
     private async Task<IReadOnlyList<string?>> ResolveVettingTargetsAsync(CancellationToken cancellationToken)
     {
@@ -208,36 +199,44 @@ public sealed class DarUploader
             ? UploadPath
             : $"{UploadPath}?synchronizerId={Uri.EscapeDataString(synchronizerId)}";
 
-    private async Task<HttpResponseMessage> SendWithRetryAsync(
+    private async Task<UploadResponse> SendWithRetryAsync(
         byte[] darBytes,
-        string token,
         string sourceLabel,
         string requestUri,
         CancellationToken cancellationToken)
     {
         for (var attempt = 1; ; attempt++)
         {
+            var token = await _tokenProvider.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
             using var request = new HttpRequestMessage(HttpMethod.Post, requestUri);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             request.Content = new ByteArrayContent(darBytes);
             request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
 
-            var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
-
-            if (response.StatusCode != HttpStatusCode.ServiceUnavailable || attempt >= _retryOptions.MaxAttempts)
+            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            if (response.IsSuccessStatusCode)
             {
-                return response;
+                return new UploadResponse(response.StatusCode, response.ReasonPhrase, string.Empty);
             }
 
-            response.Dispose();
+            var body = await BoundedBody.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
+            if (!TransientHttpStatus.IsTransient(response.StatusCode, body) || attempt >= _retryOptions.MaxAttempts)
+            {
+                return new UploadResponse(response.StatusCode, response.ReasonPhrase, body);
+            }
 
             var delay = _retryOptions.DelayForAttempt(attempt);
             _logger.LogWarning(
-                "POST {Path} for {Source} returned 503 Service Unavailable (attempt {Attempt}/{MaxAttempts}); retrying in {Delay}.",
-                requestUri, sourceLabel, attempt, _retryOptions.MaxAttempts, delay);
+                "POST {Path} for {Source} returned {Status} {Reason} (attempt {Attempt}/{MaxAttempts}); retrying in {Delay}.",
+                requestUri, sourceLabel, (int)response.StatusCode, response.ReasonPhrase, attempt, _retryOptions.MaxAttempts, delay);
 
             await _retryOptions.Delay(delay, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    private sealed record UploadResponse(HttpStatusCode StatusCode, string? ReasonPhrase, string Body)
+    {
+        public bool IsSuccess => (int)StatusCode is >= 200 and < 300;
     }
 
     /// <summary>
@@ -280,8 +279,9 @@ public sealed record DarUploadResult(string Source, DarUploadOutcome Outcome);
 
 /// <summary>
 /// Bounded exponential-backoff configuration for retrying a transient
-/// <c>503 Service Unavailable</c> from <c>POST /v2/packages</c> while the
-/// package service is still warming up. Defaults give ~6 attempts with a 1s
+/// <c>503</c> or <c>504</c> or a <c>409</c> <c>REQUEST_ALREADY_IN_FLIGHT</c>
+/// from <c>POST /v2/dars</c> or <c>POST /v2/parties</c> while the
+/// participant is still warming up. Defaults give ~6 attempts with a 1s
 /// base delay capped at 16s (total budget on the order of ~30s).
 /// </summary>
 /// <param name="MaxAttempts">Total number of POST attempts, including the first.</param>

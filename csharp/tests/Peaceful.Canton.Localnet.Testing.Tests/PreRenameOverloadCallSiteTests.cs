@@ -9,8 +9,8 @@ using Xunit;
 namespace Peaceful.Canton.Localnet.Testing.Tests;
 
 /// <summary>
-/// Pins the 0.8.3-era call sites that <c>UploadAndVerifyAsync</c>,
-/// <c>AllocateOnSynchronizerAsync</c> and friends must not break by adding a
+/// Pins the 0.8.3-era call sites that <c>UploadAsync</c> and
+/// <c>UploadDarAsync</c> must not break by adding a
 /// same-named overload back. A same-named overload that only differs in a
 /// trailing parameter's type makes a bare positional <c>default</c> argument
 /// ambiguous (CS0121), so these calls existing at all — regardless of
@@ -63,33 +63,12 @@ public class PreRenameOverloadCallSiteTests
     }
 
     [Fact]
-    public async Task AllocateAsync_with_positional_null_display_name_and_default_cancellation_token_still_resolves_to_the_pre_0_8_4_1_overload()
-    {
-        var payload = new { partyDetails = new { party = "app-abcdef::namespace", isLocal = true } };
-        var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers(
-            (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json"),
-            })));
-        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
-        var allocator = new PartyAllocator(http, StaticTokenProvider("tok"), instanceSuffix: "abcdef");
-
-        var party = await allocator.AllocateAsync("app", null, default);
-
-        Assert.Equal("app-abcdef::namespace", party.PartyId);
-    }
-
-    [Fact]
     public void Fixture_pass_throughs_with_positional_default_arguments_still_resolve_unambiguously()
     {
         Func<LocalnetFixture, Task<DarUploadOutcome>> uploadDar = fixture => fixture.UploadDarAsync("dummy.dar", default);
-        Func<LocalnetFixture, Task<AllocatedParty>> allocateParty = fixture => fixture.AllocatePartyAsync("app", null, default);
         Func<ValidatorFixture, Task<DarUploadOutcome>> uploadDarForValidator = view => view.DarUploader.UploadAsync("dummy.dar", default);
-        Func<ValidatorFixture, Task<AllocatedParty>> allocatePartyForValidator = view => view.AllocatePartyAsync("app", null, default);
 
         Assert.NotNull(uploadDar);
-        Assert.NotNull(allocateParty);
         Assert.NotNull(uploadDarForValidator);
-        Assert.NotNull(allocatePartyForValidator);
     }
 }

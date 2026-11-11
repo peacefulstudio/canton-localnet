@@ -68,7 +68,7 @@ func (p *OAuth2TokenProvider) GoString() string { return p.String() }
 // NewOAuth2TokenProvider constructs an OAuth2TokenProvider.
 //
 // TokenURL, ClientID and ClientSecret are required. If HTTPClient is nil,
-// http.DefaultClient is used. If Now is nil, time.Now is used.
+// a client with a 30 second timeout is used. If Now is nil, time.Now is used.
 func NewOAuth2TokenProvider(cfg OAuth2TokenProviderConfig) (*OAuth2TokenProvider, error) {
 	if strings.TrimSpace(cfg.TokenURL) == "" {
 		return nil, errors.New("oauth2: TokenURL is required")
@@ -80,7 +80,7 @@ func NewOAuth2TokenProvider(cfg OAuth2TokenProviderConfig) (*OAuth2TokenProvider
 		return nil, errors.New("oauth2: ClientSecret is required")
 	}
 	if cfg.HTTPClient == nil {
-		cfg.HTTPClient = http.DefaultClient
+		cfg.HTTPClient = newDefaultHTTPClient()
 	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
@@ -218,9 +218,9 @@ func (p *OAuth2TokenProvider) fetchToken(ctx context.Context) (string, time.Time
 		_ = json.Unmarshal(body, &er)
 		if er.Error != "" {
 			if er.ErrorDescription != "" {
-				return "", time.Time{}, fmt.Errorf("oauth2: token endpoint returned HTTP %d: %s: %s", resp.StatusCode, er.Error, er.ErrorDescription)
+				return "", time.Time{}, fmt.Errorf("oauth2: token endpoint returned HTTP %d: %s: %s", resp.StatusCode, truncateBodyForError([]byte(er.Error)), truncateBodyForError([]byte(er.ErrorDescription)))
 			}
-			return "", time.Time{}, fmt.Errorf("oauth2: token endpoint returned HTTP %d: %s", resp.StatusCode, er.Error)
+			return "", time.Time{}, fmt.Errorf("oauth2: token endpoint returned HTTP %d: %s", resp.StatusCode, truncateBodyForError([]byte(er.Error)))
 		}
 		return "", time.Time{}, fmt.Errorf("oauth2: token endpoint returned HTTP %d: %s", resp.StatusCode, truncateBodyForError(body))
 	}

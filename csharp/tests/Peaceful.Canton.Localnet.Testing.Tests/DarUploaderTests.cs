@@ -53,6 +53,48 @@ public class DarUploaderTests
             MaxDelay: TimeSpan.FromSeconds(16),
             Delay: (_, _) => Task.CompletedTask));
 
+    private const string VettedElsewhereId = "d0048119d779f3dc1c02dd2549c6281cdd72998bc3c9bc514fe07ff5d5365bbd";
+    private const string ParticipantId = "participant::1220aa";
+
+    private static string KnownPackageVersionBody(string alreadyVettedId, string rejectedId) =>
+        $$"""{"code":"KNOWN_PACKAGE_VERSION","cause":"Tried to vet two packages with the same name and version: {{alreadyVettedId}} (canton-localnet-noop v0.0.1) and {{rejectedId}} (canton-localnet-noop v0.0.1).","correlationId":null,"traceId":"63e93725641d9cce173de2599a13a6b7","context":{"participant":"a-validator-1","secondPackage":"{{rejectedId}} (canton-localnet-noop v0.0.1)","firstPackage":"{{alreadyVettedId}} (canton-localnet-noop v0.0.1)","category":"8","action":"package-vetting"},"errorCategory":8,"grpcCodeValue":3}""";
+
+    private static HttpResponseMessage KnownPackageVersion(string alreadyVettedId = VettedElsewhereId, string rejectedId = DarFixtures.NoopMainPackageId) =>
+        new(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent(KnownPackageVersionBody(alreadyVettedId, rejectedId), Encoding.UTF8, "application/json"),
+        };
+
+    private static Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> WithVetting(
+        Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> uploadResponder,
+        Func<string, bool> isVettedOn,
+        params (string Alias, string Id)[] synchronizers) =>
+        SynchronizerDiscoveryResponder.WithConnectedSynchronizers((request, ct) =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (request.Method == HttpMethod.Get && path.EndsWith("v2/parties/participant-id", StringComparison.Ordinal))
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent($$"""{"participantId":"{{ParticipantId}}"}""", Encoding.UTF8, "application/json"),
+                });
+            }
+            if (request.Method == HttpMethod.Post && path.EndsWith("v2/package-vetting/list", StringComparison.Ordinal))
+            {
+                using var doc = JsonDocument.Parse(request.Content!.ReadAsStringAsync(ct).GetAwaiter().GetResult());
+                var requested = doc.RootElement.GetProperty("packageMetadataFilter").GetProperty("packageIds")[0].GetString();
+                var synchronizerId = doc.RootElement.GetProperty("topologyStateFilter").GetProperty("synchronizerIds")[0].GetString()!;
+                var entries = isVettedOn(synchronizerId)
+                    ? $$"""[{"packages":[{"packageId":"{{requested}}","packageName":"canton-localnet-noop","packageVersion":"0.0.1"}],"participantId":"{{ParticipantId}}","synchronizerId":"{{synchronizerId}}","topologySerial":3}]"""
+                    : "[]";
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent($$"""{"vettedPackages":{{entries}},"nextPageToken":""}""", Encoding.UTF8, "application/json"),
+                });
+            }
+            return uploadResponder(request, ct);
+        }, synchronizers);
+
     [Fact]
     public async Task UploadAsync_retries_transient_503_then_succeeds()
     {
@@ -96,8 +138,70 @@ public class DarUploaderTests
     }
 
     [Theory]
+    [InlineData(HttpStatusCode.GatewayTimeout, "")]
+    [InlineData(HttpStatusCode.Conflict, """{"code":"REQUEST_ALREADY_IN_FLIGHT"}""")]
+    public async Task UploadAsync_retries_every_transient_status_then_succeeds(HttpStatusCode status, string body)
+    {
+        var calls = 0;
+        var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers((_, _) =>
+        {
+            calls++;
+            return Task.FromResult(calls < 3
+                ? new HttpResponseMessage(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") }
+                : new HttpResponseMessage(HttpStatusCode.OK));
+        }));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var uploader = NoSleepUploader(http, StaticTokenProvider("tok"));
+
+        var outcome = await uploader.UploadAsync(new byte[] { 1, 2, 3 }, "warming.dar");
+
+        Assert.Equal(DarUploadOutcome.Uploaded, outcome);
+        Assert.Equal(3, calls);
+    }
+
+    [Fact]
+    public async Task UploadAsync_sends_a_fresh_token_on_each_attempt()
+    {
+        var tokens = new ExpiringTokens();
+        var bearers = new List<string?>();
+        var calls = 0;
+        var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers((request, _) =>
+        {
+            bearers.Add(request.Headers.Authorization?.Parameter);
+            calls++;
+            return Task.FromResult(new HttpResponseMessage(calls < 2 ? HttpStatusCode.ServiceUnavailable : HttpStatusCode.OK));
+        }));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var uploader = new DarUploader(http, tokens.Provider, options: new DarUploaderRetryOptions(
+            6, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(16), tokens.ExpireCurrentTokenAsync));
+
+        await uploader.UploadAsync(new byte[] { 1, 2, 3 }, "warming.dar");
+
+        Assert.Equal(new[] { "tok-1", "tok-2" }, bearers);
+    }
+
+    [Fact]
+    public async Task UploadAsync_bounds_the_error_body_in_the_exception_message()
+    {
+        var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers((_, _) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.Forbidden)
+            {
+                Content = new StringContent(new string('z', 10_000), Encoding.UTF8, "text/html"),
+            })));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var uploader = NoSleepUploader(http, StaticTokenProvider("tok"));
+
+        var exception = await Assert.ThrowsAsync<JsonLedgerApiException>(
+            () => uploader.UploadAsync(new byte[] { 1, 2, 3 }, "big.dar"));
+
+        Assert.EndsWith(new string('z', 512) + "...[truncated]", exception.Message);
+        Assert.Equal(10_000, exception.ResponseBody.Length);
+    }
+
+    [Theory]
     [InlineData(HttpStatusCode.Unauthorized)]
     [InlineData(HttpStatusCode.Forbidden)]
+    [InlineData(HttpStatusCode.Conflict)]
     public async Task UploadAsync_does_not_retry_non_503_failure(HttpStatusCode status)
     {
         var calls = 0;
@@ -254,7 +358,7 @@ public class DarUploaderTests
 
         Assert.Equal(DarUploadOutcome.Uploaded, outcome);
         var recorded = Assert.Single(handler.Requests, r => r.Method == HttpMethod.Post);
-        Assert.Equal("/v2/packages", recorded.Uri.AbsolutePath);
+        Assert.Equal("/v2/dars", recorded.Uri.AbsolutePath);
         Assert.Equal(
             $"synchronizerId={Uri.EscapeDataString(SynchronizerDiscoveryResponder.DefaultGlobalSynchronizerId)}",
             recorded.Uri.Query.TrimStart('?'));
@@ -264,21 +368,108 @@ public class DarUploaderTests
     }
 
     [Fact]
-    public async Task UploadAsync_treats_known_package_version_400_as_success()
+    public async Task UploadAsync_returns_already_known_when_known_package_version_and_main_package_is_vetted()
     {
-        var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
-        {
-            Content = new StringContent(
-                """{"cause":"KNOWN_PACKAGE_VERSION(8,abcdef): package already uploaded"}""",
-                Encoding.UTF8,
-                "application/json"),
-        })));
+        var handler = new RecordingHandler(WithVetting((_, _) => Task.FromResult(KnownPackageVersion()), _ => true));
         using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
         var uploader = new DarUploader(http, StaticTokenProvider("tok"));
 
-        var outcome = await uploader.UploadAsync(new byte[] { 1, 2, 3 }, "again.dar");
+        var outcome = await uploader.UploadAsync(DarFixtures.NoopDar(), "again.dar");
 
         Assert.Equal(DarUploadOutcome.AlreadyKnown, outcome);
+        var vettingRequest = Assert.Single(handler.Requests, r => r.Uri.AbsolutePath.EndsWith("v2/package-vetting/list", StringComparison.Ordinal));
+        using var doc = JsonDocument.Parse(vettingRequest.Body);
+        Assert.Equal(
+            "b1008daac9810baa8ca7ff313c13bd48d65f18040b2d33faabe5b5d39acaac9e",
+            doc.RootElement.GetProperty("packageMetadataFilter").GetProperty("packageIds")[0].GetString());
+        Assert.Equal(
+            SynchronizerDiscoveryResponder.DefaultGlobalSynchronizerId,
+            doc.RootElement.GetProperty("topologyStateFilter").GetProperty("synchronizerIds")[0].GetString());
+    }
+
+    [Fact]
+    public async Task UploadAsync_throws_naming_both_package_ids_when_known_package_version_and_main_package_is_not_vetted()
+    {
+        var handler = new RecordingHandler(WithVetting((_, _) => Task.FromResult(KnownPackageVersion()), _ => false));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var uploader = new DarUploader(http, StaticTokenProvider("tok"));
+
+        var exception = await Assert.ThrowsAsync<DarNotVettedException>(
+            () => uploader.UploadAsync(DarFixtures.NoopDar(), "rebuilt.dar"));
+
+        Assert.Equal("b1008daac9810baa8ca7ff313c13bd48d65f18040b2d33faabe5b5d39acaac9e", exception.MainPackageId);
+        Assert.Equal(new[] { "d0048119d779f3dc1c02dd2549c6281cdd72998bc3c9bc514fe07ff5d5365bbd" }, exception.ConflictingPackageIds);
+        Assert.Equal(SynchronizerDiscoveryResponder.DefaultGlobalSynchronizerId, exception.SynchronizerId);
+        Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
+        Assert.Contains("KNOWN_PACKAGE_VERSION", exception.ResponseBody);
+        Assert.Contains("b1008daac9810baa8ca7ff313c13bd48d65f18040b2d33faabe5b5d39acaac9e", exception.Message);
+        Assert.Contains("d0048119d779f3dc1c02dd2549c6281cdd72998bc3c9bc514fe07ff5d5365bbd", exception.Message);
+        Assert.Contains("rebuilt.dar", exception.Message);
+    }
+
+    [Fact]
+    public async Task UploadAsync_throws_without_conflicting_ids_when_the_known_package_version_body_names_none()
+    {
+        var handler = new RecordingHandler(WithVetting(
+            (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent("KNOWN_PACKAGE_VERSION", Encoding.UTF8, "text/plain"),
+            }),
+            _ => false));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var uploader = new DarUploader(http, StaticTokenProvider("tok"));
+
+        var exception = await Assert.ThrowsAsync<DarNotVettedException>(
+            () => uploader.UploadAsync(DarFixtures.NoopDar(), "rebuilt.dar"));
+
+        Assert.Equal("b1008daac9810baa8ca7ff313c13bd48d65f18040b2d33faabe5b5d39acaac9e", exception.MainPackageId);
+        Assert.Empty(exception.ConflictingPackageIds);
+    }
+
+    [Fact]
+    public async Task UploadAsync_throws_when_the_main_package_is_not_vetted_on_the_second_synchronizer_only()
+    {
+        var handler = new RecordingHandler(WithVetting(
+            (_, _) => Task.FromResult(KnownPackageVersion()),
+            synchronizerId => synchronizerId == "global::122a",
+            ("global", "global::122a"),
+            ("app-synchronizer", "app-synchronizer::122b")));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var uploader = new DarUploader(http, StaticTokenProvider("tok"));
+
+        var exception = await Assert.ThrowsAsync<DarNotVettedException>(
+            () => uploader.UploadAsync(DarFixtures.NoopDar(), "partial.dar"));
+
+        Assert.Equal("app-synchronizer::122b", exception.SynchronizerId);
+    }
+
+    [Fact]
+    public async Task UploadAsync_returns_uploaded_when_one_synchronizer_accepts_and_the_other_is_known_and_vetted()
+    {
+        var handler = new RecordingHandler(WithVetting(
+            (req, _) => Task.FromResult(SynchronizerIdFromQuery(req.RequestUri!) == "global::122a"
+                ? new HttpResponseMessage(HttpStatusCode.OK)
+                : KnownPackageVersion()),
+            _ => true,
+            ("global", "global::122a"),
+            ("app-synchronizer", "app-synchronizer::122b")));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var uploader = new DarUploader(http, StaticTokenProvider("tok"));
+
+        var outcome = await uploader.UploadAsync(DarFixtures.NoopDar(), "mixed.dar");
+
+        Assert.Equal(DarUploadOutcome.Uploaded, outcome);
+    }
+
+    [Fact]
+    public async Task UploadAsync_reports_the_unreadable_manifest_when_known_package_version_comes_back_for_a_non_dar_payload()
+    {
+        var handler = new RecordingHandler(WithVetting((_, _) => Task.FromResult(KnownPackageVersion()), _ => true));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var uploader = new DarUploader(http, StaticTokenProvider("tok"));
+
+        await Assert.ThrowsAsync<InvalidDataException>(
+            () => uploader.UploadAsync(new byte[] { 1, 2, 3 }, "garbage.dar"));
     }
 
     [Fact]
@@ -322,29 +513,20 @@ public class DarUploaderTests
             var first = Path.Combine(directory.FullName, "a.dar");
             var second = Path.Combine(directory.FullName, "b.dar");
             await File.WriteAllBytesAsync(first, new byte[] { 1 });
-            await File.WriteAllBytesAsync(second, new byte[] { 2 });
+            await File.WriteAllBytesAsync(second, DarFixtures.NoopDar());
 
             var calls = 0;
             var requestUris = new List<Uri>();
-            var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers((req, _) =>
-            {
-                calls++;
-                requestUris.Add(req.RequestUri!);
-                var status = calls switch
+            var handler = new RecordingHandler(WithVetting(
+                (req, _) =>
                 {
-                    1 => HttpStatusCode.OK,
-                    _ => HttpStatusCode.BadRequest,
-                };
-                var body = calls switch
-                {
-                    1 => string.Empty,
-                    _ => """{"cause":"KNOWN_PACKAGE_VERSION(...)"}""",
-                };
-                return Task.FromResult(new HttpResponseMessage(status)
-                {
-                    Content = new StringContent(body, Encoding.UTF8, "application/json"),
-                });
-            }));
+                    calls++;
+                    requestUris.Add(req.RequestUri!);
+                    return Task.FromResult(calls == 1
+                        ? new HttpResponseMessage(HttpStatusCode.OK)
+                        : KnownPackageVersion());
+                },
+                _ => true));
             using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
             var uploader = new DarUploader(http, StaticTokenProvider("tok"));
 
@@ -356,7 +538,7 @@ public class DarUploaderTests
             Assert.Equal(second, results[1].Source);
             Assert.Equal(DarUploadOutcome.AlreadyKnown, results[1].Outcome);
             Assert.Equal(2, calls);
-            Assert.All(requestUris, uri => Assert.EndsWith("v2/packages", uri.AbsolutePath));
+            Assert.All(requestUris, uri => Assert.EndsWith("v2/dars", uri.AbsolutePath));
         }
         finally
         {
@@ -439,61 +621,7 @@ public class DarUploaderTests
 
         Assert.Equal(DarUploadOutcome.Uploaded, outcome);
         var recorded = Assert.Single(handler.Requests, r => r.Method == HttpMethod.Post);
-        Assert.Equal(new Uri(JsonApiBase, "v2/packages"), recorded.Uri);
-    }
-
-    [Fact]
-    public async Task UploadAndVerifyAsync_reads_back_and_throws_when_expected_package_absent_after_known_package_version()
-    {
-        var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers((req, _) =>
-        {
-            if (req.Method == HttpMethod.Get && req.RequestUri!.AbsolutePath.Contains("v2/packages/"))
-            {
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
-            }
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
-            {
-                Content = new StringContent(
-                    """{"cause":"KNOWN_PACKAGE_VERSION(8,abcdef): package already uploaded"}""",
-                    Encoding.UTF8,
-                    "application/json"),
-            });
-        }));
-        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
-        var uploader = new DarUploader(http, StaticTokenProvider("tok"));
-
-        var exception = await Assert.ThrowsAsync<JsonLedgerApiException>(
-            () => uploader.UploadAndVerifyAsync(new byte[] { 1, 2, 3 }, "mismatched.dar", expectedMainPackageId: "pkg-expected-123"));
-
-        Assert.Contains("pkg-expected-123", exception.Message);
-    }
-
-    [Fact]
-    public async Task UploadAndVerifyAsync_returns_already_known_when_read_back_confirms_expected_package_present()
-    {
-        var handler = new RecordingHandler(SynchronizerDiscoveryResponder.WithConnectedSynchronizers((req, _) =>
-        {
-            if (req.Method == HttpMethod.Get && req.RequestUri!.AbsolutePath.Contains("v2/packages/"))
-            {
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new ByteArrayContent([1, 2, 3]),
-                });
-            }
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
-            {
-                Content = new StringContent(
-                    """{"cause":"KNOWN_PACKAGE_VERSION(8,abcdef): package already uploaded"}""",
-                    Encoding.UTF8,
-                    "application/json"),
-            });
-        }));
-        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
-        var uploader = new DarUploader(http, StaticTokenProvider("tok"));
-
-        var outcome = await uploader.UploadAndVerifyAsync(new byte[] { 1, 2, 3 }, "identical-reupload.dar", expectedMainPackageId: "pkg-expected-123");
-
-        Assert.Equal(DarUploadOutcome.AlreadyKnown, outcome);
+        Assert.Equal(new Uri(JsonApiBase, "v2/dars"), recorded.Uri);
     }
 
     [Fact]

@@ -75,7 +75,7 @@ func mintOAuth2(ctx context.Context, ep Endpoints, client *http.Client) (string,
 		return "", fmt.Errorf("slot: read token response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("slot: token endpoint %s returned HTTP %d", ep.TokenURLHost, resp.StatusCode)
+		return "", fmt.Errorf("slot: token endpoint %s returned HTTP %d%s", ep.TokenURLHost, resp.StatusCode, errorBodySuffix(body))
 	}
 	var tr struct {
 		AccessToken string `json:"access_token"`
@@ -87,6 +87,19 @@ func mintOAuth2(ctx context.Context, ep Endpoints, client *http.Client) (string,
 		return "", errors.New("slot: token endpoint returned empty access_token")
 	}
 	return tr.AccessToken, nil
+}
+
+const errorBodyMaxBytes = 512
+
+func errorBodySuffix(body []byte) string {
+	trimmed := strings.TrimSpace(string(body))
+	if trimmed == "" {
+		return ""
+	}
+	if len(trimmed) > errorBodyMaxBytes {
+		trimmed = trimmed[:errorBodyMaxBytes] + "...[truncated]"
+	}
+	return ": " + trimmed
 }
 
 func mintHS256(ep Endpoints, now func() time.Time) (string, error) {

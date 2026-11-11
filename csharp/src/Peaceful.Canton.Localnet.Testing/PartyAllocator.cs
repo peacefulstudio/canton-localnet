@@ -26,7 +26,6 @@ public sealed class PartyAllocator
 {
     private const string AllocatePath = "v2/parties";
     private const string PartyAlreadyExistsMarker = "Party already exists";
-    private const string RequestAlreadyInFlightMarker = "REQUEST_ALREADY_IN_FLIGHT";
 
     private readonly HttpClient _httpClient;
     private readonly OAuth2TokenProvider _tokenProvider;
@@ -115,15 +114,13 @@ public sealed class PartyAllocator
     /// fully-qualified party id (<c>partyIdHint::&lt;namespace&gt;</c>).
     /// </summary>
     /// <param name="consumerPrefix">Caller-chosen prefix for the party hint.</param>
-    /// <param name="displayName">Optional display name; defaults to the hint.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     public async Task<AllocatedParty> AllocateAsync(
         string consumerPrefix,
-        string? displayName = null,
         CancellationToken cancellationToken = default)
     {
         var hint = ComposeHint(consumerPrefix);
-        return await AllocateWithHintAsync(hint, displayName ?? hint, cancellationToken).ConfigureAwait(false);
+        return await AllocateWithHintAsync(hint, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -132,50 +129,47 @@ public sealed class PartyAllocator
     /// default. Returns the fully-qualified party id (<c>partyIdHint::&lt;namespace&gt;</c>).
     /// </summary>
     /// <param name="consumerPrefix">Caller-chosen prefix for the party hint.</param>
-    /// <param name="displayName">Display name; pass <see langword="null"/> to default to the hint.</param>
     /// <param name="synchronizerId">Synchronizer to allocate the party on.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     public async Task<AllocatedParty> AllocateOnSynchronizerAsync(
         string consumerPrefix,
-        string? displayName,
         string synchronizerId,
         CancellationToken cancellationToken = default)
     {
         var hint = ComposeHint(consumerPrefix);
-        return await AllocateWithHintOnSynchronizerAsync(hint, displayName ?? hint, synchronizerId, cancellationToken).ConfigureAwait(false);
+        return await AllocateWithHintOnSynchronizerAsync(hint, synchronizerId, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
     /// Lower-level overload that POSTs the supplied hint verbatim on the
     /// global synchronizer, resolved by
     /// <see cref="JsonLedgerAdminClient.GlobalSynchronizerAlias"/>. Prefer
-    /// <see cref="AllocateAsync(string, string?, CancellationToken)"/> in
+    /// <see cref="AllocateAsync(string, CancellationToken)"/> in
     /// tests so the random suffix is applied.
     /// </summary>
     /// <param name="partyIdHint">Party hint sent verbatim.</param>
-    /// <param name="displayName">Display name.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     public async Task<AllocatedParty> AllocateWithHintAsync(
         string partyIdHint,
-        string displayName,
         CancellationToken cancellationToken = default)
-        => await AllocateWithHintOnSynchronizerAsync(partyIdHint, displayName, synchronizerId: null, cancellationToken)
+        => await AllocateWithHintOnSynchronizerAsync(partyIdHint, synchronizerId: null, cancellationToken)
             .ConfigureAwait(false);
 
     /// <summary>
     /// Lower-level overload that POSTs the supplied hint verbatim on
     /// <paramref name="synchronizerId"/> instead of the global synchronizer
     /// default. Prefer
-    /// <see cref="AllocateOnSynchronizerAsync(string, string?, string, CancellationToken)"/>
+    /// <see cref="AllocateOnSynchronizerAsync(string, string, CancellationToken)"/>
     /// in tests so the random suffix is applied.
     /// </summary>
     /// <param name="partyIdHint">Party hint sent verbatim.</param>
-    /// <param name="displayName">Display name.</param>
-    /// <param name="synchronizerId">Synchronizer to allocate the party on.</param>
+    /// <param name="synchronizerId">
+    /// Synchronizer to allocate the party on; <see langword="null"/> or blank
+    /// resolves the global synchronizer by alias.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     public async Task<AllocatedParty> AllocateWithHintOnSynchronizerAsync(
         string partyIdHint,
-        string displayName,
         string? synchronizerId,
         CancellationToken cancellationToken = default)
     {
@@ -183,18 +177,12 @@ public sealed class PartyAllocator
         {
             throw new ArgumentException("Party hint must be non-empty.", nameof(partyIdHint));
         }
-        if (string.IsNullOrWhiteSpace(displayName))
-        {
-            throw new ArgumentException("Display name must be non-empty.", nameof(displayName));
-        }
 
         var resolvedSynchronizerId = string.IsNullOrWhiteSpace(synchronizerId)
             ? await _adminClient.GetGlobalSynchronizerIdAsync(cancellationToken: cancellationToken).ConfigureAwait(false)
             : synchronizerId;
 
-        var token = await _tokenProvider.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
-
-        var details = await PostWithRetryAsync(partyIdHint, displayName, resolvedSynchronizerId, token, cancellationToken).ConfigureAwait(false);
+        var details = await PostWithRetryAsync(partyIdHint, resolvedSynchronizerId, cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation("Allocated party {PartyId} (hint={Hint})", details.Party, partyIdHint);
         return new AllocatedParty(details.Party, partyIdHint, details.IsLocal);
@@ -202,9 +190,7 @@ public sealed class PartyAllocator
 
     private async Task<AllocatedPartyDetails> PostWithRetryAsync(
         string partyIdHint,
-        string displayName,
         string synchronizerId,
-        string token,
         CancellationToken cancellationToken)
     {
         var earlierAttemptInconclusive = false;
@@ -213,10 +199,11 @@ public sealed class PartyAllocator
             _logger.LogDebug("POST {Uri} (partyIdHint: {Hint})",
                 new Uri(_httpClient.BaseAddress!, AllocatePath), partyIdHint);
 
+            var token = await _tokenProvider.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
             HttpResponseMessage? response = null;
             try
             {
-                response = await SendAllocationAsync(partyIdHint, displayName, synchronizerId, token, cancellationToken).ConfigureAwait(false);
+                response = await SendAllocationAsync(partyIdHint, synchronizerId, token, cancellationToken).ConfigureAwait(false);
             }
             catch (TaskCanceledException timeout) when (!cancellationToken.IsCancellationRequested)
             {
@@ -238,13 +225,13 @@ public sealed class PartyAllocator
                     return await ReadAllocatedPartyAsync(response, cancellationToken).ConfigureAwait(false);
                 }
 
-                var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-                if (IsTransient(response.StatusCode, body))
+                var body = await BoundedBody.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
+                if (TransientHttpStatus.IsTransient(response.StatusCode, body))
                 {
                     if (attempt >= _retryOptions.MaxAttempts)
                     {
                         throw new JsonLedgerApiException(
-                            $"POST {AllocatePath} (hint={partyIdHint}) returned {(int)response.StatusCode} {response.ReasonPhrase} on all {_retryOptions.MaxAttempts} attempts: {body}",
+                            $"POST {AllocatePath} (hint={partyIdHint}) returned {(int)response.StatusCode} {response.ReasonPhrase} on all {_retryOptions.MaxAttempts} attempts: {BoundedBody.ForMessage(body)}",
                             response.StatusCode,
                             body);
                     }
@@ -255,7 +242,7 @@ public sealed class PartyAllocator
 
                 if (earlierAttemptInconclusive && IsPartyAlreadyExists(response.StatusCode, body))
                 {
-                    var existing = await FindPartyByHintAsync(partyIdHint, token, cancellationToken).ConfigureAwait(false);
+                    var existing = await FindPartyByHintAsync(partyIdHint, cancellationToken).ConfigureAwait(false);
                     if (existing is not null)
                     {
                         _logger.LogInformation(
@@ -266,7 +253,7 @@ public sealed class PartyAllocator
                 }
 
                 throw new JsonLedgerApiException(
-                    $"POST {AllocatePath} (hint={partyIdHint}) returned {(int)response.StatusCode} {response.ReasonPhrase}: {body}",
+                    $"POST {AllocatePath} (hint={partyIdHint}) returned {(int)response.StatusCode} {response.ReasonPhrase}: {BoundedBody.ForMessage(body)}",
                     response.StatusCode,
                     body);
             }
@@ -275,14 +262,13 @@ public sealed class PartyAllocator
 
     private Task<HttpResponseMessage> SendAllocationAsync(
         string partyIdHint,
-        string displayName,
         string synchronizerId,
         string token,
         CancellationToken cancellationToken)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, AllocatePath)
         {
-            Content = JsonContent.Create(new AllocatePartyRequest(partyIdHint, displayName, string.Empty, synchronizerId)),
+            Content = JsonContent.Create(new AllocatePartyRequest(partyIdHint, string.Empty, synchronizerId)),
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
@@ -305,10 +291,6 @@ public sealed class PartyAllocator
             AllocatePath, partyIdHint, outcome, attempt, _retryOptions.MaxAttempts, delay);
         await _retryOptions.Delay(delay, cancellationToken).ConfigureAwait(false);
     }
-
-    private static bool IsTransient(HttpStatusCode status, string body) =>
-        status is HttpStatusCode.ServiceUnavailable or HttpStatusCode.GatewayTimeout
-        || (status == HttpStatusCode.Conflict && body.Contains(RequestAlreadyInFlightMarker, StringComparison.Ordinal));
 
     private static bool IsPartyAlreadyExists(HttpStatusCode status, string body) =>
         status == HttpStatusCode.BadRequest && body.Contains(PartyAlreadyExistsMarker, StringComparison.Ordinal);
@@ -338,9 +320,9 @@ public sealed class PartyAllocator
 
     private async Task<AllocatedPartyDetails?> FindPartyByHintAsync(
         string partyIdHint,
-        string token,
         CancellationToken cancellationToken)
     {
+        var token = await _tokenProvider.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
         var partyIdPrefix = $"{partyIdHint}::";
         var requestUri = $"{AllocatePath}?filter-party={Uri.EscapeDataString(partyIdPrefix)}";
         using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
@@ -350,9 +332,9 @@ public sealed class PartyAllocator
         using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var body = await BoundedBody.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
             throw new JsonLedgerApiException(
-                $"GET {requestUri} returned {(int)response.StatusCode} {response.ReasonPhrase}: {body}",
+                $"GET {requestUri} returned {(int)response.StatusCode} {response.ReasonPhrase}: {BoundedBody.ForMessage(body)}",
                 response.StatusCode,
                 body);
         }
@@ -373,7 +355,6 @@ public sealed class PartyAllocator
 
     private sealed record AllocatePartyRequest(
         [property: JsonPropertyName("partyIdHint")] string PartyIdHint,
-        [property: JsonPropertyName("displayName")] string DisplayName,
         [property: JsonPropertyName("identityProviderId")] string IdentityProviderId,
         [property: JsonPropertyName("synchronizerId")] string SynchronizerId);
 

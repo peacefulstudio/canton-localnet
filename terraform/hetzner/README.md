@@ -42,21 +42,17 @@ bump, delete the key file and re-provision, or run `make clean` on the server:
 cd /mnt/canton-localnet-data/canton-localnet && make clean
 ```
 
-## Repointing the checkout
+## The checkout
 
-`repo_url` is read only by the one-shot clone that runs when the volume holds no
-checkout yet, so it seeds an empty volume and nothing more. Changing it against a
-volume that already has a checkout still force-replaces the server — it is
-templated into `user_data` — and the box comes back on the same origin, having
-paid a full cold bring-up for nothing.
-
-To move an existing box to a different repository, do it on the server: set the
-checkout's `origin` to the new URL **and** reset the branch onto it. Provisioning
-ends in `git pull --ff-only`, which aborts the script when the branch has
-diverged, leaving the box with no containers. The alternative is to delete
-`/mnt/canton-localnet-data/canton-localnet`, which re-arms the one-shot clone at
-the next server recreate — pass `-var repo_url=<url>` on that same apply, or the
-clone uses the default again.
+The box runs a published release of the public twin
+`peacefulstudio/canton-localnet`, cloned without a token. On every provision
+cloud-init clones `repo_url` when the volume holds no checkout, sets the
+checkout's `origin` to `repo_url` (a volume first cloned from another
+repository fetches the twin from then on), fetches with `--tags --force`, and
+checks out `repo_ref`. A tag checkout leaves HEAD detached, so the closing
+`git pull --ff-only` runs only when `repo_ref` is a branch. The scheduled
+workflow resolves the newest published twin release and passes it as
+`repo_ref`; a `workflow_dispatch` `repo_ref` input overrides it.
 
 ## Why delete instead of power off?
 
@@ -87,6 +83,25 @@ configuration](https://developer.hashicorp.com/terraform/language/backend#partia
 | encryption | enabled |
 | locking | `use_lockfile` (S3-native lockfile) |
 
+## Host hardening
+
+Cloud-init applies the pending OS updates on first boot and enables
+`unattended-upgrades`. It installs Docker from Docker's apt repository only after
+the downloaded signing key's fingerprint equals the published
+`9DC858229FC7DD38854AE2D88D81803C0EBFCD88`, at the versions in `docker_versions`
+(`docker-ce` and `docker-ce-cli` share `engine`), and holds those packages so a
+system upgrade cannot move them. To bump Docker, change `docker_versions` and let
+the next nightly recreate pick it up.
+
+The volume is formatted by `scripts/format-blank-volume.sh`, and only when
+`blkid -p` reports no `TYPE` and the first MiB is all zero. Any other `blkid`
+outcome, or data in the first MiB, aborts provisioning without formatting, so a
+reattached ledger volume is never reformatted on a doubtful probe.
+
+After LocalNet comes up, provisioning runs `make wait-ready`, which polls the
+JSON Ledger API of every enabled slot (sv, a and b on the box, c and d being off),
+and only then marks the box provisioned.
+
 ## SSH access
 
 There is no generated SSH key. Access is controlled via the
@@ -94,6 +109,19 @@ There is no generated SSH key. Access is controlled via the
 and each entry is registered as an `hcloud_ssh_key` named
 `canton-localnet-<key>`. An empty map (the default) means no developer keys are
 registered.
+
+`ssh_allowed_cidrs` stays open to `0.0.0.0/0`, key-only. Narrowing it was
+considered and rejected: the consumer SSH lanes (terraform-provider-canton `ci.yaml`
+and others) run on GitHub-hosted
+`ubuntu-latest` runners, whose IPs cannot be enumerated, so any allowlist breaks
+them. Login is key-only and the box holds no secret. Revisit if those lanes move
+to `[self-hosted, hetzner]`.
+
+Cloud-init writes `/etc/ssh/sshd_config.d/10-hardening.conf` (password and
+keyboard-interactive login off, `PermitRootLogin prohibit-password`, public-key
+authentication only, three attempts, a 30 s login grace time, no X11 forwarding),
+validates it with `sshd -t` and reloads `ssh`. It restricts neither who may log in
+nor from where, and keeps TCP forwarding for `canton-localnet tunnel`.
 
 ## Variables
 
@@ -106,9 +134,9 @@ registered.
 | `image` | `ubuntu-24.04` | Base OS image. |
 | `hcloud_token` | — (sensitive) | Hetzner Cloud API token. Provide via `TF_VAR_hcloud_token`. |
 | `ssh_allowed_cidrs` | `["0.0.0.0/0"]` | CIDRs allowed to reach SSH (port 22). Narrow this to harden access. |
-| `repo_url` | `https://github.com/peacefulstudio/canton-localnet.git` | Git repository cloned on the server for LocalNet compose assets. Defaults to the public repository, which clones without a token. |
-| `repo_ref` | `dev` | Git ref (branch, tag, or SHA) to check out. The nightly lifecycle apply passes `server_enabled` only, so it re-resolves this to the default on every run — an override lasts until the next scheduled apply. |
-| `repo_token` | — (sensitive) | Optional token for cloning a private repository. |
+| `repo_url` | `https://github.com/peacefulstudio/canton-localnet.git` | Public git repository the server clones and fetches anonymously for LocalNet compose assets. Cloud-init points the checkout's `origin` here on every provision. |
+| `repo_ref` | `null` (required when `server_enabled` is true) | Git ref (release tag, branch, or SHA) of `repo_url` to check out. The scheduled workflow passes the newest published release; a dispatch input overrides it for one run. |
+| `docker_versions` | `engine` `5:29.9.3-1`, `containerd` `2.4.2-3`, `buildx` `0.38.1-1`, `compose` `5.7.0-1` | Pinned Docker apt package versions without the distro suffix, installed from Docker's repository and held. |
 | `developer_ssh_public_keys` | `{}` | Map of name → SSH public-key string. Each entry is registered as an `hcloud_ssh_key` named `canton-localnet-<key>`. |
 
 ## Outputs

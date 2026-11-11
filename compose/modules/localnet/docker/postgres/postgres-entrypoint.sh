@@ -27,13 +27,28 @@ grant_readonly_role() {
   local role=$1
   local password=$2
   local db=$3
+  local variables=(-v "role=$role" -v "password=$password" -v "db=$db")
 
-  execute -tc "SELECT 1 FROM pg_roles WHERE rolname = '$role'" | grep -q 1 || \
-    { execute -c "CREATE ROLE \"$role\" LOGIN PASSWORD '$password'" && echo "Role '$role' created."; }
-  execute -c "GRANT CONNECT ON DATABASE \"$db\" TO \"$role\""
-  execute_db "$db" -c "GRANT USAGE ON SCHEMA public TO \"$role\""
-  execute_db "$db" -c "GRANT SELECT ON ALL TABLES IN SCHEMA public TO \"$role\""
-  execute_db "$db" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO \"$role\""
+  if ! execute -tA "${variables[@]}" <<'SQL' | grep -q 1; then
+SELECT 1 FROM pg_roles WHERE rolname = :'role'
+SQL
+    execute "${variables[@]}" <<'SQL'
+CREATE ROLE :"role" LOGIN PASSWORD :'password'
+SQL
+    echo "Role '$role' created."
+  fi
+  execute "${variables[@]}" <<'SQL'
+GRANT CONNECT ON DATABASE :"db" TO :"role"
+SQL
+  execute_db "$db" "${variables[@]}" <<'SQL'
+GRANT USAGE ON SCHEMA public TO :"role"
+SQL
+  execute_db "$db" "${variables[@]}" <<'SQL'
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO :"role"
+SQL
+  execute_db "$db" "${variables[@]}" <<'SQL'
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO :"role"
+SQL
 }
 
 docker_temp_server_start

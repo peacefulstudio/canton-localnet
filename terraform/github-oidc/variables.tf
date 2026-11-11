@@ -3,8 +3,13 @@
 
 variable "github_repo" {
   type        = string
-  default     = "peacefulstudio/canton-localnet"
-  description = "owner/repo whose GitHub Actions workflows may assume the CI role via OIDC."
+  nullable    = false
+  description = "owner/repo whose GitHub Actions workflows may assume the CI role via OIDC. Required, with no default: it must be the repository whose hetzner-localnet-schedule workflow runs, and a default naming any other repository would silently re-point the trust policy there on the next apply."
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$", var.github_repo))
+    error_message = "github_repo must be owner/repo, with only [A-Za-z0-9._-] on each side: it is interpolated into the OIDC sub claim the IAM trust policy matches, so a wildcard or an empty side is refused."
+  }
 }
 
 variable "github_environment" {

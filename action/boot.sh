@@ -157,7 +157,7 @@ if ! timeout "${attempt_seconds}s" "$CLI_PATH" "${up_args[@]}"; then
   canton_localnet_log_warning "canton-localnet up failed or timed out on the first attempt — capturing diagnostics, tearing down with volumes, and retrying once"
   mkdir -p "$RUNNER_TEMP/canton-localnet/diagnostics"
   timeout 30 make -C "$ACTION_PATH" status-all >"$RUNNER_TEMP/canton-localnet/diagnostics/docker-ps-attempt1.txt" 2>&1 || true
-  timeout 60 make -C "$ACTION_PATH" logs-recent >"$RUNNER_TEMP/canton-localnet/diagnostics/logs-attempt1.txt" 2>&1 || true
+  timeout 60 make -C "$ACTION_PATH" logs-recent 2>&1 | bash "$here/redact-secrets.sh" >"$RUNNER_TEMP/canton-localnet/diagnostics/logs-attempt1.txt" || true
   bash "$here/host-diagnostics.sh" capture "$RUNNER_TEMP/canton-localnet/diagnostics/host-attempt1" "$(canton_localnet_memory_samples_file)"
   remaining="$(canton_localnet_deadline_remaining "$deadline" "the pre-retry teardown")"
   timeout "${remaining}s" "$CLI_PATH" "${down_args[@]}" || canton_localnet_log_warning "pre-retry teardown failed; the retry may fail with leaked state"
@@ -195,10 +195,13 @@ if [ "$multi_sync_effective" = "true" ]; then
     canton_localnet_log_error "canton-localnet action: 'multi-sync: true' requires validators a, b and d all enabled (the app-synchronizer console script waits on all three); missing: ${missing[*]}"
     exit 1
   fi
-  remaining="$(canton_localnet_deadline_remaining "$deadline" "the multi-sync wait")"
-  echo "::group::Wait for the multi-synchronizer profile"
-  "$CLI_PATH" wait-ready --url "http://localhost:11975/readyz" --timeout "${remaining}s" --interval 5s --synchronizers 2 --slot a-validator-1 --repo-root "$ACTION_PATH" --config "$config_path"
-  echo "::endgroup::"
+  for short in a b d; do
+    remaining="$(canton_localnet_deadline_remaining "$deadline" "the multi-sync wait for ${short}")"
+    prefix="$(canton_localnet_slot_prefix "$short")"
+    echo "::group::Wait for the multi-synchronizer profile on ${short}"
+    "$CLI_PATH" wait-ready --url "http://localhost:${prefix}975/readyz" --timeout "${remaining}s" --interval 5s --synchronizers 2 --slot "$(canton_localnet_slot_canonical "$short")" --repo-root "$ACTION_PATH" --config "$config_path"
+    echo "::endgroup::"
+  done
 fi
 
 canton_localnet_record_phase "Wait ready" "$wait_ready_started"

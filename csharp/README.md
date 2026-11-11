@@ -9,19 +9,22 @@ For the full consumer guide, see `docs/public/integration-testing.md`.
 
 xUnit fixtures for Canton LocalNet integration tests. Sub-modules:
 
-- `EndpointDiscovery` — env vars to URLs (JSON Ledger API, Keycloak token endpoint).
+- `EndpointDiscovery` — env vars to URLs (JSON Ledger API, gRPC Ledger API, Keycloak token endpoint).
 - `OAuth2TokenProvider` — `client_credentials` grant with in-memory cache + refresh.
 - `JsonLedgerAdminClient` — thin `HttpClient` wrapper: `GET /v2/parties/participant-id`,
   `GET /v2/state/connected-synchronizers` (participant-wide when no party is
   given), alias lookups for the global and app-provider synchronizers, and
-  `GET /v2/packages/{package-id}` to check whether a package is present.
-- `DarUploader` — `POST /v2/packages` for one DAR or many, once per
+  `POST /v2/package-vetting/list` to check whether this participant has
+  vetted a package on a synchronizer.
+- `DarUploader` — `POST /v2/dars` for one DAR or many, once per
   connected synchronizer (`?synchronizerId=`), so vetting keeps working on
-  both single-sync and multi-sync stacks; idempotent: a
-  `KNOWN_PACKAGE_VERSION` 400 response is treated as success. Pass
-  `expectedMainPackageId` to have a `KNOWN_PACKAGE_VERSION` result read back
-  (`GET /v2/packages/{package-id}`) and throw if that package is not really
-  present.
+  both single-sync and multi-sync stacks. A `KNOWN_PACKAGE_VERSION` 400
+  response is success only when the DAR's own main package (the `Main-Dalf`
+  id in its manifest) is vetted on that synchronizer, so
+  an identical re-upload stays idempotent. When it is not vetted, Canton
+  rejected a different package that shares the name and version of a vetted
+  one, and `DarNotVettedException` names the main package id and the other
+  ids Canton's error lists.
 - `PartyAllocator` — `POST /v2/parties` with hint
   `<consumer-prefix>-<instance-suffix>` where the suffix is a 12-hex
   cryptographic random per fixture instance. Allocates on the global
@@ -37,7 +40,10 @@ xUnit fixtures for Canton LocalNet integration tests. Sub-modules:
 - `LocalnetFixture` — composes the above into a single user-facing surface
   via `Microsoft.Extensions.DependencyInjection` and exposes convenience
   pass-throughs (`UploadDarAsync`, `AllocatePartyAsync`, `CreateUserAsync`,
-  `GetParticipantIdAsync`). `Validator(slot)` returns a per-slot view
+  `GetParticipantIdAsync`). `CreateUserAsync` records the user and
+  `DisposeAsync` deletes it, on the fixture and on every per-slot view; see
+  *Users the fixture created* in `docs/public/integration-testing.md`.
+  `Validator(slot)` returns a per-slot view
   exposing the same deep modules scoped to a single validator (handy for
   cross-validator scenarios); `KnownSlots()` returns the canonical slot
   set in stable order (`sv-validator-1`, `a-validator-1`,
@@ -65,7 +71,9 @@ await using var rights = await fixture.GrantUserRightsLeaseAsync(
 The lease revokes on dispose, so the shared validator user does not silt up
 to `TOO_MANY_USER_RIGHTS`. A failed revoke throws out of `DisposeAsync`,
 which under `await using` can replace an in-flight assertion failure —
-dispose explicitly when the test body has assertions of its own.
+dispose explicitly when the test body has assertions of its own. Dispose the
+lease before the fixture: disposing the fixture deletes `globex-user-…`, and a
+deleted user takes its rights with it.
 
 ## Environment variables
 
@@ -76,12 +84,13 @@ The fixture reads these env vars (matching the compose stack ports in `compose/m
 | `CANTON_LOCALNET_PROFILE` | no | `a-validator-1` | One of `sv-validator-1`, `a-validator-1`, `b-validator-1`, `c-validator-1`, `d-validator-1`. |
 | `CANTON_LOCALNET_JSON_API_URL` | no | `http://localhost:{10,11,12,13,14}975` per profile | Base URL of the JSON Ledger API. |
 | `CANTON_LOCALNET_TOKEN_URL` | no for a/b/c/d, **yes** for sv | `http://localhost:8082/realms/{AValidator1,BValidator1,CValidator1,DValidator1}/protocol/openid-connect/token` per profile. The `SvValidator1` profile has **no default** — no SV realm is imported into Keycloak today (`compose/modules/keycloak/conf/data/` ships A/B/C/D only), so the SV slot's token URL (along with its client id and client secret) must be set explicitly, e.g. pointing at a custom realm you've added. | Keycloak token endpoint. |
+| `CANTON_LOCALNET_<SLOT>_GRPC_URL` | no | `http://localhost:{10,11,12,13,14}901` per slot | Participant gRPC Ledger API, read into `LocalnetEndpoints.GrpcLedgerApi`. Per-slot only: there is no un-namespaced global, so `canton-localnet env` output and `CANTON_LOCALNET_PROFILE=c-validator-1` alone reach slot c's gRPC port. |
 | `CANTON_LOCALNET_AUDIENCE` | no | `https://canton.network.global` | Expected `aud` claim. |
-| `CANTON_LOCALNET_CLIENT_ID` | **yes** | — | OAuth2 `client_id`. |
-| `CANTON_LOCALNET_CLIENT_SECRET` | **yes** | — | OAuth2 `client_secret`. |
+| `CANTON_LOCALNET_CLIENT_ID` | no for a/b/c/d, **yes** for sv | `{a,b,c,d}-validator-1-validator` per profile. The `SvValidator1` profile has no default. | OAuth2 `client_id`. |
+| `CANTON_LOCALNET_CLIENT_SECRET` | no for a/b/c/d, **yes** for sv | The public demo secret of the slot's Keycloak realm, built into `EndpointDiscovery` and committed to this repository (one value for a-validator-1, one shared by b, c and d). The `SvValidator1` profile has no default. Valid only against the local demo stack: never rely on it anywhere else. | OAuth2 `client_secret`. |
 | `CANTON_LOCALNET_SCOPE` | no | `openid` | OAuth2 scope. |
 
-The integration test (`LocalNetIntegrationTests`) self-skips when `CANTON_LOCALNET_JSON_API_URL` / `CLIENT_ID` / `CLIENT_SECRET` are not set, so unit tests run cleanly on a developer machine without `make up`.
+`LocalnetFixture.FromEnvironment()` resolves a/b/c/d with no credential variables set, falling back to the demo client id and secret above. The availability gate `EndpointDiscovery.IsLocalnetAvailable` does not count those defaults: the integration test (`LocalNetIntegrationTests`) self-skips when `CANTON_LOCALNET_JSON_API_URL` / `CLIENT_ID` / `CLIENT_SECRET` (or their per-slot forms) are not set, so unit tests run cleanly on a developer machine without `make up`.
 
 These env vars are the **fixture / test config layer** — distinct from
 `canton-localnet.yaml`, which configures the CLI's stack-boot

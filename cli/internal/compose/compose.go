@@ -121,10 +121,14 @@ func Build(opts Options) (Plan, error) {
 	pqsDir := filepath.Join(modulesDir, "pqs")
 	obsDir := filepath.Join(modulesDir, "observability")
 	loadsPqs := opts.Pqs || opts.Teardown
+	enabledSlots := normalizeEnabledSlots(opts.EnabledSlots)
 
 	args := []string{"compose"}
 	args = append(args, "-f", filepath.Join(localnetDir, "compose.yaml"))
 	args = append(args, "-f", filepath.Join(onboardDir, "compose.yaml"))
+	for _, slotName := range enabledSlots {
+		args = append(args, "-f", portFragment(localnetDir, slotName))
+	}
 
 	if withResource {
 		args = append(args, "-f", filepath.Join(localnetDir, "resource-constraints.yaml"))
@@ -171,7 +175,6 @@ func Build(opts Options) (Plan, error) {
 		args = append(args, "--env-file", filepath.Join(obsDir, "compose.env"))
 	}
 
-	enabledSlots := normalizeEnabledSlots(opts.EnabledSlots)
 	for _, slot := range enabledSlots {
 		args = append(args, "--profile", slot)
 	}
@@ -206,6 +209,10 @@ func Build(opts Options) (Plan, error) {
 	env = append(env, opts.ExtraEnv...)
 
 	return Plan{Args: args, Env: env}, nil
+}
+
+func portFragment(localnetDir, slotName string) string {
+	return filepath.Join(localnetDir, "ports-"+slotName+".yaml")
 }
 
 func pqsProfiles(slots []slot.Slot) []string {

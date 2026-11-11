@@ -7,14 +7,15 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
 	"time"
 
 	"github.com/peacefulstudio/canton-localnet/cli/internal/health"
 	"github.com/peacefulstudio/canton-localnet/cli/internal/pqs"
+	"github.com/peacefulstudio/canton-localnet/cli/internal/restartguard"
 	"github.com/peacefulstudio/canton-localnet/cli/internal/slot"
 	"github.com/peacefulstudio/canton-localnet/cli/internal/startupfatal"
-	"github.com/peacefulstudio/canton-localnet/cli/internal/yamlconfig"
 	"github.com/spf13/cobra"
 )
 
@@ -22,6 +23,19 @@ var pqsCommandRunner pqs.CommandRunner = pqs.ExecRunner
 
 var startupFatalRunner startupfatal.Runner = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 	return exec.CommandContext(ctx, name, args...).CombinedOutput()
+}
+
+var restartGuardRunner restartguard.Runner = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, name, args...).CombinedOutput()
+}
+
+const defaultComposeProject = "localnet"
+
+func composeProject() string {
+	if project := os.Getenv("COMPOSE_PROJECT_NAME"); project != "" {
+		return project
+	}
+	return defaultComposeProject
 }
 
 func newWaitReadyCommand() *cobra.Command {
@@ -34,7 +48,7 @@ func newWaitReadyCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "wait-ready",
 		Short: "Poll the JSON Ledger API until the participant is ready",
-		Long:  "Polls the host-exposed JSON Ledger API readiness endpoint (default http://localhost:11975/readyz) until HTTP 200. With --synchronizers > 1, additionally waits until the slot's participant reports that many connected synchronizers (the multi-sync profile). With --pqs, additionally waits until the slot's PQS (Scribe) pipeline has set its watermark (latest_offset() is non-null), so a contract created right after readiness is streamed with its effective time instead of being seeded from an ACS snapshot that has none. While waiting, aborts early when the `splice` container is crash-looping on a known fatal startup line (a postgres volume bootstrapped with a different party hint than the configured one), naming the mismatch and the remediation. Exit code 0 on ready, non-zero on timeout or fatal startup failure.",
+		Long:  "Polls the host-exposed JSON Ledger API readiness endpoint (default http://localhost:11975/readyz) until HTTP 200. With --synchronizers > 1, additionally waits until the slot's participant reports that many connected synchronizers (the multi-sync profile). With --pqs, additionally waits until the slot's PQS (Scribe) pipeline has set its watermark (latest_offset() is non-null), so a contract created right after readiness is streamed with its effective time instead of being seeded from an ACS snapshot that has none. While waiting, aborts early when the `splice` container is crash-looping on a known fatal startup line (a postgres volume bootstrapped with a different party hint than the configured one), naming the mismatch and the remediation. Once ready, fails when a LocalNet node container (one Docker restarts without bound, such as `canton` and `splice`) has a RestartCount above 0, naming it, because `restart: always` would otherwise hide a crash during boot. Exit code 0 on ready, non-zero on timeout, fatal startup failure or a restarted node container.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			log := func(msg string) { cmd.PrintErrln(msg) }
 			opts.Logger = log
@@ -43,26 +57,10 @@ func newWaitReadyCommand() *cobra.Command {
 			}
 			ctx, cancel := context.WithTimeout(cmd.Context(), opts.Timeout)
 			defer cancel()
-			if err := health.WaitReady(ctx, opts); err != nil {
+			if err := waitUntilReady(ctx, cmd, opts, synchronizers, slotFlag, waitForPqs, log); err != nil {
 				return err
 			}
-			if synchronizers <= 1 && !waitForPqs {
-				return nil
-			}
-			ep, err := resolveSlotEndpoints(cmd, slotFlag)
-			if err != nil {
-				return err
-			}
-			if synchronizers > 1 {
-				client := &http.Client{Timeout: opts.RequestTimeout}
-				if err := waitForSynchronizers(ctx, ep, synchronizers, opts, client, log); err != nil {
-					return err
-				}
-			}
-			if !waitForPqs {
-				return nil
-			}
-			return waitForPqsWatermark(ctx, cmd, ep, opts, log)
+			return restartguard.Check(ctx, restartGuardRunner, composeProject())
 		},
 	}
 	cmd.Flags().StringVar(&opts.URL, "url", health.DefaultURL, "Readiness URL to poll")
@@ -75,12 +73,31 @@ func newWaitReadyCommand() *cobra.Command {
 	return cmd
 }
 
-func slotsByPartyHint(cmd *cobra.Command) map[string]string {
-	configPath, err := cmd.Flags().GetString("config")
-	if err != nil {
+func waitUntilReady(ctx context.Context, cmd *cobra.Command, opts health.Options, synchronizers int, slotFlag string, waitForPqs bool, log func(string)) error {
+	if err := health.WaitReady(ctx, opts); err != nil {
+		return err
+	}
+	if synchronizers <= 1 && !waitForPqs {
 		return nil
 	}
-	cfg, _, err := yamlconfig.Resolve(configPath, "")
+	ep, err := resolveSlotEndpoints(cmd, slotFlag)
+	if err != nil {
+		return err
+	}
+	if synchronizers > 1 {
+		client := &http.Client{Timeout: opts.RequestTimeout}
+		if err := waitForSynchronizers(ctx, ep, synchronizers, opts, client, log); err != nil {
+			return err
+		}
+	}
+	if !waitForPqs {
+		return nil
+	}
+	return waitForPqsWatermark(ctx, cmd, ep, opts, log)
+}
+
+func slotsByPartyHint(cmd *cobra.Command) map[string]string {
+	cfg, _, err := resolveYamlConfig(cmd)
 	if err != nil {
 		return nil
 	}
@@ -130,12 +147,15 @@ func waitForSynchronizers(ctx context.Context, ep slot.Endpoints, want int, opts
 		deadline, _ = ctx.Deadline()
 	}
 
-	token, err := slot.MintToken(ctx, ep, client)
-	if err != nil {
-		return fmt.Errorf("wait-ready: mint token: %w", err)
-	}
-	for {
-		syncs, err := slot.FetchConnectedSynchronizers(ctx, ep, token, client)
+	for attempt := 0; ; attempt++ {
+		token, err := slot.MintToken(ctx, ep, client)
+		if err != nil && attempt == 0 {
+			return fmt.Errorf("wait-ready: mint token: %w", err)
+		}
+		var syncs []slot.ConnectedSynchronizer
+		if err == nil {
+			syncs, err = slot.FetchConnectedSynchronizers(ctx, ep, token, client)
+		}
 		if err == nil && len(syncs) >= want {
 			log(fmt.Sprintf("Ready: participant connected to %d synchronizers", len(syncs)))
 			return nil

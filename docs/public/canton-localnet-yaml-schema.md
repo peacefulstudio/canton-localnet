@@ -3,10 +3,12 @@
 **Status:** preview / unstable. The schema may change before compose
 codegen lands. Breaking changes will be called out in `CHANGELOG.md`.
 
-The CLI walks up from the current working directory looking for a
-`canton-localnet.yaml`, matching the discovery semantics of `git`,
-`docker compose`, and `kubectl`. A `--config <path>` flag overrides
-walk-up. With no file found anywhere, the CLI falls back to built-in
+The CLI walks up looking for a `canton-localnet.yaml`, starting at
+`--repo-root` when it is given and at the current working directory
+otherwise, matching the discovery semantics of `git`, `docker compose`,
+and `kubectl`. A `--config <path>` flag overrides walk-up from either start. A consumer
+running `up --repo-root <canton-localnet checkout>` from its own repo
+should pass `--config` to keep its own yaml. With no file found anywhere, the CLI falls back to built-in
 defaults (all five validator slots enabled, observability + PQS on,
 party hints equal to slot names). Partial configs merge over the
 defaults: top-level keys present in YAML override the default, absent

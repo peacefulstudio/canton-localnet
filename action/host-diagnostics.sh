@@ -18,6 +18,7 @@
 
 set -uo pipefail
 
+redact_secrets_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/redact-secrets.sh"
 sample_interval_seconds=10
 max_samples=720
 command_timeout_seconds=30
@@ -25,7 +26,7 @@ log_tail_lines=200
 log_container_pattern='splice|canton'
 default_compose_project=localnet
 compose_project_name_pattern='^[a-z0-9][a-z0-9_-]*$'
-container_health_format='{{.Name}} state={{.State.Status}} exit={{.State.ExitCode}} oomkilled={{.State.OOMKilled}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}'
+container_health_format='{{.Name}} state={{.State.Status}} restarts={{.RestartCount}} exit={{.State.ExitCode}} oomkilled={{.State.OOMKilled}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}'
 
 run_into() {
   local file="$1"
@@ -59,7 +60,7 @@ capture_project_containers() {
   run_into "$out_dir/container-health.txt" docker inspect --format "$container_health_format" "${names[@]}"
   for name in "${names[@]}"; do
     [[ "$name" =~ $log_container_pattern ]] || continue
-    run_into "$out_dir/logs-${name}.txt" docker logs --tail "$log_tail_lines" "$name"
+    timeout "$command_timeout_seconds" docker logs --tail "$log_tail_lines" "$name" 2>&1 | bash "$redact_secrets_script" >"$out_dir/logs-${name}.txt" || true
   done
 }
 

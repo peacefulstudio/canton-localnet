@@ -251,3 +251,28 @@ func containsAdjacent(args []string, flag, value string) bool {
 	}
 	return false
 }
+
+func TestBuildArgsRejectsADestinationThatReadsAsAnSSHOption(t *testing.T) {
+	t.Parallel()
+	for _, opts := range []Options{
+		{Host: "-oProxyCommand=touch-pwned"},
+		{Host: "-J", User: "ubuntu"},
+		{Host: "203.0.113.10", User: "-oProxyCommand=touch-pwned"},
+	} {
+		if _, err := BuildArgs(opts); err == nil {
+			t.Errorf("expected an error for Host %q User %q", opts.Host, opts.User)
+		}
+	}
+}
+
+func TestBuildArgsEndsOptionsBeforeTheDestination(t *testing.T) {
+	t.Parallel()
+	args, err := BuildArgs(Options{Host: "203.0.113.10", User: "ubuntu", ExtraArgs: []string{"-o", "LogLevel=DEBUG"}})
+	if err != nil {
+		t.Fatalf("BuildArgs: %v", err)
+	}
+	tail := args[len(args)-2:]
+	if tail[0] != "--" || tail[1] != "ubuntu@203.0.113.10" {
+		t.Errorf("expected [-- ubuntu@203.0.113.10] at the end, got %v", tail)
+	}
+}
