@@ -80,6 +80,36 @@ func TestSmoke_MultiValidator_GetParticipantIdPerSlot(t *testing.T) {
 	}
 }
 
+func TestSmoke_GRPCLedgerAPIAcceptsAConnectionOnTheSlotPort(t *testing.T) {
+	for _, tc := range []struct {
+		role Role
+		port string
+	}{
+		{RoleAValidator1, "11901"},
+		{RoleBValidator1, "12901"},
+	} {
+		t.Run(string(tc.role), func(t *testing.T) {
+			skipIfStackUnreachable(t, tc.role)
+			endpoints, err := NewEndpointDiscovery().For(tc.role)
+			if err != nil {
+				t.Fatalf("For(%s): %v", tc.role, err)
+			}
+			u, err := url.Parse(endpoints.GRPCLedgerAPIURL)
+			if err != nil {
+				t.Fatalf("parse GRPCLedgerAPIURL %q: %v", endpoints.GRPCLedgerAPIURL, err)
+			}
+			if u.Port() != tc.port {
+				t.Errorf("gRPC port = %q, want %q", u.Port(), tc.port)
+			}
+			conn, err := net.DialTimeout("tcp", u.Host, 5*time.Second)
+			if err != nil {
+				t.Fatalf("dial %s: %v", u.Host, err)
+			}
+			_ = conn.Close()
+		})
+	}
+}
+
 func TestSmoke_AllocatePartyUploadDarBuildUser(t *testing.T) {
 	skipIfStackUnreachable(t, RoleAValidator1)
 
@@ -103,7 +133,7 @@ func TestSmoke_AllocatePartyUploadDarBuildUser(t *testing.T) {
 	}
 	t.Logf("party suffix = %s", suffix)
 
-	party, err := f.AllocateParty(ctx, "cln-go-it", "Smoke Test Party")
+	party, err := f.AllocateParty(ctx, "cln-go-it")
 	if err != nil {
 		t.Fatalf("AllocateParty: %v", err)
 	}

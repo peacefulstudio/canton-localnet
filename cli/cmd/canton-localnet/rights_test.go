@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/peacefulstudio/canton-localnet/cli/internal/slot"
 )
 
 const (
@@ -786,5 +788,17 @@ func TestRightsPruneWithoutPreserveBaseRevokesReadAsOnThePreservedParty(t *testi
 	}
 	if len(participant.patches()) != 1 || !strings.Contains(participant.patches()[0].body, "CanReadAs") {
 		t.Errorf("without --preserve-base, CanReadAs on the validator's own party must still be revoked: %+v", participant.patches())
+	}
+}
+
+func TestUnresolvedValidatorUserIDErrorNamesTheValidatorUserIDKey(t *testing.T) {
+	t.Parallel()
+	ep := slot.Endpoints{Slot: slot.Slot{Canonical: "a-validator-1", Short: "a"}}
+
+	got := unresolvedValidatorUserIDError(ep).Error()
+
+	want := "rights: a-validator-1: validator user id not resolved — set CANTON_LOCALNET_A_VALIDATOR_1_VALIDATOR_USER_ID, or pass --user"
+	if got != want {
+		t.Errorf("expected %q, got %q", want, got)
 	}
 }

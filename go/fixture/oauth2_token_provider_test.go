@@ -230,6 +230,27 @@ func TestOAuth2TokenProvider_RejectsNonPositiveExpiresIn(t *testing.T) {
 	}
 }
 
+func TestOAuth2TokenProvider_TruncatesALongErrorDescription(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"error":             "invalid_client",
+			"error_description": strings.Repeat("D", 12000),
+		})
+	}))
+	t.Cleanup(server.Close)
+
+	p := newProvider(t, server.URL, "id", "secret", "aud", "", staticClock(time.Unix(0, 0)))
+	_, err := p.Token(context.Background())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	want := "oauth2: token endpoint returned HTTP 401: invalid_client: " + strings.Repeat("D", 512) + "...[truncated]"
+	if err.Error() != want {
+		t.Errorf("error = %q, want %q", err.Error(), want)
+	}
+}
+
 func TestOAuth2TokenProvider_TruncatesLongErrorBody(t *testing.T) {
 	long := strings.Repeat("X", 12000)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

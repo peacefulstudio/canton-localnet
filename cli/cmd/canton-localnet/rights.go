@@ -149,7 +149,7 @@ func resolveRightsTarget(cmd *cobra.Command, slotFlag, preserveParty string, max
 		ep.ValidatorUserID = userOverride
 	}
 	if ep.ValidatorUserID == "" {
-		return rightsTarget{}, fmt.Errorf("rights: %s: validator user id not resolved — set CANTON_LOCALNET_%s_USER_ID, or pass --user", ep.Slot.Canonical, ep.Slot.EnvPrefix())
+		return rightsTarget{}, unresolvedValidatorUserIDError(ep)
 	}
 	httpClient := &http.Client{Timeout: 30 * time.Second}
 	token, err := slot.MintToken(cmd.Context(), ep, httpClient)
@@ -171,6 +171,10 @@ func resolveRightsTarget(cmd *cobra.Command, slotFlag, preserveParty string, max
 	target.policy = policy
 	target.preserveSource = source
 	return target, nil
+}
+
+func unresolvedValidatorUserIDError(ep slot.Endpoints) error {
+	return fmt.Errorf("rights: %s: validator user id not resolved — set CANTON_LOCALNET_%s_VALIDATOR_USER_ID, or pass --user", ep.Slot.Canonical, ep.Slot.EnvPrefix())
 }
 
 func (t rightsTarget) resolvePreservedParty(ctx context.Context, preserveParty string) (string, string, error) {

@@ -183,3 +183,37 @@ func TestPqsModuleDefinesAScribeAndAToggledDatabaseForExactlyThePqsSlots(t *test
 		}
 	}
 }
+
+func TestMakefilePqsDefaultSlotNamesMatchSlot(t *testing.T) {
+	t.Parallel()
+	declaration := regexp.MustCompile(`(?m)^PQS_DEFAULT_SLOT_NAMES\s*:=(.*)$`).FindStringSubmatch(readRepoFile(t, "Makefile"))
+	if declaration == nil {
+		t.Fatal("Makefile PQS_DEFAULT_SLOT_NAMES declaration not found")
+	}
+	assertTableMatches(t, "Makefile PQS_DEFAULT_SLOT_NAMES", wordSet(declaration[1]), shortSet(PqsDefaultSlots()))
+}
+
+func TestWaitReadyScriptPortPrefixTableMatchesSlot(t *testing.T) {
+	t.Parallel()
+	body := shellFunctionBody(t, readRepoFile(t, "compose/scripts/wait-ready.sh"), "slot_prefix")
+	arms := regexp.MustCompile(`(?m)^\s+(\w+)\) echo "(\d+)" ;;$`).FindAllStringSubmatch(body, -1)
+	assertTableMatches(t, "compose/scripts/wait-ready.sh slot_prefix",
+		tableFromMatches(arms), slotTable(func(s Slot) string { return s.PortPrefix }))
+}
+
+func TestWaitReadyScriptCanonicalNameTableMatchesSlot(t *testing.T) {
+	t.Parallel()
+	body := shellFunctionBody(t, readRepoFile(t, "compose/scripts/wait-ready.sh"), "slot_canonical")
+	arms := regexp.MustCompile(`(?m)^\s+(\w+)\) echo "([\w-]+)" ;;$`).FindAllStringSubmatch(body, -1)
+	assertTableMatches(t, "compose/scripts/wait-ready.sh slot_canonical",
+		tableFromMatches(arms), slotTable(func(s Slot) string { return s.Canonical }))
+}
+
+func TestWaitReadyScriptSlotListMatchesSlot(t *testing.T) {
+	t.Parallel()
+	declaration := regexp.MustCompile(`(?m)^SLOTS="([a-z ]+)"$`).FindStringSubmatch(readRepoFile(t, "compose/scripts/wait-ready.sh"))
+	if declaration == nil {
+		t.Fatal("compose/scripts/wait-ready.sh SLOTS declaration not found")
+	}
+	assertTableMatches(t, "compose/scripts/wait-ready.sh SLOTS", wordSet(declaration[1]), shortSet(All()))
+}

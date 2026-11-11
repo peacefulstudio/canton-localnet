@@ -6,6 +6,7 @@ package health
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -41,24 +42,155 @@ func TestWaitReadySuccessAfterRetries(t *testing.T) {
 	}
 }
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+func clientAnswering(status int) *http.Client {
+	return &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: status,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Request:    req,
+		}, nil
+	})}
+}
+
+func clientFailingOnceThenBlocking(firstErr error) *http.Client {
+	var calls int32
+	return &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if atomic.AddInt32(&calls, 1) == 1 {
+			return nil, firstErr
+		}
+		<-req.Context().Done()
+		return nil, req.Context().Err()
+	})}
+}
+
+func clientAnsweringOnceThenBlocking(status int) *http.Client {
+	var calls int32
+	return &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if atomic.AddInt32(&calls, 1) == 1 {
+			return &http.Response{
+				StatusCode: status,
+				Body:       io.NopCloser(strings.NewReader("")),
+				Request:    req,
+			}, nil
+		}
+		<-req.Context().Done()
+		return nil, req.Context().Err()
+	})}
+}
+
 func TestWaitReadyTimeout(t *testing.T) {
 	t.Parallel()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "never ready", http.StatusServiceUnavailable)
-	}))
-	defer server.Close()
 
 	err := WaitReady(context.Background(), Options{
-		URL:            server.URL,
+		URL:            "http://localnet.invalid/readyz",
 		Timeout:        50 * time.Millisecond,
 		PollInterval:   10 * time.Millisecond,
 		RequestTimeout: 20 * time.Millisecond,
+		HTTPClient:     clientAnswering(http.StatusServiceUnavailable),
 	})
+
 	if !errors.Is(err, ErrTimeout) {
 		t.Fatalf("expected ErrTimeout, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "HTTP 503") {
+	if !strings.Contains(err.Error(), "last status: HTTP 503") {
 		t.Errorf("expected last HTTP status in error, got %q", err.Error())
+	}
+}
+
+func TestWaitReadyTimeoutKeepsTheLastStatusWhenTheFinalAttemptIsCutByTheOverallDeadline(t *testing.T) {
+	t.Parallel()
+
+	err := WaitReady(context.Background(), Options{
+		URL:            "http://localnet.invalid/readyz",
+		Timeout:        100 * time.Millisecond,
+		PollInterval:   time.Millisecond,
+		RequestTimeout: time.Minute,
+		HTTPClient:     clientAnsweringOnceThenBlocking(http.StatusServiceUnavailable),
+	})
+
+	if !errors.Is(err, ErrTimeout) {
+		t.Fatalf("expected ErrTimeout, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "last status: HTTP 503") {
+		t.Errorf("expected the kept HTTP 503 in error, got %q", err.Error())
+	}
+}
+
+func TestWaitReadyTimeoutKeepsTheLastRealErrorWhenTheFinalAttemptIsCutByTheOverallDeadline(t *testing.T) {
+	t.Parallel()
+
+	err := WaitReady(context.Background(), Options{
+		URL:            "http://localnet.invalid/readyz",
+		Timeout:        100 * time.Millisecond,
+		PollInterval:   time.Millisecond,
+		RequestTimeout: time.Minute,
+		HTTPClient:     clientFailingOnceThenBlocking(errors.New("connection refused")),
+	})
+
+	if !errors.Is(err, ErrTimeout) {
+		t.Fatalf("expected ErrTimeout, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "connection refused") {
+		t.Errorf("expected the kept connection error, got %q", err.Error())
+	}
+	if strings.Contains(err.Error(), "context deadline exceeded") {
+		t.Errorf("deadline-cut attempt overwrote the last real error: %q", err.Error())
+	}
+}
+
+func TestWaitReadyTimeoutReportsTheDeadlineCutAttemptWhenNothingElseWasObserved(t *testing.T) {
+	t.Parallel()
+
+	err := WaitReady(context.Background(), Options{
+		URL:            "http://localnet.invalid/readyz",
+		Timeout:        30 * time.Millisecond,
+		PollInterval:   time.Millisecond,
+		RequestTimeout: time.Minute,
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			<-req.Context().Done()
+			return nil, req.Context().Err()
+		})},
+	})
+
+	if !errors.Is(err, ErrTimeout) {
+		t.Fatalf("expected ErrTimeout, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "last error: Get \"http://localnet.invalid/readyz\": context deadline exceeded") {
+		t.Errorf("expected the deadline-cut error when it is the only one, got %q", err.Error())
+	}
+}
+
+func TestWaitReadyTimeoutKeepsThePerRequestTimeoutAsTheLastError(t *testing.T) {
+	t.Parallel()
+	var calls int32
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if atomic.AddInt32(&calls, 1) == 1 {
+			return nil, errors.New("connection refused")
+		}
+		<-req.Context().Done()
+		return nil, req.Context().Err()
+	})}
+
+	err := WaitReady(context.Background(), Options{
+		URL:            "http://localnet.invalid/readyz",
+		Timeout:        150 * time.Millisecond,
+		PollInterval:   time.Millisecond,
+		RequestTimeout: 10 * time.Millisecond,
+		HTTPClient:     client,
+	})
+
+	if !errors.Is(err, ErrTimeout) {
+		t.Fatalf("expected ErrTimeout, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "context deadline exceeded") {
+		t.Errorf("expected the per-request timeout to count as the last error, got %q", err.Error())
+	}
+	if strings.Contains(err.Error(), "connection refused") {
+		t.Errorf("per-request timeout did not replace the earlier error: %q", err.Error())
 	}
 }
 

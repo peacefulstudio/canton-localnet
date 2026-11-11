@@ -74,6 +74,27 @@ public class LocalNetIntegrationTests
         Assert.NotEqual(a, b);
     }
 
+    [Theory]
+    [InlineData(LocalnetProfile.AValidator1, 11901)]
+    [InlineData(LocalnetProfile.BValidator1, 12901)]
+    public async Task EndpointDiscovery_grpc_ledger_api_accepts_a_connection_on_the_slot_port(
+        LocalnetProfile profile,
+        int expectedPort)
+    {
+        if (!EndpointDiscovery.IsSlotAvailable(profile))
+        {
+            Assert.Skip(SkipMessage);
+        }
+
+        var grpcLedgerApi = EndpointDiscovery.Resolve(profile).GrpcLedgerApi;
+
+        Assert.Equal(expectedPort, grpcLedgerApi.Port);
+        using var client = new System.Net.Sockets.TcpClient();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await client.ConnectAsync(grpcLedgerApi.Host, grpcLedgerApi.Port, timeout.Token);
+        Assert.True(client.Connected);
+    }
+
     [Fact]
     public async Task LocalnetFixture_uploads_dar_allocates_party_and_creates_user_with_actAs()
     {
@@ -177,6 +198,65 @@ public class LocalNetIntegrationTests
         await owner.DisposeAsync();
         var afterOwnerDispose = await SendAsync(http, token, HttpMethod.Get, rightsPath, body: null);
         Assert.Equal(0, RightsCount(afterOwnerDispose.Body, "rights"));
+    }
+
+    [Fact]
+    public async Task LocalnetFixture_dispose_deletes_the_users_it_created()
+    {
+        if (!EndpointDiscovery.IsLocalnetAvailable())
+        {
+            Assert.Skip(SkipMessage);
+        }
+
+        await using var observer = LocalnetFixture.FromEnvironment();
+        using var http = new HttpClient { BaseAddress = observer.Endpoints.JsonLedgerApi };
+        var token = await observer.TokenProvider.GetAccessTokenAsync();
+        var fixture = LocalnetFixture.FromEnvironment();
+        var party = await fixture.AllocatePartyAsync("teardown");
+        var userId = $"teardown-user-{fixture.PartyAllocator.InstanceSuffix}";
+        await fixture.CreateUserAsync(userId, primaryParty: party.PartyId, actAs: new[] { party.PartyId });
+        var userPath = $"v2/users/{userId}";
+        var before = await SendAsync(http, token, HttpMethod.Get, userPath, body: null);
+        Assert.Equal(HttpStatusCode.OK, before.Status);
+
+        await fixture.DisposeAsync();
+
+        var after = await SendAsync(http, token, HttpMethod.Get, userPath, body: null);
+        Assert.Equal(HttpStatusCode.NotFound, after.Status);
+    }
+
+    [Fact]
+    public async Task JsonLedgerApi_reports_deleting_a_missing_user_as_404_USER_NOT_FOUND()
+    {
+        if (!EndpointDiscovery.IsLocalnetAvailable())
+        {
+            Assert.Skip(SkipMessage);
+        }
+
+        await using var fixture = LocalnetFixture.FromEnvironment();
+        using var http = new HttpClient { BaseAddress = fixture.Endpoints.JsonLedgerApi };
+        var token = await fixture.TokenProvider.GetAccessTokenAsync();
+        var version = await ParticipantVersionAsync(http, token);
+
+        var missing = await SendAsync(
+            http,
+            token,
+            HttpMethod.Delete,
+            $"v2/users/never-created-{fixture.PartyAllocator.InstanceSuffix}",
+            body: null);
+
+        Assert.True(
+            missing.Status == HttpStatusCode.NotFound && JsonCode(missing.Body) == "USER_NOT_FOUND",
+            "UserBuilder.DeleteAsync treats exactly '404 with code USER_NOT_FOUND' as a user that is already "
+            + "gone when it retries a fixture teardown. If this fires after a Splice repin, that contract "
+            + $"changed and UserBuilder must change with it. Participant version: {version}. "
+            + $"Status: {(int)missing.Status}. Body: {missing.Body}");
+    }
+
+    private static string? JsonCode(string body)
+    {
+        using var document = JsonDocument.Parse(body);
+        return document.RootElement.TryGetProperty("code", out var code) ? code.GetString() : null;
     }
 
     private static string RightsPayload(string userId, string party) =>

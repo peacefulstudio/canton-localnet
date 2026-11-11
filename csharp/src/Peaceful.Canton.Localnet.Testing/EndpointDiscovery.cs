@@ -7,7 +7,7 @@ namespace Peaceful.Canton.Localnet.Testing;
 
 /// <summary>
 /// Selects which Canton LocalNet profile a fixture is wired to. The profile
-/// determines the host-exposed JSON Ledger API port (sv-validator-1=10xxx,
+/// determines the host-exposed JSON and gRPC Ledger API ports (sv-validator-1=10xxx,
 /// a-validator-1=11xxx, b-validator-1=12xxx, c-validator-1=13xxx,
 /// d-validator-1=14xxx) and which
 /// Keycloak realm issues tokens.
@@ -32,10 +32,18 @@ public enum LocalnetProfile
 
 /// <summary>
 /// Holds the resolved endpoints a fixture needs: the JSON Ledger API base URL,
-/// the OAuth2 token endpoint, the expected token audience, the
+/// the gRPC Ledger API address (<see cref="GrpcLedgerApi"/>), the OAuth2 token endpoint, the expected token audience, the
 /// client_credentials client id/secret, and the validator's service-account
 /// ledger <see cref="ValidatorUserId"/> that <c>client_credentials</c> tokens
 /// authenticate as.
+///
+/// <para>
+/// <see cref="GrpcLedgerApi"/> is the slot's participant gRPC Ledger API as an
+/// <c>http://host:port</c> URI, the form a gRPC client channel takes. It
+/// defaults to the slot's port prefix plus <c>901</c> and is overridden per
+/// slot with <c>CANTON_LOCALNET_&lt;SLOT&gt;_GRPC_URL</c>, the variable
+/// <c>canton-localnet env</c> exports.
+/// </para>
 ///
 /// <para>
 /// <see cref="ValidatorUserId"/> is the ledger user id the slot's
@@ -53,6 +61,7 @@ public enum LocalnetProfile
 /// </summary>
 public sealed record LocalnetEndpoints(
     Uri JsonLedgerApi,
+    Uri GrpcLedgerApi,
     Uri TokenEndpoint,
     string Audience,
     string ClientId,
@@ -63,6 +72,7 @@ public sealed record LocalnetEndpoints(
     private bool PrintMembers(StringBuilder builder)
     {
         builder.Append($"{nameof(JsonLedgerApi)} = {JsonLedgerApi}, ");
+        builder.Append($"{nameof(GrpcLedgerApi)} = {GrpcLedgerApi}, ");
         builder.Append($"{nameof(TokenEndpoint)} = {TokenEndpoint}, ");
         builder.Append($"{nameof(Audience)} = {Audience}, ");
         builder.Append($"{nameof(ClientId)} = {ClientId}, ");
@@ -264,6 +274,9 @@ public static class EndpointDiscovery
             ?? (honourLegacyGlobals ? GetValue(env, JsonApiUrlEnv) : null)
             ?? DefaultJsonApiUrl(profile);
 
+        var grpcApi = GetValue(env, $"CANTON_LOCALNET_{slot}_GRPC_URL")
+            ?? DefaultGrpcLedgerApiUrl(profile);
+
         var tokenUrl = GetValue(env, $"CANTON_LOCALNET_{slot}_TOKEN_URL")
             ?? (honourLegacyGlobals ? GetValue(env, TokenUrlEnv) : null)
             ?? DefaultTokenUrl(profile)
@@ -293,6 +306,7 @@ public static class EndpointDiscovery
 
         return new LocalnetEndpoints(
             JsonLedgerApi: new Uri(jsonApi, UriKind.Absolute),
+            GrpcLedgerApi: new Uri(grpcApi, UriKind.Absolute),
             TokenEndpoint: new Uri(tokenUrl, UriKind.Absolute),
             Audience: audience,
             ClientId: clientId,
@@ -333,6 +347,16 @@ public static class EndpointDiscovery
         LocalnetProfile.BValidator1 => "http://localhost:12975",
         LocalnetProfile.CValidator1 => "http://localhost:13975",
         LocalnetProfile.DValidator1 => "http://localhost:14975",
+        _ => throw new ArgumentOutOfRangeException(nameof(profile), profile, null),
+    };
+
+    private static string DefaultGrpcLedgerApiUrl(LocalnetProfile profile) => profile switch
+    {
+        LocalnetProfile.SvValidator1 => "http://localhost:10901",
+        LocalnetProfile.AValidator1 => "http://localhost:11901",
+        LocalnetProfile.BValidator1 => "http://localhost:12901",
+        LocalnetProfile.CValidator1 => "http://localhost:13901",
+        LocalnetProfile.DValidator1 => "http://localhost:14901",
         _ => throw new ArgumentOutOfRangeException(nameof(profile), profile, null),
     };
 

@@ -9,8 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 )
+
+const userNotFoundCode = "USER_NOT_FOUND"
 
 // UserOptions describes the user to create and the rights to grant.
 type UserOptions struct {
@@ -58,7 +61,7 @@ func NewUserBuilder(baseURL string, tokens TokenProvider, opts ...UserBuilderOpt
 	b := &UserBuilder{
 		baseURL:    normalizeBaseURL(baseURL),
 		tokens:     tokens,
-		httpClient: http.DefaultClient,
+		httpClient: newDefaultHTTPClient(),
 	}
 	for _, opt := range opts {
 		opt(b)
@@ -148,6 +151,29 @@ func (b *UserBuilder) Create(ctx context.Context, opts UserOptions) (string, err
 		id = opts.UserID
 	}
 	return id, nil
+}
+
+func (b *UserBuilder) deleteUser(ctx context.Context, userID string, attempt int) error {
+	_, err := doRequest(ctx, b.httpClient, b.tokens, b.baseURL, httpRequest{
+		method:    http.MethodDelete,
+		path:      "/v2/users/" + url.PathEscape(userID),
+		errPrefix: "user",
+	})
+	if err != nil && attempt > 1 && isMissingUser(err) {
+		return nil
+	}
+	return err
+}
+
+func isMissingUser(err error) bool {
+	var statusErr *httpStatusError
+	if !errors.As(err, &statusErr) || statusErr.statusCode != http.StatusNotFound {
+		return false
+	}
+	var payload struct {
+		Code string `json:"code"`
+	}
+	return json.Unmarshal(statusErr.body, &payload) == nil && payload.Code == userNotFoundCode
 }
 
 func buildRights(actAs, readAs []string) []right {

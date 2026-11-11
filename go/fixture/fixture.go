@@ -13,6 +13,7 @@ package fixture
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
@@ -39,8 +40,9 @@ type Config struct {
 //	if err := f.Setup(ctx); err != nil { t.Fatal(err) }
 //	t.Cleanup(func() { _ = f.Teardown(context.Background()) })
 //
-// Setup is idempotent. Teardown invalidates the cached token and resets
-// the fixture so a subsequent Setup re-establishes credentials.
+// Setup is idempotent. Teardown deletes the ledger users created through
+// CreateUser, invalidates the cached token and resets the fixture so a
+// subsequent Setup re-establishes credentials.
 type Fixture struct {
 	cfg          Config
 	endpoints    Endpoints
@@ -49,6 +51,8 @@ type Fixture struct {
 	dars         *DarUploader
 	parties      *PartyAllocator
 	users        *UserBuilder
+	created      createdUsers
+	mu           sync.RWMutex
 	ready        bool
 	validatorsMu sync.Mutex
 	validators   map[Role]*ValidatorFixture
@@ -81,6 +85,8 @@ func New(cfg Config) (*Fixture, error) {
 // Setup resolves endpoints and constructs the token provider and admin client.
 // Calling Setup more than once is a no-op after the first successful invocation.
 func (f *Fixture) Setup(ctx context.Context) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.ready {
 		return nil
 	}
@@ -111,7 +117,7 @@ func (f *Fixture) Setup(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("fixture: build dar uploader: %w", err)
 	}
-	parties, err := NewPartyAllocator(endpoints.JSONLedgerAPIURL, tokens, WithPartyAllocatorHTTPClient(f.cfg.HTTPClient))
+	parties, err := NewPartyAllocator(endpoints.JSONLedgerAPIURL, tokens, WithPartyAllocatorHTTPClient(f.cfg.HTTPClient), withPartyAllocatorAdminClient(admin))
 	if err != nil {
 		return fmt.Errorf("fixture: build party allocator: %w", err)
 	}
@@ -129,16 +135,29 @@ func (f *Fixture) Setup(ctx context.Context) error {
 	return nil
 }
 
-// Teardown invalidates the cached access token and resets the fixture so
-// the next Setup re-establishes credentials. It honours ctx cancellation
-// at entry; further blocking I/O added by future maintainers should also
-// observe ctx.
+// Teardown deletes the ledger users created through CreateUser on this
+// fixture and on every Validator view, then invalidates the cached access
+// token and resets the fixture so the next Setup re-establishes credentials.
+//
+// Each user costs one DELETE /v2/users/{id} per attempt and no GET. The first
+// attempt returns an error for any non-2xx response, so a user left behind on
+// a shared participant is never silent. A delete that fails does not stop the
+// others, and the error is returned once every user has had its attempt. The
+// fixture then stays set up: call Teardown again to retry only the users still
+// outstanding. From the second attempt on, the participant's 404
+// USER_NOT_FOUND counts as success. It honours ctx cancellation at entry and
+// on every delete.
 func (f *Fixture) Teardown(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if !f.ready {
 		return nil
+	}
+	if err := f.deleteCreatedUsers(ctx); err != nil {
+		return err
 	}
 	f.tokens.Invalidate()
 	f.dars = nil
@@ -156,20 +175,42 @@ func (f *Fixture) Teardown(ctx context.Context) error {
 	return nil
 }
 
+func (f *Fixture) deleteCreatedUsers(ctx context.Context) error {
+	f.validatorsMu.Lock()
+	views := make([]*ValidatorFixture, 0, len(f.validators))
+	for _, v := range f.validators {
+		views = append(views, v)
+	}
+	f.validatorsMu.Unlock()
+
+	var failures []error
+	for _, v := range views {
+		failures = append(failures, v.created.deleteAll(ctx, v.users))
+	}
+	failures = append(failures, f.created.deleteAll(ctx, f.users))
+	return errors.Join(failures...)
+}
+
 // Endpoints returns the resolved endpoint set. Panics if called before Setup.
 func (f *Fixture) Endpoints() Endpoints {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	f.mustBeReady("Endpoints")
 	return f.endpoints
 }
 
 // Tokens returns the OAuth2 token provider. Panics if called before Setup.
 func (f *Fixture) Tokens() *OAuth2TokenProvider {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	f.mustBeReady("Tokens")
 	return f.tokens
 }
 
 // Admin returns the JSON Ledger Admin client. Panics if called before Setup.
 func (f *Fixture) Admin() *JsonLedgerAdminClient {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	f.mustBeReady("Admin")
 	return f.admin
 }
@@ -198,23 +239,29 @@ func (f *Fixture) GetAppSynchronizerId(ctx context.Context, party string) (strin
 
 // DarUploader returns the DAR uploader. Panics if called before Setup.
 func (f *Fixture) DarUploader() *DarUploader {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	f.mustBeReady("DarUploader")
 	return f.dars
 }
 
 // PartyAllocator returns the party allocator. Panics if called before Setup.
 func (f *Fixture) PartyAllocator() *PartyAllocator {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	f.mustBeReady("PartyAllocator")
 	return f.parties
 }
 
 // UserBuilder returns the user builder. Panics if called before Setup.
 func (f *Fixture) UserBuilder() *UserBuilder {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	f.mustBeReady("UserBuilder")
 	return f.users
 }
 
-// UploadDar uploads a single DAR file via the JSON Ledger packages endpoint.
+// UploadDar uploads a single DAR file via the JSON Ledger dars endpoint.
 // Convenience wrapper around DarUploader().Upload.
 func (f *Fixture) UploadDar(ctx context.Context, path string) error {
 	return f.DarUploader().Upload(ctx, path)
@@ -229,12 +276,18 @@ func (f *Fixture) UploadDars(ctx context.Context, paths ...string) error {
 // AllocateParty allocates a party with a hint of "<prefix>-<random suffix>"
 // and returns the allocated party id. Convenience wrapper around
 // PartyAllocator().Allocate.
-func (f *Fixture) AllocateParty(ctx context.Context, prefix, displayName string) (string, error) {
-	return f.PartyAllocator().Allocate(ctx, prefix, displayName)
+func (f *Fixture) AllocateParty(ctx context.Context, prefix string) (string, error) {
+	return f.PartyAllocator().Allocate(ctx, prefix)
 }
 
 // CreateUser creates a ledger user and grants any ActAs / ReadAs rights
-// listed in opts. Convenience wrapper around UserBuilder().Create.
+// listed in opts. Convenience wrapper around UserBuilder().Create that also
+// records the user, so Teardown deletes it.
 func (f *Fixture) CreateUser(ctx context.Context, opts UserOptions) (string, error) {
-	return f.UserBuilder().Create(ctx, opts)
+	id, err := f.UserBuilder().Create(ctx, opts)
+	if err != nil {
+		return "", err
+	}
+	f.created.record(id)
+	return id, nil
 }

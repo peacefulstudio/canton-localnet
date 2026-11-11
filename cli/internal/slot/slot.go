@@ -29,10 +29,12 @@ const (
 )
 
 // Slot is the static metadata for one validator slot in the compose
-// graph. Port methods expose the host-exposed <PortPrefix><suffix>
+// graph. Port methods expose the default host-exposed <PortPrefix><suffix>
 // ports documented in ADR-0002 (suffix 975 = JSON Ledger API, 901 =
 // participant gRPC ledger, 902 = participant admin gRPC, 903 = Splice
-// validator admin).
+// validator admin). Resolve replaces each default suffix with the one
+// the compose env sets, so a stack started with an overridden
+// PARTICIPANT_*_PORT_SUFFIX is reached on its real port.
 type Slot struct {
 	Canonical  string
 	Short      string
@@ -57,10 +59,17 @@ type Slot struct {
 	PqsByDefault bool
 }
 
-func (s Slot) JSONLedgerPort() string     { return s.PortPrefix + "975" }
-func (s Slot) LedgerGrpcPort() string     { return s.PortPrefix + "901" }
-func (s Slot) AdminGrpcPort() string      { return s.PortPrefix + "902" }
-func (s Slot) ValidatorAdminPort() string { return s.PortPrefix + "903" }
+const (
+	defaultJSONLedgerPortSuffix     = "975"
+	defaultLedgerGrpcPortSuffix     = "901"
+	defaultAdminGrpcPortSuffix      = "902"
+	defaultValidatorAdminPortSuffix = "903"
+)
+
+func (s Slot) JSONLedgerPort() string     { return s.PortPrefix + defaultJSONLedgerPortSuffix }
+func (s Slot) LedgerGrpcPort() string     { return s.PortPrefix + defaultLedgerGrpcPortSuffix }
+func (s Slot) AdminGrpcPort() string      { return s.PortPrefix + defaultAdminGrpcPortSuffix }
+func (s Slot) ValidatorAdminPort() string { return s.PortPrefix + defaultValidatorAdminPortSuffix }
 
 // WebUIPort is the host-exposed nginx port for the slot's web UIs
 // (<PortPrefix>000). On sv-validator-1 the same listener also serves the

@@ -6,6 +6,7 @@
       "env": {},
       "expect": {
         "jsonApiUrl": "http://localhost:11975",
+        "grpcLedgerApiUrl": "http://localhost:11901",
         "tokenUrl": "http://localhost:8082/realms/AValidator1/protocol/openid-connect/token",
         "audience": "https://canton.network.global",
         "scope": "openid",
@@ -18,6 +19,7 @@
       "env": {},
       "expect": {
         "jsonApiUrl": "http://localhost:12975",
+        "grpcLedgerApiUrl": "http://localhost:12901",
         "tokenUrl": "http://localhost:8082/realms/BValidator1/protocol/openid-connect/token",
         "audience": "https://canton.network.global",
         "scope": "openid",
@@ -30,6 +32,7 @@
       "env": {},
       "expect": {
         "jsonApiUrl": "http://localhost:13975",
+        "grpcLedgerApiUrl": "http://localhost:13901",
         "tokenUrl": "http://localhost:8082/realms/CValidator1/protocol/openid-connect/token",
         "audience": "https://canton.network.global",
         "scope": "openid",
@@ -42,6 +45,7 @@
       "env": {},
       "expect": {
         "jsonApiUrl": "http://localhost:14975",
+        "grpcLedgerApiUrl": "http://localhost:14901",
         "tokenUrl": "http://localhost:8082/realms/DValidator1/protocol/openid-connect/token",
         "audience": "https://canton.network.global",
         "scope": "openid",
@@ -49,16 +53,18 @@
       }
     },
     {
-      "name": "a-validator-1 per-slot overrides for all four discovery variables",
+      "name": "a-validator-1 per-slot overrides for all five discovery variables",
       "slot": "a-validator-1",
       "env": {
         "CANTON_LOCALNET_A_VALIDATOR_1_JSON_API_URL": "https://ledger.example.test:7575",
         "CANTON_LOCALNET_A_VALIDATOR_1_TOKEN_URL": "https://auth.example.test/realms/custom/protocol/openid-connect/token",
         "CANTON_LOCALNET_A_VALIDATOR_1_AUDIENCE": "https://audience.example.test",
-        "CANTON_LOCALNET_A_VALIDATOR_1_SCOPE": "daml_ledger_api"
+        "CANTON_LOCALNET_A_VALIDATOR_1_SCOPE": "daml_ledger_api",
+        "CANTON_LOCALNET_A_VALIDATOR_1_GRPC_URL": "http://ledger-grpc.example.test:7576"
       },
       "expect": {
         "jsonApiUrl": "https://ledger.example.test:7575",
+        "grpcLedgerApiUrl": "http://ledger-grpc.example.test:7576",
         "tokenUrl": "https://auth.example.test/realms/custom/protocol/openid-connect/token",
         "audience": "https://audience.example.test",
         "scope": "daml_ledger_api",
@@ -74,10 +80,13 @@
         "CANTON_LOCALNET_KEYCLOAK_HOST": "ignored-auth.example.test",
         "CANTON_LOCALNET_KEYCLOAK_PORT": "9002",
         "CANTON_LOCALNET_A_VALIDATOR_1_JSON_API_URL": "http://per-slot.example.test:1111",
-        "CANTON_LOCALNET_A_VALIDATOR_1_TOKEN_URL": "http://per-slot-auth.example.test:2222/token"
+        "CANTON_LOCALNET_A_VALIDATOR_1_TOKEN_URL": "http://per-slot-auth.example.test:2222/token",
+        "CANTON_LOCALNET_A_VALIDATOR_1_GRPC_PORT": "9003",
+        "CANTON_LOCALNET_A_VALIDATOR_1_GRPC_URL": "http://per-slot-grpc.example.test:3333"
       },
       "expect": {
         "jsonApiUrl": "http://per-slot.example.test:1111",
+        "grpcLedgerApiUrl": "http://per-slot-grpc.example.test:3333",
         "tokenUrl": "http://per-slot-auth.example.test:2222/token",
         "audience": "https://canton.network.global",
         "scope": "openid",
@@ -95,6 +104,7 @@
       },
       "expect": {
         "jsonApiUrl": "http://localhost:11975",
+        "grpcLedgerApiUrl": "http://localhost:11901",
         "tokenUrl": "http://localhost:8082/realms/AValidator1/protocol/openid-connect/token",
         "audience": "https://slot-audience.example.test",
         "scope": "slot_scope",
@@ -108,10 +118,12 @@
         "CANTON_LOCALNET_B_VALIDATOR_1_JSON_API_URL": "http://b.example.test:5555",
         "CANTON_LOCALNET_B_VALIDATOR_1_TOKEN_URL": "http://b-auth.example.test:6666/token",
         "CANTON_LOCALNET_B_VALIDATOR_1_AUDIENCE": "https://b-audience.example.test",
-        "CANTON_LOCALNET_B_VALIDATOR_1_SCOPE": "b_scope"
+        "CANTON_LOCALNET_B_VALIDATOR_1_SCOPE": "b_scope",
+        "CANTON_LOCALNET_B_VALIDATOR_1_GRPC_URL": "http://b-grpc.example.test:5556"
       },
       "expect": {
         "jsonApiUrl": "http://b.example.test:5555",
+        "grpcLedgerApiUrl": "http://b-grpc.example.test:5556",
         "tokenUrl": "http://b-auth.example.test:6666/token",
         "audience": "https://b-audience.example.test",
         "scope": "b_scope",
@@ -125,10 +137,12 @@
         "CANTON_LOCALNET_B_VALIDATOR_1_JSON_API_URL": "http://b.example.test:5555",
         "CANTON_LOCALNET_B_VALIDATOR_1_TOKEN_URL": "http://b-auth.example.test:6666/token",
         "CANTON_LOCALNET_B_VALIDATOR_1_AUDIENCE": "https://b-audience.example.test",
-        "CANTON_LOCALNET_B_VALIDATOR_1_SCOPE": "b_scope"
+        "CANTON_LOCALNET_B_VALIDATOR_1_SCOPE": "b_scope",
+        "CANTON_LOCALNET_B_VALIDATOR_1_GRPC_URL": "http://b-grpc.example.test:5556"
       },
       "expect": {
         "jsonApiUrl": "http://localhost:11975",
+        "grpcLedgerApiUrl": "http://localhost:11901",
         "tokenUrl": "http://localhost:8082/realms/AValidator1/protocol/openid-connect/token",
         "audience": "https://canton.network.global",
         "scope": "openid",
@@ -169,11 +183,27 @@
       },
       "expect": {
         "jsonApiUrl": "http://localhost:10975",
+        "grpcLedgerApiUrl": "http://localhost:10901",
         "tokenUrl": "http://sv-auth.example.test/token",
         "audience": "https://canton.network.global",
         "scope": "openid",
         "clientId": "sv-client",
         "clientSecret": "sv-secret"
+      }
+    },
+    {
+      "name": "a-validator-1 JSON API override leaves the gRPC address on the slot default",
+      "slot": "a-validator-1",
+      "env": {
+        "CANTON_LOCALNET_A_VALIDATOR_1_JSON_API_URL": "https://ledger.example.test:7575"
+      },
+      "expect": {
+        "jsonApiUrl": "https://ledger.example.test:7575",
+        "grpcLedgerApiUrl": "http://localhost:11901",
+        "tokenUrl": "http://localhost:8082/realms/AValidator1/protocol/openid-connect/token",
+        "audience": "https://canton.network.global",
+        "scope": "openid",
+        "clientId": "a-validator-1-validator"
       }
     }
   ]

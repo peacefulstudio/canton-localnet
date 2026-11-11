@@ -8,6 +8,7 @@ import (
 	"errors"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -62,6 +63,59 @@ func TestWaitWatermark_times_out_naming_pqs_and_the_slot(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q lacks %q", err.Error(), want)
 		}
+	}
+}
+
+func probeFailingOnceThenBlocking(first result) Probe {
+	var calls int32
+	return func(ctx context.Context) (string, error) {
+		if atomic.AddInt32(&calls, 1) == 1 {
+			return first.offset, first.err
+		}
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
+}
+
+func TestWaitWatermark_keeps_the_last_real_probe_error_when_the_final_probe_is_cut_by_the_deadline(t *testing.T) {
+	probe := probeFailingOnceThenBlocking(result{err: errors.New("function latest_offset() does not exist")})
+	err := WaitWatermark(context.Background(), probe, Options{
+		Slot: "a-validator-1", Timeout: 100 * time.Millisecond, PollInterval: time.Millisecond,
+	})
+	if !errors.Is(err, ErrWatermarkTimeout) {
+		t.Fatalf("want ErrWatermarkTimeout, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "(last: function latest_offset() does not exist)") {
+		t.Fatalf("error %q lost the last real probe error", err.Error())
+	}
+}
+
+func TestWaitWatermark_keeps_the_null_watermark_when_the_final_probe_is_cut_by_the_deadline(t *testing.T) {
+	probe := probeFailingOnceThenBlocking(result{offset: ""})
+	err := WaitWatermark(context.Background(), probe, Options{
+		Slot: "a-validator-1", Timeout: 100 * time.Millisecond, PollInterval: time.Millisecond,
+	})
+	if !errors.Is(err, ErrWatermarkTimeout) {
+		t.Fatalf("want ErrWatermarkTimeout, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "(last: latest_offset() is NULL)") {
+		t.Fatalf("error %q lost the NULL watermark", err.Error())
+	}
+}
+
+func TestWaitWatermark_reports_the_deadline_cut_probe_when_nothing_else_was_observed(t *testing.T) {
+	probe := func(ctx context.Context) (string, error) {
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
+	err := WaitWatermark(context.Background(), probe, Options{
+		Slot: "a-validator-1", Timeout: 30 * time.Millisecond, PollInterval: time.Millisecond,
+	})
+	if !errors.Is(err, ErrWatermarkTimeout) {
+		t.Fatalf("want ErrWatermarkTimeout, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "(last: context deadline exceeded)") {
+		t.Fatalf("error %q lacks the deadline-cut probe", err.Error())
 	}
 }
 

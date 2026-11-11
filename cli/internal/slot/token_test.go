@@ -57,7 +57,7 @@ func TestMintTokenOAuth2PostsClientCredentials(t *testing.T) {
 	}
 }
 
-func TestMintTokenOAuth2SurfacesStatusAndEndpointNotBody(t *testing.T) {
+func TestMintTokenOAuth2SurfacesStatusEndpointAndBody(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -75,11 +75,33 @@ func TestMintTokenOAuth2SurfacesStatusAndEndpointNotBody(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on 401")
 	}
-	if !strings.Contains(err.Error(), "401") || !strings.Contains(err.Error(), srv.URL) {
-		t.Errorf("expected error to surface status + endpoint, got %q", err.Error())
+	want := "slot: token endpoint " + srv.URL + " returned HTTP 401: " + `{"error":"invalid_client","error_description":"s"}`
+	if err.Error() != want {
+		t.Errorf("error = %q, want %q", err.Error(), want)
 	}
-	if strings.Contains(err.Error(), "invalid_client") {
-		t.Errorf("error must not echo the response body, got %q", err.Error())
+}
+
+func TestMintTokenOAuth2BoundsTheBodyInTheErrorMessage(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(strings.Repeat("z", 10000)))
+	}))
+	defer srv.Close()
+
+	ep := Endpoints{
+		Slot:         Slot{Canonical: "a-validator-1", AuthKind: AuthKindOAuth2},
+		TokenURLHost: srv.URL,
+		ClientID:     "c",
+		ClientSecret: "s",
+	}
+	_, err := MintToken(context.Background(), ep, srv.Client())
+	if err == nil {
+		t.Fatal("expected error on 502")
+	}
+	want := "slot: token endpoint " + srv.URL + " returned HTTP 502: " + strings.Repeat("z", 512) + "...[truncated]"
+	if err.Error() != want {
+		t.Errorf("error = %q, want %q", err.Error(), want)
 	}
 }
 

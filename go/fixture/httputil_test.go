@@ -285,3 +285,28 @@ func TestDoRequest_AcceptsResponseBodyExactlyAtTheCap(t *testing.T) {
 		t.Errorf("len(body) = %d, want 16777216", len(got))
 	}
 }
+
+func TestDoRequest_Non2xxIsAStatusErrorCarryingStatusAndBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = io.WriteString(w, `{"code":"REQUEST_TIME_OUT"}`)
+	}))
+	t.Cleanup(server.Close)
+
+	_, err := doRequest(context.Background(), http.DefaultClient, staticTokenProvider{token: "tok"}, server.URL, httpRequest{
+		method:    http.MethodGet,
+		path:      "/v2/things",
+		errPrefix: "thing",
+	})
+
+	var statusErr *httpStatusError
+	if !errors.As(err, &statusErr) {
+		t.Fatalf("err = %v, want *httpStatusError", err)
+	}
+	if statusErr.statusCode != 503 {
+		t.Errorf("statusCode = %d, want 503", statusErr.statusCode)
+	}
+	if string(statusErr.body) != `{"code":"REQUEST_TIME_OUT"}` {
+		t.Errorf("body = %q", statusErr.body)
+	}
+}

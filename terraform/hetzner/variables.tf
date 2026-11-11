@@ -47,7 +47,7 @@ variable "ssh_allowed_cidrs" {
 variable "repo_url" {
   type        = string
   default     = "https://github.com/peacefulstudio/canton-localnet.git"
-  description = "Clone URL of the repo whose docker-compose LocalNet stack the box runs. Override with a public mirror to clone without a token."
+  description = "Public clone URL of the repo whose docker-compose LocalNet stack the box runs. Cloud-init points the checkout's origin here on every provision and fetches without credentials."
 
   validation {
     condition     = can(regex("^https://[A-Za-z0-9._/-]+$", var.repo_url))
@@ -57,24 +57,38 @@ variable "repo_url" {
 
 variable "repo_ref" {
   type        = string
-  default     = "dev"
-  description = "Git ref (branch or tag) of repo_url to check out on the box."
+  default     = null
+  description = "Git ref (release tag, branch or SHA) of repo_url to check out on the box. Required, with no default to fall back to, whenever server_enabled is true; may be omitted when server_enabled is false because no server consumes it."
 
   validation {
-    condition     = can(regex("^[A-Za-z0-9._][A-Za-z0-9._/-]*$", var.repo_ref))
-    error_message = "repo_ref must contain only [A-Za-z0-9._/-] and cannot start with '-' or '/' (the value is inlined into shell + git commands)."
+    condition     = var.repo_ref == null ? !var.server_enabled : can(regex("^[A-Za-z0-9._][A-Za-z0-9._/-]*$", var.repo_ref))
+    error_message = "repo_ref is required when server_enabled is true, and must contain only [A-Za-z0-9._/-] and cannot start with '-' or '/' (the value is inlined into shell + git commands)."
   }
-}
-
-variable "repo_token" {
-  type        = string
-  default     = ""
-  sensitive   = true
-  description = "Optional read-only token for cloning a private repo_url. Leave empty when repo_url is a public mirror."
 }
 
 variable "developer_ssh_public_keys" {
   type        = map(string)
   default     = {}
   description = "Map of name → OpenSSH public key to register on the server's authorized_keys. Defaults to empty (no developer SSH access). Pass via TF_VAR_developer_ssh_public_keys or a .tfvars file kept outside the repo."
+}
+
+variable "docker_versions" {
+  type = object({
+    engine     = string
+    containerd = string
+    buildx     = string
+    compose    = string
+  })
+  default = {
+    engine     = "5:29.9.3-1"
+    containerd = "2.4.2-3"
+    buildx     = "0.38.1-1"
+    compose    = "5.7.0-1"
+  }
+  description = "Pinned Docker apt package versions the box installs, without the distro suffix: engine covers docker-ce and docker-ce-cli, containerd covers containerd.io, buildx covers docker-buildx-plugin and compose covers docker-compose-plugin. Cloud-init appends ~ubuntu.<VERSION_ID>~<VERSION_CODENAME> and holds the packages."
+
+  validation {
+    condition     = alltrue([for version in values(var.docker_versions) : can(regex("^[A-Za-z0-9.:+_-]+$", version))])
+    error_message = "docker_versions entries must contain only [A-Za-z0-9.:+_-] (they are inlined into a shell script at boot)."
+  }
 }

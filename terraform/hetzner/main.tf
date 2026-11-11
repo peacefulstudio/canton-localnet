@@ -61,8 +61,9 @@ resource "hcloud_server" "localnet" {
     volume_id                = hcloud_volume.localnet.id
     repo_url                 = var.repo_url
     repo_ref                 = var.repo_ref
-    repo_token               = var.repo_token
+    docker_versions          = var.docker_versions
     bring_up_localnet_script = file("${path.module}/scripts/bring-up-localnet.sh")
+    format_volume_script     = file("${path.module}/scripts/format-blank-volume.sh")
   })
 }
 

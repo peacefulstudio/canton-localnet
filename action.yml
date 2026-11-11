@@ -76,11 +76,12 @@ inputs:
       it with `go build` from the action's own checkout (github.action_path;
       measured ~9s with a warm Go module cache). 'release' downloads the
       release asset matching this action's pinned ref and verifies it
-      against that release's checksums.txt; it is valid only when the
+      against that release's checksums.txt and its build provenance
+      attestation; it is valid only when the
       action's own `uses:` is pinned to a literal release tag, not its
-      commit SHA (e.g. `uses: peacefulstudio/canton-localnet@v0.10.0-1`) and
+      commit SHA (e.g. `uses: peacefulstudio/canton-localnet@v0.10.1-1`) and
       fails closed — never silently — on a non-tag ref, a missing asset, a
-      download error or a checksum mismatch.
+      download error, a checksum mismatch or a failed attestation check.
     default: 'source'
   config:
     description: >-
@@ -121,7 +122,8 @@ runs:
         CLI_MODE: ${{ inputs.cli }}
         ACTION_PATH: ${{ github.action_path }}
         ACTION_REF: ${{ github.action_ref }}
-      run: bash "${{ github.action_path }}/action/resolve-cli.sh"
+        GH_TOKEN: ${{ github.token }}
+      run: bash "${ACTION_PATH}/action/resolve-cli.sh"
 
     - name: Boot LocalNet and export its endpoint/credential snapshot
       id: boot

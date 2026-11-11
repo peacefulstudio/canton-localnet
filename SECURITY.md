@@ -53,6 +53,10 @@ channel before you share details.
   reporter. Default embargo is 90 days from initial report unless a fix is
   released sooner.
 
+## Demo credentials are public
+
+Demo credentials are public. The stack ships fixed credentials that are committed to this repository: the Keycloak admin console login (`admin` / `admin`), the Postgres superuser (`DB_USER` / `DB_PASSWORD`, default `cnadmin` and a published password), the OAuth2 client secrets of the imported Keycloak realms (also the built-in defaults of the .NET fixture), and the wallet users' passwords. Anyone who can reach a port can use them, so run the stack on a loopback-only or firewalled host and never against real assets.
+
 ## Out of scope
 
 - Vulnerabilities in upstream dependencies — please report those upstream.

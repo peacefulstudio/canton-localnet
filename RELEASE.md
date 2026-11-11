@@ -122,20 +122,18 @@ steps 4–7 here.
    heading equals `<Version>`, `release-notes/v<version>.md` exists and is not
    empty, the tagged commit is on `dev`, and the public twin has no such tag
    yet.
-3. The promote workflow overlays the paths the source `.gitpublic` lists
-   onto this repository's `dev`, deletes the paths the source
-   `.gitpublic-retired` names, derives this repository's `CHANGELOG.md`
-   from the source one, runs a content leak-scan over the result, and opens
+3. The promote workflow overlays the paths the source repository's public
+   allowlist names onto this repository's `dev`, deletes the paths the
+   allowlist named at the previous release tag and no longer names, derives this
+   repository's `CHANGELOG.md` from the source one, runs a content leak-scan over the result, and opens
    (or reuses) the `Release v<version>` PR here from `promote/v<version>`,
    committed by the promote GitHub App so the commit is signed. To re-run
-   it for an existing tag, dispatch it with that tag:
-   ```bash
-   gh workflow run promote-public-overlay.yaml -R <source repository> -f tag=v<version>
-   ```
-   Removing a path from `.gitpublic` leaves it on the twin. Add it to
-   `.gitpublic-retired` in the same PR so the next promote deletes it. Entries
-   must have left both the tree and `.gitpublic`; the Release PR then lists
-   the removal.
+   it for an existing tag, dispatch the source repository's promote workflow
+   with the input `tag=v<version>`.
+   Removing a path from the allowlist deletes it from the twin at the next
+   release, with no second step: the promote diffs the allowlist at the previous
+   release tag against the one it promotes, and the Release PR lists the
+   removal. The first release with no earlier tag retires nothing.
 4. **Prep PR for workflow files.** The promote App has no permission to write
    `.github/workflows/`. Before it commits, the promote compares the
    workflow files it would write with this repository's `dev` and, if any
@@ -152,8 +150,16 @@ steps 4–7 here.
    `hold-release` label, which holds the tag back while the PR is open.
 6. [`auto-tag-release.yaml`](.github/workflows/auto-tag-release.yaml) waits
    until `csharp`, `public-gate`, `integration-tests`, `compose-integration`
-   and `action-selftest` have all passed on the merge commit while it is still
-   the tip of `dev`. It then reads `<Version>` from
+   and `action-selftest` have all run and passed on the merge commit while it
+   is still the tip of `dev`. It also refuses to tag while any other CI lane
+   (`Go CI`, `go-fixture`, `cli`, `terraform-ci`) has a run on that commit
+   that is still going, and refuses outright, naming the run, when one failed,
+   was cancelled or timed out. Those four are path-filtered, so a lane the
+   commit did not trigger has no run and does not block. Every CI lane's
+   completion re-evaluates the commit, so the lane that finishes last decides.
+   A new CI workflow joins the gate by being added to `workflow_run.workflows`
+   and to `REQUIRED_LANES` or `PATH_FILTERED_CI_LANES` in that file; bot,
+   schedule and release workflows stay out. It then reads `<Version>` from
    `csharp/Directory.Build.props`, and, unless an open PR carries
    `hold-release`, tags the commit `v<version>` and dispatches the
    `release` workflow. If the tag exists but has neither a release nor a
@@ -209,7 +215,7 @@ Add `--prerelease=false --latest` for a final `v<X.Y.Z>-<N>`; the draft starts a
 |---|---|---|
 | **NuGet** `Peaceful.Canton.Localnet.Testing.<version>.nupkg` | nuget.org, as the four-part stable version per the mapping above (e.g. `0.6.2.1`), pushed by [`publish.yaml`](.github/workflows/publish.yaml), which `release.yml` calls after every build has passed. nuget.org is the only NuGet distribution channel — we do not publish to the GitHub Packages NuGet feed. | .NET / xUnit integration tests in downstream Peaceful Studio repos. Add via `dotnet add package Peaceful.Canton.Localnet.Testing`. |
 | **Go module** `github.com/peacefulstudio/canton-localnet/go/fixture@v<version>` | The repo tag itself — Go's module proxy fetches it on demand. | Go integration tests via `go get github.com/peacefulstudio/canton-localnet/go/fixture@v0.6.2-1`. |
-| **CLI binary** `canton-localnet-<version>-<os>-<arch>(.exe)` | GitHub Release assets, with `checksums.txt` (which also covers the `.nupkg` attached to the release, built with the tag spelling `<version>`, not the NuGet spelling) | Engineers, CI jobs that need the `up`/`down`/`wait-ready`/`tunnel` commands. SHA-256s are in `checksums.txt`. |
+| **CLI binary** `canton-localnet-<version>-<os>-<arch>(.exe)` | GitHub Release assets, with `checksums.txt` (which also covers the `.nupkg` attached to the release, built with the tag spelling `<version>`, not the NuGet spelling) | Engineers, CI jobs that need the `up`/`down`/`wait-ready`/`tunnel` commands. SHA-256s are in `checksums.txt`; each binary also carries a build provenance attestation (`gh attestation verify <file> --repo peacefulstudio/canton-localnet`). |
 | **OCI compose artifact** `ghcr.io/peacefulstudio/canton-localnet:<version>` | GHCR (OCI artifact via `oras`, not a Docker image) | Future CLI runtime pull of the vendored Compose stack so it doesn't have to ship in the binary. |
 
 The CLI binary embeds the version via `-ldflags "-X main.version=<version>"`;

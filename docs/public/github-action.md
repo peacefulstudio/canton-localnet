@@ -3,6 +3,150 @@
 
 # The canton-localnet GitHub Action
 
+Run integration and CI/CD tests against a real Canton network instead of a
+mock. This GitHub Action boots a Canton LocalNet (a Super Validator plus up to
+four validator participants, with the Splice apps and an OAuth2 identity
+provider) on the runner of your own workflow, waits until it is ready, and puts
+every endpoint and credential your tests need into the job environment. A
+paired teardown action removes the stack and uploads diagnostics if anything
+went wrong. Your tests only read environment variables, so any language works:
+Rust, TypeScript, Java, .NET, Go.
+
+## Quickstart
+
+```yaml
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Boot LocalNet
+        uses: peacefulstudio/canton-localnet@v0.10.1-1
+        with:
+          validators: a
+          pqs: false
+          observability: false
+          multi-sync: false
+
+      - name: Run your tests
+        run: your-test-command
+
+      - name: Tear down
+        if: always()
+        uses: peacefulstudio/canton-localnet/teardown@v0.10.1-1
+```
+
+The inputs under `with:` are all shown at their default values, so dropping
+the block gives the same boot. Your test step finds
+`CANTON_LOCALNET_A_VALIDATOR_1_JSON_API_URL`, `_TOKEN_URL`, `_CLIENT_ID` and
+`_CLIENT_SECRET` already set (see [the output contract](#what-your-tests-get)),
+so read them from the environment and never print them.
+
+A public workflow that runs exactly this action end to end is the
+[`action-selftest` canary](https://github.com/peacefulstudio/canton-localnet/actions/runs/41715774268)
+on the repository's `dev` branch.
+
+### Pinning
+
+The snippet pins the action by its release tag. Every release is published as
+an immutable GitHub release. For supply-chain hardening, pin the full 40-character
+commit SHA of that tag instead, with the tag as a trailing comment
+(`@<sha> # v0.10.1-1`). A tag can move; a SHA cannot. To find
+it, resolve the tag on the public repository:
+
+```bash
+gh api repos/peacefulstudio/canton-localnet/git/ref/tags/<tag> --jq .object.sha
+```
+
+Releases are listed at
+[github.com/peacefulstudio/canton-localnet/releases](https://github.com/peacefulstudio/canton-localnet/releases).
+Let Dependabot (`package-ecosystem: github-actions`) or Renovate propose the
+bump, and bump the boot action and the teardown action in the same change, so
+they run the same version. A SHA pin rules out `cli: release`; see
+[How the two actions work](#how-the-two-actions-work).
+
+## What it runs
+
+| | |
+|---|---|
+| Release | `v0.10.1-1` |
+| Splice | 0.10.1 |
+| Canton | 3.7.2 |
+| Synchronizer protocol version | 37 by default (Splice 0.10.0 moved it from 36) |
+| Auth | OAuth2 through a Keycloak realm per validator slot, with the fixed public LocalNet demo clients |
+| PQS (Participant Query Store) | Off. Set `pqs: true` for slots `a`, `b` and `c` |
+| Observability | Off. Set `observability: true` for Grafana, Prometheus, Loki and Tempo |
+| Multi-synchronizer | Off. Set `multi-sync: true` with `a`, `b` and `d` in `validators` |
+
+The tag you pin decides the versions: each release vendors one Splice version
+and the Canton inside it, and the release tag starts with the Splice version.
+The [release notes](https://github.com/peacefulstudio/canton-localnet/releases)
+and [`MIGRATION.md`](MIGRATION.md) say what changed between releases.
+
+The protocol version is chosen when a synchronizer is first created, and a hosted
+runner always starts from fresh volumes. To boot on protocol version 36
+instead, set `CANTON_PROTOCOL_VERSION: "36"` in the `env:` of your job. The
+compose stack reads that variable when it bootstraps the synchronizer. The
+action's own end-to-end test boots the default protocol version 37 only; no
+run of this release on protocol version 36 through the action has been
+verified.
+
+## Runner requirements
+
+- **A Linux x86_64 runner with Docker and Docker Compose.** GitHub-hosted
+  `ubuntu-latest` and `ubuntu-26.04` are what the action's own end-to-end test
+  boots on.
+- **Memory and CPU.** LocalNet peaks near 7.6 GiB of memory and starves a
+  2 vCPU / 8 GB runner. Use a runner with 4 vCPU and 16 GB, such as the
+  standard `ubuntu-latest` runner of a public repository or a larger runner.
+- **Tested on Linux x86_64 only**, on GitHub-hosted `ubuntu-latest` and on
+  self-hosted runners with rootless Docker. arm64, macOS and Windows runners
+  are untested.
+- **One LocalNet per Docker daemon.** See below.
+
+## What your tests get
+
+Every value below reaches your later steps as an environment variable written
+to `$GITHUB_ENV`. `<SLOT>` is the slot's canonical name upper-cased with
+dashes turned into underscores: `A_VALIDATOR_1`, `B_VALIDATOR_1`,
+`C_VALIDATOR_1`, `D_VALIDATOR_1`. The variable prefix is
+`CANTON_LOCALNET_<SLOT>_`.
+
+| Variable | Exported | Meaning |
+|---|---|---|
+| `..._JSON_API_URL`, `..._JSON_PORT` | always | JSON Ledger API of the slot, `http://localhost:11975` for `a` |
+| `..._GRPC_URL`, `..._GRPC_PORT` | always | Participant gRPC Ledger API, port `11901` for `a` |
+| `..._ADMIN_GRPC_URL` | always | Participant admin gRPC API, `http://localhost:11902` for `a` |
+| `..._VALIDATOR_API_URL` | always | Splice validator app API, `http://localhost:11903` for `a` |
+| `..._TOKEN_URL` | always | OAuth2 token endpoint of the slot's Keycloak realm |
+| `..._CLIENT_ID` | always | OAuth2 client id for a `client_credentials` grant |
+| `..._CLIENT_SECRET` | always, masked | OAuth2 client secret |
+| `..._JWT` | `jwt: true`, masked | Bearer token minted for the slot; lives 300 seconds |
+| `..._PARTICIPANT_ID` | `jwt: true` | Live participant id |
+| `..._PARTY` | `party: true` | The validator's primary party, such as `a-validator-1::1220...` |
+| `..._PQS_HOST`, `_PQS_PORT`, `_PQS_DATABASE`, `_PQS_USER` | `pqs: true` | PQS Postgres connection details |
+| `..._PQS_PASSWORD`, `..._PQS_CONNECTION_STRING`, `..._PQS_URL` | `pqs: true`, masked | PQS Postgres password, connection string (Npgsql form) and libpq URI (`postgresql://user:password@host:port/database`) |
+| `CANTON_LOCALNET_SCAN_URL` | always | Token-standard registry and Scan API, `http://scan.localhost:10000` |
+| `CANTON_LOCALNET_HOST`, `_KEYCLOAK_HOST`, `_KEYCLOAK_PORT`, `_AUDIENCE` | always | Shared host, Keycloak address and token audience |
+| `CANTON_LOCALNET_PROFILE`, `_VERSION`, `_SPLICE_VERSION` | always | The primary slot, the LocalNet release and the Splice version |
+
+Every port is published on `127.0.0.1` only, so only steps on the same runner
+reach it. Slots are the unit a test addresses: `a` through `d` are validator
+participants with their own Keycloak realm, and `sv-validator-1` is always on
+but exports no credential contract (see
+[Credentials and their lifetime](#credentials-and-their-lifetime)). The action
+does not map slots onto named roles such as app-provider or app-user: the
+`roles` input belongs to a `devkit` dialect that is not supported yet, so leave
+it unset and pick the slot your test plays each role on.
+
+Action outputs are limited to `cli-path` and `profile`; see
+[Outputs](#outputs) for why nothing else is an output. The complete per-slot
+variable contract that `canton-localnet env` renders is in
+[`integration-testing.md`](integration-testing.md).
+
+## How the two actions work
+
 Two composite actions boot and tear down the LocalNet compose stack in a
 GitHub Actions job, without a checkout of this repository and without any
 App token:
@@ -23,7 +167,7 @@ Note the one exception: `cli: release` resolves the binary from
 `github.action_ref`, which is only ever a literal tag when the action's
 own `uses:` is pinned to that tag — a SHA-pinned `uses:` resolves
 `action_ref` to the SHA, not the tag it points at, so `cli: release`
-fails closed on a SHA pin. If you SHA-pin (the safer default), use
+fails closed on a SHA pin. If you SHA-pin, use
 `cli: source` (the default); reserve `cli: release` for a tag-pinned
 `uses:`.
 
@@ -34,34 +178,8 @@ only removes the `localnet` compose project on the daemon it runs
 against — it does not, and cannot, guard against a second, independent
 job racing it on the same self-hosted runner.
 
-## Minimal consumer example
-
-```yaml
-jobs:
-  integration:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-
-      - name: Boot LocalNet
-        id: localnet
-        uses: peacefulstudio/canton-localnet@<sha> # v<ver>
-        with:
-          validators: a
-
-      - name: Run your tests against the exported endpoint/credentials
-        run: your-test-command
-        # CANTON_LOCALNET_A_VALIDATOR_1_JSON_API_URL, _TOKEN_URL, _CLIENT_ID
-        # and _CLIENT_SECRET (masked) are already in the job environment —
-        # read them from there, don't `echo` or otherwise print them.
-
-      - name: Tear down
-        if: always()
-        uses: peacefulstudio/canton-localnet/teardown@<sha> # v<ver>
-```
-
 **Never `echo`, `printenv`, or otherwise print an exported `_CLIENT_SECRET`,
-`_JWT` or `_PQS_CONNECTION_STRING` value in your own step.**
+`_JWT`, `_PQS_CONNECTION_STRING` or `_PQS_URL` value in your own step.**
 GitHub Actions masks the literal value in the raw log once it has seen it
 via `::add-mask::`, but that masking does not follow the value into
 anything your own step captures and writes somewhere else — a file it
@@ -137,13 +255,17 @@ secret, JWT, PQS password or PQS connection string never appears in it.
 
 ## Boot-failure diagnostics
 
-When the boot fails, the action uploads the
+When the boot fails, the step log lists every container that was unhealthy,
+still `health: starting`, restarting or exited non-zero, and prints the last 50
+log lines of each (at most ten containers, secrets redacted), so a node that
+never finished initializing is named without downloading anything. The action
+also uploads the
 `canton-localnet-diagnostics-<job>` artifact, kept for 7 days: container
 status, recent compose logs, and the Docker networks and volumes. Its `host/`
 folder holds `free -m`, `nproc`, the kernel out-of-memory lines from `dmesg`
 and the peak memory used during the run and, for this LocalNet's compose
-project only, `docker stats`, per-container state and health, and the tail of
-the `splice` and `canton` logs. When the first `up` attempt also failed, a
+project only, `docker stats`, per-container state, OOM-kill flag,
+exit code and health, and the tail of the `splice` and `canton` logs. When the first `up` attempt also failed, a
 `host-attempt1/` folder holds the same capture taken before the retry. Read
 it to tell a runner that ran out of memory or CPU from a LocalNet fault.
 Containers of other workloads on a shared Docker daemon are never listed or
@@ -202,7 +324,7 @@ validator app can answer 429 or refuse connections for a few seconds while it
 settles, and `tap` retries those with backoff for up to 60 seconds before
 failing with the last status. The Keycloak login also retries 502, 503 and
 504; the mint itself does not, since a mint may have committed behind them.
-See the `tap` section of the repository README for the login, the amount
+See [Funding a validator party with Amulet](funding-amulet.md) for the login, the amount
 conversion and the refusals.
 
 To leave a slot with a known balance regardless of earlier runs, use
@@ -219,6 +341,6 @@ resulting balance, so a rerun is a no-op:
 - It does not check out this repository — the runner already has the
   pinned action's tree at `github.action_path`.
 - It never mints or exports a devkit-dialect variable.
-- It never writes a secret to `$GITHUB_OUTPUT`, an on-disk dotenv file, or
-  a diagnostics artifact. Diagnostics collection never reads back the
-  rendered env, `canton-localnet.yaml`, or a compose `oauth2.env` file.
+- It never writes a secret to `$GITHUB_OUTPUT` or an on-disk dotenv file.
+  Diagnostics collection never reads back the rendered env,
+  `canton-localnet.yaml`, or a compose `oauth2.env` file.

@@ -22,8 +22,15 @@ follow the guide that matches your task.
 
 ## Guides
 
-- [Getting started](../../README.md) — quickstart, ports, CLI, and configuration.
-- [Topologies](topologies.md) — the role model, the five named slots, optional layers, and the scenario/config matrix.
-- [Integration testing](integration-testing.md) — the attach model, the C# and Go fixtures, the env-var contract, and CI wiring.
-- [Config schema](canton-localnet-yaml-schema.md) — the full `canton-localnet.yaml` reference.
-- [Migration](MIGRATION.md) — moving an existing setup onto the current config surface.
+- [Local quickstart](quickstart.md) - boot a LocalNet on your machine: ports, optional layers, the tunnel to a remote LocalNet and the multi-synchronizer profile.
+- [GitHub Action](github-action.md) - run a LocalNet in your own CI and read the exported endpoints and credentials.
+- [Integration testing](integration-testing.md) - the attach model, the C# and Go fixtures, the env-var contract, and CI wiring.
+- [Topologies](topologies.md) - the role model, the five named slots, optional layers, and the scenario/config matrix.
+- [Config schema](canton-localnet-yaml-schema.md) - the full `canton-localnet.yaml` reference.
+- [Scripting](scripting.md) - mint tokens and read endpoints from a script with `auth token` and `info`.
+- [Funding a validator party with Amulet](funding-amulet.md) - `tap`, including `--at-least`.
+- [Pruning leaked ledger rights](pruning-rights.md) - `rights list` and `rights prune`, with their exit status.
+- [Onboarding clients](onboarding-clients.md) - the per-realm OAuth client that manages users.
+- [Migration](MIGRATION.md) - moving an existing setup onto the current config surface.
+
+The [repository README](../../README.md) is the landing page: a short quick start and a table that points here.

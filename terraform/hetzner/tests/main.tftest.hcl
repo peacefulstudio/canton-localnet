@@ -37,6 +37,7 @@ mock_provider "hcloud" {
 variables {
   hcloud_token = "mock-token"
   repo_url     = "https://github.com/peacefulstudio/canton-localnet.git"
+  repo_ref     = "v0.10.0-1"
 }
 
 run "variables_resolve" {
@@ -62,9 +63,49 @@ run "variables_resolve" {
     error_message = "default image must be ubuntu-24.04"
   }
 
+}
+
+run "repo_ref_rejects_empty" {
+  command = plan
+
+  variables {
+    repo_ref = ""
+  }
+
+  expect_failures = [var.repo_ref]
+}
+
+run "repo_ref_required_when_server_enabled" {
+  command = plan
+
+  variables {
+    server_enabled = true
+    repo_ref       = null
+  }
+
+  expect_failures = [var.repo_ref]
+}
+
+run "repo_ref_optional_when_server_disabled" {
+  command = plan
+
+  variables {
+    server_enabled = false
+    repo_ref       = null
+  }
+
   assert {
-    condition     = var.repo_ref == "dev"
-    error_message = "repo_ref default must be dev"
+    condition     = length(hcloud_server.localnet) == 0
+    error_message = "down must plan without a repo_ref and keep the server absent"
+  }
+}
+
+run "repo_token_variable_is_gone" {
+  command = plan
+
+  assert {
+    condition     = var.repo_ref != "" && !strcontains(file("variables.tf"), "repo_token")
+    error_message = "the box clones the public twin, so the module must not declare a repo_token variable"
   }
 }
 
@@ -250,13 +291,33 @@ run "cloud_init_renders_mount_and_compose" {
   }
 
   assert {
+    condition     = strcontains(hcloud_server.localnet[0].user_data, "make -C \"$SRC\" wait-ready\n")
+    error_message = "provisioning must wait for every enabled slot to answer readyz before it records the box as provisioned, as the CLI boot does"
+  }
+
+  assert {
+    condition     = strcontains(hcloud_server.localnet[0].user_data, "make up PQS=true\n\n      make -C \"$SRC\" wait-ready\n\n      mkdir -p \"$(dirname \"$DONE_FLAG\")\"")
+    error_message = "the readiness wait must sit between the bring-up and the provisioned flag, so a stack that never answers leaves the box unflagged"
+  }
+
+  assert {
     condition     = strcontains(hcloud_server.localnet[0].user_data, "git clone")
     error_message = "cloud-init must clone the repo"
   }
 
   assert {
-    condition     = strcontains(hcloud_server.localnet[0].user_data, "if ! blkid")
-    error_message = "mkfs must stay guarded by a blkid probe so a reattached ledger volume is never reformatted (data loss)"
+    condition     = strcontains(hcloud_server.localnet[0].user_data, "/opt/canton-localnet/format-blank-volume.sh \"$DEVICE\"")
+    error_message = "the volume must be formatted only through format-blank-volume.sh, so a reattached ledger volume is never reformatted on a doubtful probe (data loss)"
+  }
+
+  assert {
+    condition     = strcontains(hcloud_server.localnet[0].user_data, indent(6, file("scripts/format-blank-volume.sh")))
+    error_message = "cloud-init must ship scripts/format-blank-volume.sh verbatim, so the box runs the tested blank-volume guard"
+  }
+
+  assert {
+    condition     = !strcontains(hcloud_server.localnet[0].user_data, "if ! blkid") && !strcontains(hcloud_server.localnet[0].user_data, "mkfs.ext4 -F \"$DEVICE\"")
+    error_message = "provision.sh must not format the volume itself; any blkid failure would then format it"
   }
 
   assert {
@@ -267,6 +328,174 @@ run "cloud_init_renders_mount_and_compose" {
   assert {
     condition     = strcontains(hcloud_server.localnet[0].user_data, "nofail")
     error_message = "the fstab entry must use nofail so a missing volume cannot wedge boot"
+  }
+}
+
+run "cloud_init_clones_the_twin_release_without_a_token" {
+  command = apply
+
+  variables {
+    server_enabled = true
+  }
+
+  assert {
+    condition     = strcontains(hcloud_server.localnet[0].user_data, "git clone \"https://github.com/peacefulstudio/canton-localnet.git\" \"$SRC\"")
+    error_message = "cloud-init must clone repo_url with plain git, no credential helper"
+  }
+
+  assert {
+    condition     = !strcontains(hcloud_server.localnet[0].user_data, "AUTH_HEADER")
+    error_message = "user-data must not carry an auth header path"
+  }
+
+  assert {
+    condition     = !strcontains(hcloud_server.localnet[0].user_data, "extraHeader")
+    error_message = "git must not be given an http.extraHeader"
+  }
+
+  assert {
+    condition     = !strcontains(hcloud_server.localnet[0].user_data, "REPO_TOKEN")
+    error_message = "user-data must not mention a repo token"
+  }
+
+  assert {
+    condition     = !strcontains(hcloud_server.localnet[0].user_data, "embedded credential")
+    error_message = "the legacy credential-stripping step is superseded by re-pointing origin"
+  }
+
+  assert {
+    condition     = strcontains(hcloud_server.localnet[0].user_data, "git -C \"$SRC\" remote set-url origin \"https://github.com/peacefulstudio/canton-localnet.git\"")
+    error_message = "cloud-init must point origin at repo_url before fetching, so a volume cloned from the private internal repo fetches the public twin"
+  }
+
+  assert {
+    condition     = strcontains(hcloud_server.localnet[0].user_data, "git -C \"$SRC\" fetch --prune --tags --force origin")
+    error_message = "cloud-init must fetch tags from origin, forcing them because the legacy checkout holds internal tags of the same names"
+  }
+
+  assert {
+    condition     = strcontains(hcloud_server.localnet[0].user_data, "git -C \"$SRC\" checkout \"v0.10.0-1\"")
+    error_message = "cloud-init must check out repo_ref"
+  }
+
+  assert {
+    condition     = strcontains(hcloud_server.localnet[0].user_data, "git -C \"$SRC\" pull --ff-only")
+    error_message = "cloud-init must keep the fast-forward pull for a branch checkout"
+  }
+}
+
+run "cloud_init_applies_updates_and_hardens_ssh" {
+  command = apply
+
+  variables {
+    server_enabled = true
+  }
+
+  assert {
+    condition     = strcontains(hcloud_server.localnet[0].user_data, "package_upgrade: true")
+    error_message = "the box must apply the pending OS updates on first boot"
+  }
+
+  assert {
+    condition     = strcontains(hcloud_server.localnet[0].user_data, "  - unattended-upgrades\n")
+    error_message = "the box must install unattended-upgrades"
+  }
+
+  assert {
+    condition     = strcontains(hcloud_server.localnet[0].user_data, "APT::Periodic::Unattended-Upgrade \"1\";")
+    error_message = "unattended-upgrades must be switched on, not only installed"
+  }
+
+  assert {
+    condition     = strcontains(hcloud_server.localnet[0].user_data, "path: /etc/ssh/sshd_config.d/10-hardening.conf")
+    error_message = "sshd hardening must live in a drop-in, not an edit of sshd_config"
+  }
+
+  assert {
+    condition = alltrue([
+      for directive in [
+        "PasswordAuthentication no",
+        "KbdInteractiveAuthentication no",
+        "PermitEmptyPasswords no",
+        "PermitRootLogin prohibit-password",
+        "PubkeyAuthentication yes",
+        "AuthenticationMethods publickey",
+        "MaxAuthTries 3",
+        "LoginGraceTime 30",
+        "X11Forwarding no",
+      ] : strcontains(hcloud_server.localnet[0].user_data, "      ${directive}\n")
+    ])
+    error_message = "the sshd drop-in must keep login key-only for root and cap the attempt window"
+  }
+
+  assert {
+    condition     = strcontains(hcloud_server.localnet[0].user_data, "sshd -t && systemctl reload ssh")
+    error_message = "the drop-in must be validated with sshd -t before sshd is reloaded, so a typo cannot lock SSH out"
+  }
+
+  assert {
+    condition     = !strcontains(hcloud_server.localnet[0].user_data, "AllowUsers") && !strcontains(hcloud_server.localnet[0].user_data, "ListenAddress")
+    error_message = "SSH stays open to the key-only developers: the drop-in must not restrict who or where from"
+  }
+}
+
+run "cloud_init_installs_pinned_docker_from_a_verified_key" {
+  command = apply
+
+  variables {
+    server_enabled = true
+  }
+
+  assert {
+    condition     = strcontains(hcloud_server.localnet[0].user_data, "EXPECTED_DOCKER_KEY_FINGERPRINT=9DC858229FC7DD38854AE2D88D81803C0EBFCD88")
+    error_message = "cloud-init must name Docker's published apt signing key fingerprint"
+  }
+
+  assert {
+    condition     = strcontains(hcloud_server.localnet[0].user_data, "gpg --show-keys --with-colons")
+    error_message = "cloud-init must read the downloaded key's fingerprint before trusting it"
+  }
+
+  assert {
+    condition     = strcontains(hcloud_server.localnet[0].user_data, "refusing to trust the Docker apt key")
+    error_message = "a fingerprint mismatch must abort provisioning"
+  }
+
+  assert {
+    condition = alltrue([
+      for package in [
+        "docker-ce=5:29.9.3-1~ubuntu.$VERSION_ID~$VERSION_CODENAME",
+        "docker-ce-cli=5:29.9.3-1~ubuntu.$VERSION_ID~$VERSION_CODENAME",
+        "containerd.io=2.4.2-3~ubuntu.$VERSION_ID~$VERSION_CODENAME",
+        "docker-buildx-plugin=0.38.1-1~ubuntu.$VERSION_ID~$VERSION_CODENAME",
+        "docker-compose-plugin=5.7.0-1~ubuntu.$VERSION_ID~$VERSION_CODENAME",
+      ] : strcontains(hcloud_server.localnet[0].user_data, package)
+    ])
+    error_message = "every Docker package must be installed at the pinned default version"
+  }
+
+  assert {
+    condition     = strcontains(hcloud_server.localnet[0].user_data, "apt-mark hold docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin")
+    error_message = "the pinned Docker packages must be held so a system upgrade cannot move them"
+  }
+
+  assert {
+    condition     = length(split("apt-get install -y -o Acquire::Retries=3 --allow-downgrades", hcloud_server.localnet[0].user_data)) == 2
+    error_message = "the Docker install line must appear exactly once"
+  }
+
+  assert {
+    condition     = !strcontains(hcloud_server.localnet[0].user_data, "install -y docker-ce docker-ce-cli")
+    error_message = "no unpinned Docker install line may remain"
+  }
+}
+
+run "docker_versions_default_to_the_pinned_release" {
+  command = plan
+
+  assert {
+    condition     = var.docker_versions.engine == "5:29.9.3-1" && var.docker_versions.containerd == "2.4.2-3" && var.docker_versions.buildx == "0.38.1-1" && var.docker_versions.compose == "5.7.0-1"
+    error_message = "docker_versions must default to the pinned Docker release"
   }
 }
 

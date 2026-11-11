@@ -2,13 +2,39 @@
 # Copyright (c) 2026 Peaceful Studio OÜ
 # SPDX-License-Identifier: Apache-2.0
 package_update: true
-package_upgrade: false
+package_upgrade: true
 packages:
   - ca-certificates
   - curl
   - git
+  - gnupg
   - make
+  - unattended-upgrades
 write_files:
+  - path: /etc/apt/apt.conf.d/20auto-upgrades
+    permissions: "0644"
+    owner: root:root
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+  - path: /etc/ssh/sshd_config.d/10-hardening.conf
+    permissions: "0644"
+    owner: root:root
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitEmptyPasswords no
+      PermitRootLogin prohibit-password
+      PubkeyAuthentication yes
+      AuthenticationMethods publickey
+      MaxAuthTries 3
+      LoginGraceTime 30
+      X11Forwarding no
+  - path: /opt/canton-localnet/format-blank-volume.sh
+    permissions: "0700"
+    owner: root:root
+    content: |
+      ${indent(6, format_volume_script)}
   - path: /opt/canton-localnet/bring-up-localnet.sh
     permissions: "0700"
     owner: root:root
@@ -41,9 +67,7 @@ write_files:
         exit 1
       fi
 
-      if ! blkid "$DEVICE" >/dev/null 2>&1; then
-        mkfs.ext4 -F "$DEVICE"
-      fi
+      /opt/canton-localnet/format-blank-volume.sh "$DEVICE"
       if ! grep -qE "[[:space:]]$MOUNT[[:space:]]" /etc/fstab; then
         echo "$DEVICE $MOUNT ext4 discard,nofail,defaults 0 0" >> /etc/fstab
       fi
@@ -54,55 +78,39 @@ write_files:
       {"data-root": "$MOUNT/docker"}
       JSON
 
+      EXPECTED_DOCKER_KEY_FINGERPRINT=9DC858229FC7DD38854AE2D88D81803C0EBFCD88
+      . /etc/os-release
       install -m 0755 -d /etc/apt/keyrings
-      curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
-        -o /etc/apt/keyrings/docker.asc
-      chmod a+r /etc/apt/keyrings/docker.asc
-      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+      DOCKER_KEY_FILE="$(mktemp)"
+      curl -fsSL --max-time 60 https://download.docker.com/linux/ubuntu/gpg -o "$DOCKER_KEY_FILE"
+      ACTUAL_DOCKER_KEY_FINGERPRINT="$(gpg --show-keys --with-colons "$DOCKER_KEY_FILE" | awk -F: -v field=10 '$1 == "fpr" { print $field; exit }')"
+      if [ "$ACTUAL_DOCKER_KEY_FINGERPRINT" != "$EXPECTED_DOCKER_KEY_FINGERPRINT" ]; then
+        echo "FATAL: refusing to trust the Docker apt key: fingerprint '$ACTUAL_DOCKER_KEY_FINGERPRINT' is not $EXPECTED_DOCKER_KEY_FINGERPRINT" >&2
+        exit 1
+      fi
+      install -m 0644 "$DOCKER_KEY_FILE" /etc/apt/keyrings/docker.asc
+      rm -f "$DOCKER_KEY_FILE"
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $VERSION_CODENAME stable" \
         > /etc/apt/sources.list.d/docker.list
       apt-get update -o Acquire::Retries=3
-      apt-get install -y -o Acquire::Retries=3 docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-      apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+      apt-get install -y -o Acquire::Retries=3 --allow-downgrades \
+        "docker-ce=${docker_versions.engine}~ubuntu.$VERSION_ID~$VERSION_CODENAME" \
+        "docker-ce-cli=${docker_versions.engine}~ubuntu.$VERSION_ID~$VERSION_CODENAME" \
+        "containerd.io=${docker_versions.containerd}~ubuntu.$VERSION_ID~$VERSION_CODENAME" \
+        "docker-buildx-plugin=${docker_versions.buildx}~ubuntu.$VERSION_ID~$VERSION_CODENAME" \
+        "docker-compose-plugin=${docker_versions.compose}~ubuntu.$VERSION_ID~$VERSION_CODENAME"
+      apt-mark hold docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
       SRC="$MOUNT/canton-localnet"
-      AUTH_HEADER=""
-      REPO_TOKEN="${repo_token}"
-      if [ -n "$REPO_TOKEN" ]; then
-        AUTH_HEADER="Authorization: Basic $(printf 'x-access-token:%s' "$REPO_TOKEN" | base64 -w0)"
-      else
-        echo "WARN: repo_token empty — cloning unauthenticated (only works for a public repo)" >&2
-      fi
-      unset REPO_TOKEN
-
-      run_git() {
-        if [ -n "$AUTH_HEADER" ]; then
-          GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader GIT_CONFIG_VALUE_0="$AUTH_HEADER" git "$@"
-        else
-          git "$@"
-        fi
-      }
-
       if [ ! -d "$SRC/.git" ]; then
-        run_git clone "${repo_url}" "$SRC"
+        git clone "${repo_url}" "$SRC"
       fi
-      # Older provisioning embedded a PAT in the remote URL, and the checkout
-      # outlives the server on the persistent volume. Auth comes from
-      # http.extraHeader per run, so strip any credential the URL still carries.
-      # Rewrites userinfo only -- the origin repo is the volume's to decide, and
-      # is deliberately not always repo_url.
-      CURRENT_ORIGIN=$(git -C "$SRC" remote get-url origin)
-      CLEAN_ORIGIN=$(printf '%s' "$CURRENT_ORIGIN" | sed -E 's#^(https://)[^/@]*@#\1#')
-      if [ "$CLEAN_ORIGIN" != "$CURRENT_ORIGIN" ]; then
-        echo "Stripping embedded credential from origin URL"
-        git -C "$SRC" remote set-url origin "$CLEAN_ORIGIN"
+      git -C "$SRC" remote set-url origin "${repo_url}"
+      git -C "$SRC" fetch --prune --tags --force origin
+      git -C "$SRC" checkout "${repo_ref}"
+      if git -C "$SRC" symbolic-ref -q HEAD >/dev/null; then
+        git -C "$SRC" pull --ff-only || { echo "FATAL: ff-only pull failed — branch diverged, refusing to deploy stale checkout" >&2; exit 1; }
       fi
-      unset CURRENT_ORIGIN CLEAN_ORIGIN
-      run_git -C "$SRC" fetch --all --prune
-      run_git -C "$SRC" checkout "${repo_ref}"
-      if run_git -C "$SRC" symbolic-ref -q HEAD >/dev/null; then
-        run_git -C "$SRC" pull --ff-only || { echo "FATAL: ff-only pull failed — branch diverged, refusing to deploy stale checkout" >&2; exit 1; }
-      fi
-      unset AUTH_HEADER
 
       docker info >/dev/null 2>&1 || { echo "FATAL: docker daemon not responding after install — aborting" >&2; exit 1; }
 
@@ -110,7 +118,10 @@ write_files:
       export D_VALIDATOR_1_PROFILE=off
       /opt/canton-localnet/bring-up-localnet.sh "$SRC" "$MOUNT/localnet-state-key" make up PQS=true
 
+      make -C "$SRC" wait-ready
+
       mkdir -p "$(dirname "$DONE_FLAG")"
       touch "$DONE_FLAG"
 runcmd:
+  - sshd -t && systemctl reload ssh
   - /opt/canton-localnet/provision.sh

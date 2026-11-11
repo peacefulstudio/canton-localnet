@@ -3,431 +3,101 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 A shared, reusable, flexibly-topological Canton LocalNet that Peaceful Studio's
-repositories build their integration tests on — compose + xUnit/Go fixtures +
-CLI + Hetzner terraform.
-
-## Capabilities
+repositories build their integration tests on: compose + xUnit/Go fixtures +
+CLI + Hetzner terraform. Boot a real multi-participant Canton network on your
+machine or in your CI with one command, and drive it from a config file, a CLI
+or a test fixture.
 
 | Capability | What ships today |
 |---|---|
 | Declarative config | Single-file `canton-localnet.yaml` (topology, slots, parties, auth) |
 | CLI lifecycle | `up` / `down` / `wait-ready` / `auth token` / `tap` / `info` / `tunnel` |
-| Flexible topology | 1 SV + N validators across 5 named slots; SV-only → all-five |
+| Flexible topology | 1 SV + N validators across 5 named slots; SV-only to all-five |
 | Programmatic fixtures | C# `LocalnetFixture` + Go `fixture`: query + mutate a live ledger |
-| Observability & PQS | Grafana/Prometheus/Loki/Tempo + per-slot Participant Query Store |
+| Observability and PQS | Grafana/Prometheus/Loki/Tempo + per-slot Participant Query Store |
 | Multi-synchronizer | Second synchronizer profile for cross-domain scenarios |
+| CI | A composite GitHub Action that boots a LocalNet in your own workflow |
 | Infra | Part-time Hetzner Terraform, scheduled up/down |
 | Release artifacts | NuGet + Go module + CLI binaries + OCI compose artifact, in lockstep |
 
-## Use cases
+Typical uses: local multi-participant app development, integration and
+end-to-end testing, CI/CD pipelines, privacy-boundary and witness testing,
+multi-synchronizer scenarios, and demos. Running in CI? Jump to the
+[GitHub Actions quickstart](docs/public/github-action.md#quickstart).
 
-- Local multi-participant app development against a real Canton ledger.
-- Integration and end-to-end testing.
-- CI/CD pipelines.
-- Privacy-boundary / witness testing (the reserved `d-validator-1` slot).
-- Multi-synchronizer / cross-domain scenarios.
-- Demos and runtime samples.
+## Quick Start
 
-It underpins our own repositories' integration suites — see the
-[integration-testing guide](docs/public/integration-testing.md) — and the
-[topologies guide](docs/public/topologies.md) shows how far you can push the
-topology.
-
-## Quickstart
-
-Boot a complete Canton LocalNet (Splice 0.10.0) on your machine:
+Boot a complete Canton LocalNet (Splice 0.10.1) on your machine. You need
+Docker >= 27 and Docker Compose >= 2.27:
 
 ```bash
+git clone https://github.com/peacefulstudio/canton-localnet.git
+cd canton-localnet
 make up           # docker compose up -d, OAuth2 mode by default
-make wait-ready   # poll the JSON Ledger API until participant accepts requests
+make wait-ready   # poll the JSON Ledger API of every enabled slot until each accepts requests
 make down         # stop the stack and remove containers
 ```
 
-JSON Ledger API endpoints once ready (see `compose/modules/localnet/env/common.env`):
+Once ready, the JSON Ledger API of each slot listens on `127.0.0.1`:
+`sv-validator-1` on `10975`, `a-validator-1` on `11975`, `b-validator-1` on
+`12975`, `c-validator-1` on `13975` and `d-validator-1` on `14975`.
 
-| Slot             | JSON Ledger API |
-|------------------|-----------------|
-| `sv-validator-1` | 10975           |
-| `a-validator-1`  | 11975           |
-| `b-validator-1`  | 12975           |
-| `c-validator-1`  | 13975           |
-| `d-validator-1`  | 14975           |
+The CLI offers the same lifecycle (`canton-localnet up`, `wait-ready`, `down`)
+and more, as a binary on each
+[release](https://github.com/peacefulstudio/canton-localnet/releases).
 
-Slot ports follow the 5-digit two-digit-prefix scheme (`<prefix><suffix>`):
-each slot's participant ledger / admin / JSON / Splice validator admin ports
-share the same two-digit prefix as the JSON Ledger API port shown above.
+The stack ships fixed, public demo credentials, so run it on a loopback-only or
+firewalled host and never against real assets. The full quickstart covers every
+port, the optional layers (PQS, observability), the tunnel to a remote LocalNet
+and the multi-synchronizer profile:
+[docs/public/quickstart.md](docs/public/quickstart.md).
 
-Every host-published port (participant ledger / admin / JSON, Splice
-validator admin, Postgres `5432`, Keycloak `8082`, swagger-ui, the OTLP
-collector `14001` / `14003` and Grafana `3030`) binds to `HOST_BIND_IP`, which
-defaults to `127.0.0.1`. Set `HOST_BIND_IP=0.0.0.0` (e.g. on the shared Hetzner
-LocalNet VM, whose cloud firewall is SSH-only) to publish on all interfaces:
+## Use it in GitHub Actions
 
-```bash
-make up HOST_BIND_IP=0.0.0.0
-```
-
-On Docker server versions below 28.0.0, a port published to `127.0.0.1` can
-still be reachable from other hosts on the same network segment — see
-`make check-docker-version` (`STRICT=true` turns that into a hard failure).
-
-Optional layers via Make flags (shortcuts — the canonical config layer is
-`canton-localnet.yaml`, see **Configuration** below):
-
-```bash
-make up PQS=true            # opt in to PQS for slot a (same as PQS_SLOTS=a)
-make up PQS_SLOTS=a,c       # PQS for the listed slots (a, b, c, sv); see docs/public/topologies.md
-make up OBS=true            # add Grafana (http://localhost:3030) + Prometheus / Loki / Tempo / cAdvisor; host apps export OTLP to localhost:14001 (gRPC) or localhost:14003 (HTTP)
-make up RES=false           # remove the default mem_limit / JVM heap caps
-make up AUTH_MODE=secret    # shared-secret JWT (escape hatch; not CI-tested)
-```
-
-When iterating with observability on, `make stop-app` (and `make clean-app`)
-restart the application stack while leaving Grafana / Prometheus / Loki / Tempo
-running so dashboards stay populated.
-
-### Tunnel to a remote LocalNet
-
-To reach a LocalNet running on another host (a shared VM, a cloud box), open an
-`ssh -L` tunnel so its ports appear on `localhost`. The command needs no
-repository checkout and no terraform:
-
-```bash
-canton-localnet tunnel --host <host>   # --user defaults to root; Ctrl-C closes the tunnel
-```
-
-It forwards the host-side JSON Ledger API port of every slot (`10975`-`14975`),
-plus `11901` (a-validator-1 participant gRPC ledger API), `7575` (legacy
-in-container Splice JSON Ledger API) and `8082` (Keycloak). `--identity` selects
-the SSH key (default `~/.ssh/canton-localnet` when that file exists), `--user`
-the remote user and `--ssh-port` the remote port. The port set is defined in
-[`cli/internal/tunnel`](cli/internal/tunnel/tunnel.go).
-
-Prerequisites: Docker ≥ 27, Docker Compose ≥ 2.27. The compose stack is
-vendored into `compose/modules/` from `hyperledger-labs/splice` at the SHA
-pinned in `compose/splice.sha`. Re-vendor with `make vendor`.
-
-### Multi-synchronizer profile
-
-Bring up a second synchronizer (`app-synchronizer`) that the `a`/`b`/`d`
-validators connect to, for cross-synchronizer tests:
-
-```bash
-canton-localnet up --multi-sync
-canton-localnet wait-ready --synchronizers 2   # blocks until a-validator-1 sees both
-# or, via make:
-MULTI_SYNC=true make up
-```
-
-Discover the second synchronizer's id from a test (C#):
-
-```csharp
-var party = await fixture.AllocatePartyAsync("lapi");
-var appSyncId = await fixture.GetAppSynchronizerIdAsync(party.PartyId);
-// pin a submission: WithSynchronizerId(new SynchronizerId(appSyncId))
-```
-
-`multi-sync` is local/CI only — it is not enabled on the shared VM.
-
-## Driving a slot from a script
-
-Downstream apps that allocate parties, upload DARs, or otherwise drive
-a slot's JSON Ledger API can stop hardcoding realm names, client
-secrets, and the `<prefix>975` port scheme by going through two CLI
-primitives:
-
-```bash
-# Mint a participant-admin bearer for the slot.
-TOKEN=$(canton-localnet auth token --slot a)
-
-# Get the slot's endpoints + live participant id as JSON.
-canton-localnet info --slot a --json
-```
-
-`auth token` does an OAuth2 `client_credentials` exchange against the
-slot's Keycloak realm for a/b/c/d, and mints a self-signed HS256 JWT
-for sv-validator-1 (which doesn't run Keycloak). Resolution layers, from
-highest to lowest priority:
-
-1. `CANTON_LOCALNET_<SLOT>_CLIENT_ID` / `_CLIENT_SECRET` env vars
-2. `canton-localnet.yaml` `validators.<slot>.auth.clientId` / `clientSecret` (the same fields `up` reads)
-3. `compose/modules/keycloak/env/<slot>/on/oauth2.env` — so secret rotations in this repo land automatically
-4. Built-in default
-
-For sv-validator-1, the HS256 signing secret defaults to the LocalNet
-shared `"unsafe"` string; override via
-`CANTON_LOCALNET_SV_VALIDATOR_1_HS256_SECRET` if you have customised the
-SV participant's auth config. The CLI does not validate the sv secret
-locally — a wrong secret surfaces as a downstream 401 from the JSON
-Ledger API. `validators.sv-validator-1.auth.clientId` / `clientSecret`
-in `canton-localnet.yaml` are silently ignored because the HS256 path
-doesn't have a client id.
-
-`info --json` returns:
-
-```json
-{
-  "slot": "a-validator-1",
-  "json_api": "http://localhost:11975",
-  "ledger_grpc": "localhost:11901",
-  "admin_grpc": "localhost:11902",
-  "validator_admin": "localhost:11903",
-  "realm": "AValidator1",
-  "token_url_host": "http://localhost:8082/realms/AValidator1/protocol/openid-connect/token",
-  "token_url_internal": "http://nginx-keycloak:8082/realms/AValidator1/protocol/openid-connect/token",
-  "audience": "https://canton.network.global",
-  "auth_kind": "oauth2",
-  "party_hint": "a-validator-1",
-  "participant_id": "participant::1220...",
-  "participant_namespace": "1220...",
-  "validator_primary_party": "a-validator-1::1220..."
-}
-```
-
-Pass `--offline` to skip the live participant-id lookup when you only
-need the static endpoint mapping (e.g. before the stack is up). Short
-slot names (`a`, `b`, `c`, `d`, `sv`) and canonical names
-(`a-validator-1`, …) are both accepted.
-
-## Funding a validator party with Amulet
-
-A suite that reads Amulet through PQS needs the validator party to hold an
-`Amulet` contract. `tap` mints one through the slot's Splice validator
-wallet, so a caller never touches Splice's API:
-
-```bash
-canton-localnet tap --slot a --amount 10
-```
-
-It logs in to the slot's Keycloak realm as the wallet admin user (client
-`<slot>-unsafe`, user `<slot>`, password `abc123`; override per slot with
-`CANTON_LOCALNET_<SLOT>_WALLET_CLIENT_ID`, `_WALLET_USER`, `_WALLET_PASSWORD`),
-posts to the validator app's `/api/validator/v0/wallet/tap` on
-`<prefix>903`, and prints the new contract id. 429 and refused
-connections (the wallet call; the Keycloak login also retries 502, 503, 504) are retried with backoff (honouring `Retry-After`) for up to 60
-seconds, so it is safe right after boot; any other non-2xx, or a transient one
-that outlasts the budget, exits 1 naming the last status. Every call
-mints a new Amulet, so repeating it is safe and adds to the balance. `--amount`
-is converted at LocalNet's amulet price: measured on a live LocalNet, `10`
-minted 2000 Amulet. `--slot sv` is refused. Scribe ingests the new contract
-into PQS in under a second on a running stack.
-
-To fund to a known level instead of adding, use `--at-least` (mutually
-exclusive with `--amount`; exactly one is required):
-
-```bash
-canton-localnet tap --slot a --at-least 1000
-```
-
-It reads the wallet's `effective_unlocked_qty` from
-`/api/validator/v0/wallet/balance` (spendable Amulet net of holding fees;
-locked Amulet is not spendable and is excluded). If that is below the target
-it taps exactly the gap, converted to USD with the `amuletPrice` of the latest
-opened round from `/api/validator/v0/scan-proxy/open-and-issuing-mining-rounds`
-and rounded up so it cannot land short, then re-reads the balance and taps
-again if holding fees or a price tick left it short, up to three taps. At or
-above the target it taps nothing, so a second run is a no-op. The resulting
-balance is the only thing on stdout. A tap answered with a 5xx is not retried,
-since the mint may have committed behind it.
-
-## Pruning leaked ledger rights
-
-A Canton participant caps a user at 1000 rights and never deletes a
-party, so every `CanActAs` grant an integration suite makes on an
-ephemeral party is permanent. Suites that revoke on teardown leave
-nothing behind; a run killed before teardown does, and a long-lived
-shared LocalNet silts up until further grants fail with
-`TOO_MANY_USER_RIGHTS`.
-
-```bash
-# Audit: what does the slot's validator user hold?
-canton-localnet rights list --slot a
-canton-localnet rights list --slot a --full   # name every party, don't group
-
-# Sweep: print the plan, then revoke after confirmation.
-canton-localnet rights prune --slot a
-canton-localnet rights prune --slot a --dry-run --full   # plan it, name every party
-```
-
-or `make list-rights SLOT=a` / `make prune-rights SLOT=a` (add `YES=1`
-to skip the prompt; `YES=0` and an unset `YES` both keep it). `prune`
-writes nothing unless it is given `--yes` or answered at an interactive
-prompt.
-
-`rights list` groups the ephemeral parties by the hint their allocator
-used, so a user carrying hundreds of leaked grants reads as a handful of
-counted lines. Pass `--full` to name every party instead — that is how
-the source of a leak gets identified.
-
-```
-slot             a-validator-1
-json_api         http://localhost:11975
-user             c87743ab-80e0-4b83-935a-4c0582226691
-preserving       ParticipantAdmin, and CanActAs on a-validator-1::1220ab…*
-preserve source  the user's primary party, read from the participant
-total rights     53
-preserved        2
-    keep    ParticipantAdmin
-    keep    CanActAs                 a-validator-1::1220ab…
-to revoke        51
-    revoke    46  CanActAs                 grpc-writer-parity-*
-    revoke     5  CanActAs                 rest-writer-parity-*
-```
-
-`rights prune` is destructive. Its full contract is in `canton-localnet
-rights prune --help`, and the plan it prints on every run restates the
-part that matters — what is preserved, and where that came from. In
-short: it keeps the `ParticipantAdmin` right and every `CanActAs` right
-on the validator's own party, and revokes everything else, other right
-kinds on the validator's own party included.
-
-The preserved party is read from the participant, as the target user's
-`primaryParty`. That matters because it is not guessable from the slot
-name: `sv-validator-1` operates as the founded party `sv::<ns>`, not
-`sv-validator-1::<ns>`. Two refusals stand behind it, and neither can be
-waived:
-
-- **No `ParticipantAdmin` right** — the command is aimed at a user whose
-  rights are not disposable.
-- **No `CanActAs` right on the preserved party** — every validator user
-  holds one, so its absence means the preserved party is wrong for this
-  slot and the sweep would take the user's own act-as rights with it.
-
-Both refusals gate anything destructive, so neither can be waived when
-there is something to revoke. A user with an empty revoke list never
-reaches them; that path reports the user as clean and warns when the
-preserved party looks wrong for the slot.
-
-Use `--preserve-party <party>` when the participant reports no primary
-party. The value must be a full party id containing `::`, because a bare
-hint such as `a-validator-1` also prefix-matches `a-validator-1-foo::…`,
-and the user must still hold an act-as right on it — a typo refuses
-exactly as a wrong slot does. It follows that a user this tool has
-already stripped of its own act-as right cannot be pruned again; the
-repair for that is to re-grant the right.
-
-The rest of the rails:
-
-- `--max-revoke` (default 1000) aborts a runaway list. It sits at the
-  participant's own per-user cap, so on a stock participant it does not
-  fire; it is a sanity bound, not a protection, and it is deliberately
-  not lower, because recovering a participant saturated at 999 rights is
-  the case this exists for.
-- The rights are re-read live immediately before revoking, and the
-  revoke proceeds only if that live set is contained in the plan that
-  was consented to. If new rights appeared in between — likely on a busy
-  shared box — it aborts and asks you to re-run rather than revoke more
-  than was agreed.
-- It fails loudly when the participant reports revoking fewer rights
-  than were asked for.
-- It is safe to re-run: with nothing ephemeral left it exits 0.
-- `--dry-run` plans, runs every check, and exits 0 without writing, so
-  its `0` asserts the plan is executable rather than merely printed. It
-  is mutually exclusive with `--yes`, as a hard error rather than a
-  precedence rule.
-- `--full` works on `prune` too, so the plan you authorise can name
-  every party rather than summarise them.
-
-### Exit status (`prune`)
-
-| code | meaning |
-| --- | --- |
-| `0` | nothing to revoke, a successful revoke, or a `--dry-run` whose plan passed every check |
-| `2` | the sweep was not authorised: the prompt was declined, or `--yes` was withheld from a non-interactive run |
-| `1` | everything else — a rail refused, the live set drifted past what was consented to, a call failed, or the invocation itself was rejected before any ledger call (a missing or unparseable `--slot`, `--yes` together with `--dry-run`, a `--preserve-party` without `::`, an unresolved validator user id, a `--repo-root` with no compose tree) |
-
-**`2` always means nothing was changed. `1` does not.** A partial revoke
-and a failed read-back after a successful revoke both exit `1` with
-rights already gone. On `1`, re-run `rights list` before assuming the
-state.
-
-`2` is distinct on purpose, so a `prune || alert` wrapper does not page
-when somebody deliberately answers no, and a CI job that forgets `--yes`
-cannot report a green sweep while the box stays saturated.
-
-The user id comes from `AUTH_<SLOT>_VALIDATOR_USER_ID` in
-`compose/modules/keycloak/env/<slot>/on/oauth2.env`, overridable with
-`CANTON_LOCALNET_<SLOT>_USER_ID`.
-
-> **Party hints.** The CLI reads `CANTON_LOCALNET_<SLOT>_PARTY_HINT`,
-> while compose reads the unprefixed `<SLOT>_PARTY_HINT`
-> (`compose/modules/localnet/env/<slot>-auth-on.env`). A stack booted
-> with a custom hint set only in the compose form leaves the CLI on the
-> default. That only reaches `prune` as the fallback when the
-> participant reports no primary party, and the no-own-party refusal
-> covers it — but set both forms if you customise a hint.
-
-## Configuration
-
-The CLI reads an optional `canton-localnet.yaml` from the working
-directory or any ancestor (walk-up discovery, matching `git` / `docker
-compose` / `kubectl`), overridable with `--config <path>`. With no
-file found anywhere, the CLI uses built-in defaults (all five
-validator slots enabled, observability + PQS on, party hints equal to
-slot names). Partial configs merge over the defaults.
+The composite action `peacefulstudio/canton-localnet` boots a real Canton
+LocalNet inside your own workflow, so your integration and CI/CD tests run
+against an actual ledger instead of a mock. It needs no checkout of this
+repository, exports each slot's endpoints and credentials to the job
+environment (secrets masked), and a paired teardown action cleans up and
+uploads diagnostics when something fails. It is language-neutral: your tests
+only read environment variables.
 
 ```yaml
-schemaVersion: preview-1
-modules:
-  obs: true
-  pqs: true
-validators:
-  a-validator-1:
-    partyHint: featuredapp-validator-1
-    auth: { clientId: a-validator-1-validator, clientSecret: ${FEATUREDAPP_VALIDATOR_SECRET} }
-  c-validator-1: { enabled: false }
-  d-validator-1: { enabled: false }
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Boot LocalNet
+        uses: peacefulstudio/canton-localnet@v0.10.1-1
+        with:
+          validators: a
+      - name: Run your tests
+        run: your-test-command # reads CANTON_LOCALNET_A_VALIDATOR_1_* from the environment
+      - name: Tear down
+        if: always()
+        uses: peacefulstudio/canton-localnet/teardown@v0.10.1-1
 ```
 
-The schema is **preview / unstable** until compose codegen lands —
-see [`docs/public/canton-localnet-yaml-schema.md`](docs/public/canton-localnet-yaml-schema.md)
-for the full reference.
+The [GitHub Action page](docs/public/github-action.md) shows how to
+[pin the commit SHA](docs/public/github-action.md#pinning) of a release tag
+instead, lists every input and output, and documents the exported environment
+contract, runner requirements and diagnostics.
 
-## Onboarding clients
+## Go deeper
 
-Each user-facing validator realm ships a confidential OAuth client whose
-service account holds just enough `realm-management` roles
-(`manage-users`, `view-users`, `query-users`) to manage users in that
-realm only. Downstream apps that need to create users (sign-up flows,
-integration test seeders) should use **this** client instead of the
-master realm `admin/admin` admin — master-realm admin is a footgun (one
-bug wipes the wrong realm) and breaks over plain HTTP via the
-`nginx-keycloak` proxy because Keycloak's master realm defaults to
-`sslRequired=external`.
-
-| Realm          | Client ID                  | Dev secret env var                              |
-|----------------|----------------------------|-------------------------------------------------|
-| `AValidator1`  | `a-validator-1-onboarding` | `AUTH_A_VALIDATOR_1_ONBOARDING_CLIENT_SECRET`   |
-| `BValidator1`  | `b-validator-1-onboarding` | `AUTH_B_VALIDATOR_1_ONBOARDING_CLIENT_SECRET`   |
-| `CValidator1`  | `c-validator-1-onboarding` | `AUTH_C_VALIDATOR_1_ONBOARDING_CLIENT_SECRET`   |
-| `DValidator1`  | `d-validator-1-onboarding` | `AUTH_D_VALIDATOR_1_ONBOARDING_CLIENT_SECRET`   |
-
-Secrets are committed in `compose/modules/keycloak/env/{slot}/on/oauth2.env`
-and re-surfaced in `compose/modules/localnet/env/{slot}-auth-on.env`. They
-are **dev-only** — for production deployments, rotate them.
-
-Quick check: mint a token, create a user, and verify cross-realm access
-is denied. Substitute the slot's realm + client + secret env var.
-
-```bash
-TOKEN=$(curl -sf -X POST http://localhost:8082/realms/AValidator1/protocol/openid-connect/token \
-  -H 'Content-Type: application/x-www-form-urlencoded' \
-  -d 'client_id=a-validator-1-onboarding' \
-  -d "client_secret=${AUTH_A_VALIDATOR_1_ONBOARDING_CLIENT_SECRET}" \
-  -d 'grant_type=client_credentials' \
-  -d 'scope=openid' | jq -r .access_token)
-
-curl -sf -X POST http://localhost:8082/admin/realms/AValidator1/users \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"alice","enabled":true,"credentials":[{"type":"password","value":"abc123","temporary":false}]}' \
-  -w '%{http_code}\n' -o /dev/null
-# expect: 201
-
-curl -s -X GET http://localhost:8082/admin/realms/BValidator1/users \
-  -H "Authorization: Bearer $TOKEN" -w '%{http_code}\n' -o /dev/null
-# expect: 403 (token is scoped to AValidator1 only)
-```
+| Topic | Page | Read this when you want to... |
+|---|---|---|
+| Local quickstart | [quickstart.md](docs/public/quickstart.md) | Boot a LocalNet locally and learn the ports, optional layers, remote tunnel and multi-synchronizer profile |
+| GitHub Action | [github-action.md](docs/public/github-action.md) | Run a LocalNet in your own CI and read the exported endpoints and credentials |
+| Integration testing | [integration-testing.md](docs/public/integration-testing.md) | Attach the C# or Go fixture to a LocalNet and wire it into CI |
+| Topologies | [topologies.md](docs/public/topologies.md) | Choose which slots, PQS and observability layers to run |
+| Config schema | [canton-localnet-yaml-schema.md](docs/public/canton-localnet-yaml-schema.md) | Configure the stack with `canton-localnet.yaml` |
+| Scripting | [scripting.md](docs/public/scripting.md) | Mint tokens and read endpoints from a script with `auth token` and `info` |
+| Funding a party | [funding-amulet.md](docs/public/funding-amulet.md) | Give a validator party an Amulet balance with `tap` |
+| Pruning rights | [pruning-rights.md](docs/public/pruning-rights.md) | Audit and sweep leaked ledger rights on a long-lived LocalNet |
+| Onboarding clients | [onboarding-clients.md](docs/public/onboarding-clients.md) | Create users in a validator realm without the master admin |
+| Migration | [MIGRATION.md](docs/public/MIGRATION.md) | Move an existing setup onto the current release |
 
 ## Project stewardship
 

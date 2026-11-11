@@ -230,59 +230,144 @@ public class JsonLedgerAdminClientTests
         Assert.Contains("global", ex.Message);
     }
 
-    [Fact]
-    public async Task PackageExistsAsync_returns_true_when_get_succeeds()
+    private const string ParticipantId = "participant::1220aa";
+    private const string PackageId = "b1008daac9810baa8ca7ff313c13bd48d65f18040b2d33faabe5b5d39acaac9e";
+    private const string SynchronizerId = "global-domain::1220cd";
+
+    private static HttpResponseMessage Json(string body) => new(HttpStatusCode.OK)
     {
-        var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        Content = new StringContent(body, Encoding.UTF8, "application/json"),
+    };
+
+    private static string VettedEntry(string participantId, string synchronizerId, string packageId) =>
+        $$"""{"packages":[{"packageId":"{{packageId}}","validFromInclusive":null,"validUntilExclusive":null,"packageName":"canton-localnet-noop","packageVersion":"0.0.1"}],"participantId":"{{participantId}}","synchronizerId":"{{synchronizerId}}","topologySerial":3}""";
+
+    private static RecordingHandler VettingHandler(Func<HttpRequestMessage, string, HttpResponseMessage> onVettingList) =>
+        new((request, _) =>
         {
-            Content = new ByteArrayContent([1, 2, 3]),
-        }));
+            if (request.Method == HttpMethod.Get && request.RequestUri!.AbsolutePath.EndsWith("v2/parties/participant-id", StringComparison.Ordinal))
+            {
+                return Task.FromResult(Json($$"""{"participantId":"{{ParticipantId}}"}"""));
+            }
+            var body = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return Task.FromResult(onVettingList(request, body));
+        });
+
+    [Fact]
+    public async Task IsPackageVettedAsync_posts_package_and_topology_filters_for_this_participant_and_synchronizer()
+    {
+        var handler = VettingHandler((_, _) => Json($$"""{"vettedPackages":[{{VettedEntry(ParticipantId, SynchronizerId, PackageId)}}],"nextPageToken":""}"""));
         using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
-        var client = new JsonLedgerAdminClient(http, StaticTokenProvider("tok"));
+        var client = new JsonLedgerAdminClient(http, StaticTokenProvider("tok-v"));
 
-        var exists = await client.PackageExistsAsync("pkg-id-123");
+        var vetted = await client.IsPackageVettedAsync(PackageId, SynchronizerId);
 
-        Assert.True(exists);
-        var recorded = Assert.Single(handler.Requests);
-        Assert.Equal(HttpMethod.Get, recorded.Method);
-        Assert.Equal(new Uri(JsonApiBase, "v2/packages/pkg-id-123"), recorded.Uri);
-        Assert.Equal("Bearer tok", recorded.Headers["Authorization"]);
+        Assert.True(vetted);
+        var recorded = Assert.Single(handler.Requests, r => r.Method == HttpMethod.Post);
+        Assert.Equal(new Uri(JsonApiBase, "v2/package-vetting/list"), recorded.Uri);
+        Assert.Equal("Bearer tok-v", recorded.Headers["Authorization"]);
+        using var doc = JsonDocument.Parse(recorded.Body);
+        var root = doc.RootElement;
+        Assert.Equal(
+            new[] { PackageId },
+            root.GetProperty("packageMetadataFilter").GetProperty("packageIds").EnumerateArray().Select(e => e.GetString()).ToArray());
+        Assert.Equal(
+            new[] { ParticipantId },
+            root.GetProperty("topologyStateFilter").GetProperty("participantIds").EnumerateArray().Select(e => e.GetString()).ToArray());
+        Assert.Equal(
+            new[] { SynchronizerId },
+            root.GetProperty("topologyStateFilter").GetProperty("synchronizerIds").EnumerateArray().Select(e => e.GetString()).ToArray());
     }
 
     [Fact]
-    public async Task PackageExistsAsync_returns_false_on_404()
+    public async Task IsPackageVettedAsync_returns_false_when_no_vetting_entry_comes_back()
     {
-        var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)));
+        var handler = VettingHandler((_, _) => Json("""{"vettedPackages":[],"nextPageToken":""}"""));
         using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
         var client = new JsonLedgerAdminClient(http, StaticTokenProvider("tok"));
 
-        var exists = await client.PackageExistsAsync("pkg-id-missing");
-
-        Assert.False(exists);
+        Assert.False(await client.IsPackageVettedAsync(PackageId, SynchronizerId));
     }
 
     [Fact]
-    public async Task PackageExistsAsync_throws_on_unexpected_status()
+    public async Task IsPackageVettedAsync_ignores_an_entry_that_belongs_to_another_participant()
     {
-        var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)
+        var handler = VettingHandler((_, _) => Json($$"""{"vettedPackages":[{{VettedEntry("participant::1220bb", SynchronizerId, PackageId)}}],"nextPageToken":""}"""));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var client = new JsonLedgerAdminClient(http, StaticTokenProvider("tok"));
+
+        Assert.False(await client.IsPackageVettedAsync(PackageId, SynchronizerId));
+    }
+
+    [Fact]
+    public async Task IsPackageVettedAsync_ignores_an_entry_for_a_different_package_id()
+    {
+        var handler = VettingHandler((_, _) => Json($$"""{"vettedPackages":[{{VettedEntry(ParticipantId, SynchronizerId, "d0048119d779f3dc1c02dd2549c6281cdd72998bc3c9bc514fe07ff5d5365bbd")}}],"nextPageToken":""}"""));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var client = new JsonLedgerAdminClient(http, StaticTokenProvider("tok"));
+
+        Assert.False(await client.IsPackageVettedAsync(PackageId, SynchronizerId));
+    }
+
+    [Fact]
+    public async Task IsPackageVettedAsync_omits_the_synchronizer_filter_when_none_is_given()
+    {
+        var handler = VettingHandler((_, _) => Json($$"""{"vettedPackages":[{{VettedEntry(ParticipantId, SynchronizerId, PackageId)}}],"nextPageToken":""}"""));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var client = new JsonLedgerAdminClient(http, StaticTokenProvider("tok"));
+
+        var vetted = await client.IsPackageVettedAsync(PackageId, synchronizerId: null);
+
+        Assert.True(vetted);
+        var recorded = Assert.Single(handler.Requests, r => r.Method == HttpMethod.Post);
+        using var doc = JsonDocument.Parse(recorded.Body);
+        Assert.False(doc.RootElement.GetProperty("topologyStateFilter").TryGetProperty("synchronizerIds", out _));
+    }
+
+    [Fact]
+    public async Task IsPackageVettedAsync_follows_nextPageToken_until_a_match_or_the_last_page()
+    {
+        var pageTokensSent = new List<string?>();
+        var handler = VettingHandler((_, body) =>
+        {
+            using var doc = JsonDocument.Parse(body);
+            var token = doc.RootElement.TryGetProperty("pageToken", out var t) ? t.GetString() : null;
+            pageTokensSent.Add(token);
+            return string.IsNullOrEmpty(token)
+                ? Json("""{"vettedPackages":[],"nextPageToken":"page-2"}""")
+                : Json($$"""{"vettedPackages":[{{VettedEntry(ParticipantId, SynchronizerId, PackageId)}}],"nextPageToken":""}""");
+        });
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var client = new JsonLedgerAdminClient(http, StaticTokenProvider("tok"));
+
+        var vetted = await client.IsPackageVettedAsync(PackageId, SynchronizerId);
+
+        Assert.True(vetted);
+        Assert.Equal(new string?[] { null, "page-2" }, pageTokensSent);
+    }
+
+    [Fact]
+    public async Task IsPackageVettedAsync_throws_on_unexpected_status()
+    {
+        var handler = VettingHandler((_, _) => new HttpResponseMessage(HttpStatusCode.InternalServerError)
         {
             Content = new StringContent("boom", Encoding.UTF8, "text/plain"),
-        }));
+        });
         using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
         var client = new JsonLedgerAdminClient(http, StaticTokenProvider("tok"));
 
-        var ex = await Assert.ThrowsAsync<JsonLedgerApiException>(() => client.PackageExistsAsync("pkg-id-123"));
+        var ex = await Assert.ThrowsAsync<JsonLedgerApiException>(() => client.IsPackageVettedAsync(PackageId, SynchronizerId));
         Assert.Equal(HttpStatusCode.InternalServerError, ex.StatusCode);
         Assert.Contains("boom", ex.ResponseBody);
     }
 
     [Fact]
-    public async Task PackageExistsAsync_rejects_empty_packageId()
+    public async Task IsPackageVettedAsync_rejects_empty_packageId()
     {
         using var http = new HttpClient(new RecordingHandler((_, _) =>
             Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)))) { BaseAddress = JsonApiBase };
         var client = new JsonLedgerAdminClient(http, StaticTokenProvider("tok"));
 
-        await Assert.ThrowsAsync<ArgumentException>(() => client.PackageExistsAsync(""));
+        await Assert.ThrowsAsync<ArgumentException>(() => client.IsPackageVettedAsync("", SynchronizerId));
     }
 }

@@ -25,6 +25,7 @@ type ValidatorFixture struct {
 	dars      *DarUploader
 	parties   *PartyAllocator
 	users     *UserBuilder
+	created   createdUsers
 }
 
 // String formats the validator view with its endpoints' ClientSecret
@@ -85,14 +86,20 @@ func (v *ValidatorFixture) UploadDars(ctx context.Context, paths ...string) erro
 
 // AllocateParty allocates a party with hint "<prefix>-<random suffix>"
 // against this validator.
-func (v *ValidatorFixture) AllocateParty(ctx context.Context, prefix, displayName string) (string, error) {
-	return v.parties.Allocate(ctx, prefix, displayName)
+func (v *ValidatorFixture) AllocateParty(ctx context.Context, prefix string) (string, error) {
+	return v.parties.Allocate(ctx, prefix)
 }
 
 // CreateUser creates a ledger user on this validator and grants
-// ActAs/ReadAs rights from opts.
+// ActAs/ReadAs rights from opts. The user is recorded, so the owning
+// Fixture's Teardown deletes it from this validator.
 func (v *ValidatorFixture) CreateUser(ctx context.Context, opts UserOptions) (string, error) {
-	return v.users.Create(ctx, opts)
+	id, err := v.users.Create(ctx, opts)
+	if err != nil {
+		return "", err
+	}
+	v.created.record(id)
+	return id, nil
 }
 
 // Validator returns a per-role view of the fixture. The first call for
@@ -106,6 +113,8 @@ func (v *ValidatorFixture) CreateUser(ctx context.Context, opts UserOptions) (st
 // backed by the same clients as Admin() / DarUploader() / etc., so
 // existing code that mixes the two surfaces stays consistent.
 func (f *Fixture) Validator(role Role) (*ValidatorFixture, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	if !f.ready {
 		return nil, fmt.Errorf("fixture: Setup must be called before Validator")
 	}
@@ -173,7 +182,7 @@ func (f *Fixture) buildValidator(role Role) (*ValidatorFixture, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fixture: build dar uploader for %s: %w", role, err)
 	}
-	parties, err := NewPartyAllocator(endpoints.JSONLedgerAPIURL, tokens, WithPartyAllocatorHTTPClient(f.cfg.HTTPClient))
+	parties, err := NewPartyAllocator(endpoints.JSONLedgerAPIURL, tokens, WithPartyAllocatorHTTPClient(f.cfg.HTTPClient), withPartyAllocatorAdminClient(admin))
 	if err != nil {
 		return nil, fmt.Errorf("fixture: build party allocator for %s: %w", role, err)
 	}
@@ -204,4 +213,3 @@ func KnownRoles() []Role {
 		RoleDValidator1,
 	}
 }
-

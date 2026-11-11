@@ -7,13 +7,16 @@
 #   source (default) — go build it from $ACTION_PATH/cli (measured ~9s
 #                       with a warm setup-go cache).
 #   release           — download the release asset matching $ACTION_REF
-#                       and verify it against that release's checksums.txt.
+#                       and verify it against that release's checksums.txt
+#                       and against the build provenance attestation
+#                       release.yml signs for it (gh attestation verify).
 #                       Fails closed: valid only when $ACTION_REF is a
-#                       literal release tag, and any download or checksum
-#                       problem aborts rather than falling back to source.
+#                       literal release tag, and any download, checksum or
+#                       attestation problem aborts rather than falling back
+#                       to source.
 #
 # Required env: CLI_MODE, ACTION_PATH, ACTION_REF, RUNNER_TEMP, GITHUB_OUTPUT,
-# GITHUB_PATH.
+# GITHUB_PATH, and for cli: release a GH_TOKEN that gh can verify with.
 
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,6 +28,7 @@ mkdir -p "$bin_dir"
 : >"$(canton_localnet_timings_file)"
 resolve_started="$(date +%s)"
 cli_path="$bin_dir/canton-localnet"
+download_max_seconds=120
 
 build_from_source() {
   echo "Building canton-localnet from source (${ACTION_PATH}/cli)"
@@ -57,11 +61,11 @@ download_release() {
   local work_dir="$RUNNER_TEMP/canton-localnet/release-download"
   mkdir -p "$work_dir"
   echo "Downloading ${asset} and checksums.txt from ${base_url}"
-  if ! curl -fsSL --retry 2 -o "$work_dir/$asset" "$base_url/$asset"; then
+  if ! curl -fsSL --retry 2 --max-time "$download_max_seconds" -o "$work_dir/$asset" "$base_url/$asset"; then
     canton_localnet_log_error "canton-localnet action: cli: release could not download ${asset} from ${base_url} — the release may not carry that asset yet. Use cli: source."
     return 1
   fi
-  if ! curl -fsSL --retry 2 -o "$work_dir/checksums.txt" "$base_url/checksums.txt"; then
+  if ! curl -fsSL --retry 2 --max-time "$download_max_seconds" -o "$work_dir/checksums.txt" "$base_url/checksums.txt"; then
     canton_localnet_log_error "canton-localnet action: cli: release could not download checksums.txt from ${base_url}. Use cli: source."
     return 1
   fi
@@ -69,6 +73,12 @@ download_release() {
   # recorded filename is "./<asset>", not a bare "<asset>".
   if ! (cd "$work_dir" && grep -E "[[:space:]]\./${asset}\$" checksums.txt | sha256sum -c -); then
     canton_localnet_log_error "canton-localnet action: cli: release checksum verification failed for ${asset} — refusing to run an unverified binary."
+    return 1
+  fi
+  if ! gh attestation verify "$work_dir/$asset" \
+    --repo peacefulstudio/canton-localnet \
+    --signer-workflow peacefulstudio/canton-localnet/.github/workflows/release.yml; then
+    canton_localnet_log_error "canton-localnet action: cli: release attestation verification failed for ${asset} — the binary was not built by peacefulstudio/canton-localnet's release workflow; refusing to run it."
     return 1
   fi
   install -m 0755 "$work_dir/$asset" "$cli_path"

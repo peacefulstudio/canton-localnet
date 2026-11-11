@@ -10,9 +10,17 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
-const maxResponseBodyBytes = 16 << 20
+const (
+	maxResponseBodyBytes     = 16 << 20
+	defaultHTTPClientTimeout = 30 * time.Second
+)
+
+func newDefaultHTTPClient() *http.Client {
+	return &http.Client{Timeout: defaultHTTPClientTimeout}
+}
 
 var errResponseBodyTooLarge = fmt.Errorf("response exceeds %d bytes", maxResponseBodyBytes)
 
@@ -102,9 +110,30 @@ func doRequest(ctx context.Context, client *http.Client, tokens TokenProvider, b
 		return respBody, nil
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("%s: %s %s returned HTTP %d: %s", req.errPrefix, req.method, req.errorPath(), resp.StatusCode, truncateBodyForError(respBody))
+		return nil, &httpStatusError{
+			errPrefix:  req.errPrefix,
+			method:     req.method,
+			path:       req.errorPath(),
+			statusCode: resp.StatusCode,
+			body:       respBody,
+		}
 	}
 	return respBody, nil
+}
+
+// httpStatusError is the error doRequest returns for a non-2xx response. It
+// carries the status code and raw body so callers can classify the failure
+// with errors.As instead of parsing the message.
+type httpStatusError struct {
+	errPrefix  string
+	method     string
+	path       string
+	statusCode int
+	body       []byte
+}
+
+func (e *httpStatusError) Error() string {
+	return fmt.Sprintf("%s: %s %s returned HTTP %d: %s", e.errPrefix, e.method, e.path, e.statusCode, truncateBodyForError(e.body))
 }
 
 func (r httpRequest) errorPath() string {

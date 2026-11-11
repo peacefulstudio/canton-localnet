@@ -21,6 +21,8 @@ namespace Peaceful.Canton.Localnet.Testing;
 public sealed class ValidatorFixture : IAsyncDisposable
 {
     private readonly ServiceProvider? _ownedServices;
+    private readonly CreatedUsers _createdUsers = new();
+    private int _servicesDisposed;
 
     internal ValidatorFixture(
         string slot,
@@ -87,23 +89,16 @@ public sealed class ValidatorFixture : IAsyncDisposable
         => AdminClient.GetParticipantIdAsync(cancellationToken);
 
     /// <summary>Convenience pass-through to <see cref="JsonLedgerAdminClient.GetConnectedSynchronizersAsync"/>.</summary>
-    public Task<IReadOnlyList<ConnectedSynchronizer>> GetConnectedSynchronizersAsync(string party, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<ConnectedSynchronizer>> GetConnectedSynchronizersAsync(string? party = null, CancellationToken cancellationToken = default)
         => AdminClient.GetConnectedSynchronizersAsync(party, cancellationToken);
 
     /// <summary>Convenience pass-through to <see cref="JsonLedgerAdminClient.GetAppSynchronizerIdAsync"/>.</summary>
-    public Task<string> GetAppSynchronizerIdAsync(string party, CancellationToken cancellationToken = default)
+    public Task<string> GetAppSynchronizerIdAsync(string? party = null, CancellationToken cancellationToken = default)
         => AdminClient.GetAppSynchronizerIdAsync(party, cancellationToken);
 
     /// <summary>Convenience pass-through to <see cref="DarUploader.UploadAsync(string, CancellationToken)"/>.</summary>
     public Task<DarUploadOutcome> UploadDarAsync(string darPath, CancellationToken cancellationToken = default)
         => DarUploader.UploadAsync(darPath, cancellationToken);
-
-    /// <summary>Convenience pass-through to <see cref="DarUploader.UploadAndVerifyAsync(string, string?, CancellationToken)"/>.</summary>
-    public Task<DarUploadOutcome> UploadAndVerifyDarAsync(
-        string darPath,
-        string? expectedMainPackageId,
-        CancellationToken cancellationToken = default)
-        => DarUploader.UploadAndVerifyAsync(darPath, expectedMainPackageId, cancellationToken);
 
     /// <summary>Convenience pass-through to <see cref="DarUploader.UploadManyAsync"/>.</summary>
     public Task<IReadOnlyList<DarUploadResult>> UploadDarsAsync(
@@ -113,33 +108,39 @@ public sealed class ValidatorFixture : IAsyncDisposable
 
     /// <summary>
     /// Convenience pass-through to
-    /// <see cref="PartyAllocator.AllocateAsync(string, string?, CancellationToken)"/>.
+    /// <see cref="PartyAllocator.AllocateAsync(string, CancellationToken)"/>.
     /// </summary>
     public Task<AllocatedParty> AllocatePartyAsync(
         string consumerPrefix,
-        string? displayName = null,
         CancellationToken cancellationToken = default)
-        => PartyAllocator.AllocateAsync(consumerPrefix, displayName, cancellationToken);
+        => PartyAllocator.AllocateAsync(consumerPrefix, cancellationToken);
 
     /// <summary>
     /// Convenience pass-through to
-    /// <see cref="PartyAllocator.AllocateOnSynchronizerAsync(string, string?, string, CancellationToken)"/>.
+    /// <see cref="PartyAllocator.AllocateOnSynchronizerAsync(string, string, CancellationToken)"/>.
     /// </summary>
     public Task<AllocatedParty> AllocatePartyOnSynchronizerAsync(
         string consumerPrefix,
-        string? displayName,
         string synchronizerId,
         CancellationToken cancellationToken = default)
-        => PartyAllocator.AllocateOnSynchronizerAsync(consumerPrefix, displayName, synchronizerId, cancellationToken);
+        => PartyAllocator.AllocateOnSynchronizerAsync(consumerPrefix, synchronizerId, cancellationToken);
 
-    /// <summary>Convenience pass-through to <see cref="UserBuilder.CreateAsync"/>.</summary>
-    public Task<string> CreateUserAsync(
+    /// <summary>
+    /// Convenience pass-through to <see cref="UserBuilder.CreateAsync"/> that
+    /// also records the created user, so <see cref="DisposeAsync"/> deletes it.
+    /// Dispose every <see cref="UserRightsLease"/> on the user first.
+    /// </summary>
+    public async Task<string> CreateUserAsync(
         string userId,
         string? primaryParty = null,
         IEnumerable<string>? actAs = null,
         IEnumerable<string>? readAs = null,
         CancellationToken cancellationToken = default)
-        => UserBuilder.CreateAsync(userId, primaryParty, actAs, readAs, cancellationToken);
+    {
+        var created = await UserBuilder.CreateAsync(userId, primaryParty, actAs, readAs, cancellationToken).ConfigureAwait(false);
+        _createdUsers.Record(created);
+        return created;
+    }
 
     /// <summary>
     /// Convenience pass-through to <see cref="UserBuilder.GrantRightsAsync"/>.
@@ -187,14 +188,24 @@ public sealed class ValidatorFixture : IAsyncDisposable
         => UserBuilder.RevokeRightsAsync(userId, actAs, readAs, cancellationToken);
 
     /// <summary>
-    /// Disposes the scoped service container (if any) created for this
+    /// Deletes the ledger users created through <see cref="CreateUserAsync"/>,
+    /// then disposes the scoped service container (if any) created for this
     /// view. When this view is the fixture's default slot, the container
-    /// is owned by <see cref="LocalnetFixture"/> and this method is a
-    /// no-op.
+    /// is owned by <see cref="LocalnetFixture"/> and it is left alone.
+    /// <para>
+    /// A failed delete throws and leaves the container alive, so calling this
+    /// again retries the users still outstanding; see
+    /// <see cref="LocalnetFixture.DisposeAsync"/> for the attempt rules.
+    /// </para>
     /// </summary>
+    /// <exception cref="JsonLedgerApiException">
+    /// A single delete failed. When several did, an
+    /// <see cref="AggregateException"/> carries each of them.
+    /// </exception>
     public async ValueTask DisposeAsync()
     {
-        if (_ownedServices is not null)
+        await _createdUsers.DeleteAllAsync(UserBuilder).ConfigureAwait(false);
+        if (_ownedServices is not null && Interlocked.Exchange(ref _servicesDisposed, 1) == 0)
         {
             TokenProvider.Dispose();
             await _ownedServices.DisposeAsync().ConfigureAwait(false);

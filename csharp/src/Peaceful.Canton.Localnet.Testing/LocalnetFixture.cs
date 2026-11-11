@@ -19,6 +19,7 @@ public sealed class LocalnetFixture : IAsyncDisposable
     private readonly ILoggerFactory? _loggerFactory;
     private readonly Dictionary<LocalnetProfile, ValidatorFixture> _validators = new();
     private readonly object _validatorsLock = new();
+    private readonly CreatedUsers _createdUsers = new();
 
     private LocalnetFixture(ServiceProvider services, LocalnetEndpoints endpoints, LocalnetProfile profile, ILoggerFactory? loggerFactory)
     {
@@ -92,11 +93,11 @@ public sealed class LocalnetFixture : IAsyncDisposable
         => AdminClient.GetParticipantIdAsync(cancellationToken);
 
     /// <summary>Convenience pass-through to <see cref="JsonLedgerAdminClient.GetConnectedSynchronizersAsync"/>.</summary>
-    public Task<IReadOnlyList<ConnectedSynchronizer>> GetConnectedSynchronizersAsync(string party, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<ConnectedSynchronizer>> GetConnectedSynchronizersAsync(string? party = null, CancellationToken cancellationToken = default)
         => AdminClient.GetConnectedSynchronizersAsync(party, cancellationToken);
 
     /// <summary>Convenience pass-through to <see cref="JsonLedgerAdminClient.GetAppSynchronizerIdAsync"/>.</summary>
-    public Task<string> GetAppSynchronizerIdAsync(string party, CancellationToken cancellationToken = default)
+    public Task<string> GetAppSynchronizerIdAsync(string? party = null, CancellationToken cancellationToken = default)
         => AdminClient.GetAppSynchronizerIdAsync(party, cancellationToken);
 
     /// <summary>
@@ -104,15 +105,6 @@ public sealed class LocalnetFixture : IAsyncDisposable
     /// </summary>
     public Task<DarUploadOutcome> UploadDarAsync(string darPath, CancellationToken cancellationToken = default)
         => DarUploader.UploadAsync(darPath, cancellationToken);
-
-    /// <summary>
-    /// Convenience pass-through to <see cref="DarUploader.UploadAndVerifyAsync(string, string?, CancellationToken)"/>.
-    /// </summary>
-    public Task<DarUploadOutcome> UploadAndVerifyDarAsync(
-        string darPath,
-        string? expectedMainPackageId,
-        CancellationToken cancellationToken = default)
-        => DarUploader.UploadAndVerifyAsync(darPath, expectedMainPackageId, cancellationToken);
 
     /// <summary>
     /// Convenience pass-through to <see cref="DarUploader.UploadManyAsync"/>.
@@ -124,35 +116,40 @@ public sealed class LocalnetFixture : IAsyncDisposable
 
     /// <summary>
     /// Convenience pass-through to
-    /// <see cref="PartyAllocator.AllocateAsync(string, string?, CancellationToken)"/>.
+    /// <see cref="PartyAllocator.AllocateAsync(string, CancellationToken)"/>.
     /// </summary>
     public Task<AllocatedParty> AllocatePartyAsync(
         string consumerPrefix,
-        string? displayName = null,
         CancellationToken cancellationToken = default)
-        => PartyAllocator.AllocateAsync(consumerPrefix, displayName, cancellationToken);
+        => PartyAllocator.AllocateAsync(consumerPrefix, cancellationToken);
 
     /// <summary>
     /// Convenience pass-through to
-    /// <see cref="PartyAllocator.AllocateOnSynchronizerAsync(string, string?, string, CancellationToken)"/>.
+    /// <see cref="PartyAllocator.AllocateOnSynchronizerAsync(string, string, CancellationToken)"/>.
     /// </summary>
     public Task<AllocatedParty> AllocatePartyOnSynchronizerAsync(
         string consumerPrefix,
-        string? displayName,
         string synchronizerId,
         CancellationToken cancellationToken = default)
-        => PartyAllocator.AllocateOnSynchronizerAsync(consumerPrefix, displayName, synchronizerId, cancellationToken);
+        => PartyAllocator.AllocateOnSynchronizerAsync(consumerPrefix, synchronizerId, cancellationToken);
 
     /// <summary>
-    /// Convenience pass-through to <see cref="UserBuilder.CreateAsync"/>.
+    /// Convenience pass-through to <see cref="UserBuilder.CreateAsync"/> that
+    /// also records the created user, so <see cref="DisposeAsync"/> deletes it.
+    /// Dispose every <see cref="UserRightsLease"/> on the user first: deleting
+    /// the user drops its rights, so a lease disposed afterwards finds no user.
     /// </summary>
-    public Task<string> CreateUserAsync(
+    public async Task<string> CreateUserAsync(
         string userId,
         string? primaryParty = null,
         IEnumerable<string>? actAs = null,
         IEnumerable<string>? readAs = null,
         CancellationToken cancellationToken = default)
-        => UserBuilder.CreateAsync(userId, primaryParty, actAs, readAs, cancellationToken);
+    {
+        var created = await UserBuilder.CreateAsync(userId, primaryParty, actAs, readAs, cancellationToken).ConfigureAwait(false);
+        _createdUsers.Record(created);
+        return created;
+    }
 
     /// <summary>
     /// Convenience pass-through to <see cref="UserBuilder.GrantRightsAsync"/>.
@@ -370,23 +367,75 @@ public sealed class LocalnetFixture : IAsyncDisposable
     };
 
     /// <summary>
-    /// Disposes every per-slot view created via <see cref="Validator(string)"/>,
-    /// the default slot's token provider, and the backing service container.
+    /// Deletes the ledger users created through <see cref="CreateUserAsync"/>,
+    /// on this fixture and on every per-slot view created via
+    /// <see cref="Validator(string)"/>, then disposes those views, the default
+    /// slot's token provider and the backing service container. Dispose every
+    /// <see cref="UserRightsLease"/> first, since a deleted user takes its
+    /// rights with it.
+    /// <para>
+    /// Each user costs one <c>DELETE /v2/users/{id}</c> per attempt and no
+    /// <c>GET</c>. The first attempt throws on any non-success response, so a
+    /// user left behind on a shared participant is never silent. A delete that
+    /// fails does not stop the others, and the exception is thrown once every
+    /// user has had its attempt. The fixture then stays disposable: call
+    /// <see cref="DisposeAsync"/> again to retry only the users still
+    /// outstanding. From the second attempt on, the participant's
+    /// <c>404 USER_NOT_FOUND</c> counts as success, because a first delete that
+    /// committed but whose response never arrived leaves exactly that answer.
+    /// The service container is disposed only once every delete has succeeded.
+    /// </para>
     /// </summary>
+    /// <exception cref="JsonLedgerApiException">
+    /// A single delete failed. When several did, an
+    /// <see cref="AggregateException"/> carries each of them.
+    /// </exception>
     public async ValueTask DisposeAsync()
     {
         ValidatorFixture[] extras;
         lock (_validatorsLock)
         {
             extras = _validators.Values.ToArray();
-            _validators.Clear();
         }
+
+        var failures = new List<Exception>();
         foreach (var extra in extras)
         {
-            await extra.DisposeAsync().ConfigureAwait(false);
+            await CollectFailureAsync(extra.DisposeAsync, failures).ConfigureAwait(false);
+        }
+        await CollectFailureAsync(() => new ValueTask(_createdUsers.DeleteAllAsync(UserBuilder)), failures).ConfigureAwait(false);
+
+        if (failures.Count == 1)
+        {
+            throw failures[0];
+        }
+        if (failures.Count > 1)
+        {
+            throw new AggregateException("Fixture-created ledger users could not be deleted.", failures);
+        }
+
+        lock (_validatorsLock)
+        {
+            _validators.Clear();
         }
         TokenProvider.Dispose();
         await _services.DisposeAsync().ConfigureAwait(false);
+    }
+
+    private static async Task CollectFailureAsync(Func<ValueTask> step, List<Exception> failures)
+    {
+        try
+        {
+            await step().ConfigureAwait(false);
+        }
+        catch (AggregateException aggregate)
+        {
+            failures.AddRange(aggregate.InnerExceptions);
+        }
+        catch (Exception exception)
+        {
+            failures.Add(exception);
+        }
     }
 }
 

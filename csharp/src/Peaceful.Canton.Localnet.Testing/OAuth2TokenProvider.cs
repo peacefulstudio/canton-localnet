@@ -139,9 +139,9 @@ public sealed class OAuth2TokenProvider : IDisposable
         using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var body = await BoundedBody.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
             throw new OAuth2TokenException(
-                $"Token endpoint {_options.TokenEndpoint} returned {(int)response.StatusCode} {response.ReasonPhrase}: {body}",
+                $"Token endpoint {_options.TokenEndpoint} returned {(int)response.StatusCode} {response.ReasonPhrase}: {BoundedBody.ForMessage(body)}",
                 response.StatusCode,
                 body);
         }
@@ -162,8 +162,15 @@ public sealed class OAuth2TokenProvider : IDisposable
                 string.Empty);
         }
 
-        var lifetime = payload.ExpiresIn > 0 ? TimeSpan.FromSeconds(payload.ExpiresIn) : TimeSpan.FromMinutes(5);
-        var expiresAt = _timeProvider.GetUtcNow() + lifetime;
+        if (payload.ExpiresIn <= 0)
+        {
+            throw new OAuth2TokenException(
+                $"Token endpoint {_options.TokenEndpoint} returned non-positive expires_in ({payload.ExpiresIn}).",
+                response.StatusCode,
+                string.Empty);
+        }
+
+        var expiresAt = _timeProvider.GetUtcNow() + TimeSpan.FromSeconds(payload.ExpiresIn);
         return new CachedToken(payload.AccessToken, expiresAt);
     }
 
@@ -187,7 +194,8 @@ public sealed class OAuth2TokenProvider : IDisposable
 
 /// <summary>
 /// Raised when the OAuth2 token endpoint returns a non-success status, an empty
-/// body, or a body with no <c>access_token</c>.
+/// body, a body with no <c>access_token</c>, or a body whose <c>expires_in</c>
+/// is missing or not positive.
 /// </summary>
 public sealed class OAuth2TokenException : Exception
 {
@@ -197,7 +205,7 @@ public sealed class OAuth2TokenException : Exception
     /// </summary>
     /// <param name="message">Human-readable description of the failure.</param>
     /// <param name="statusCode">HTTP status the token endpoint returned.</param>
-    /// <param name="responseBody">Raw response body, or empty when none was read.</param>
+    /// <param name="responseBody">Response body, capped at 16 MiB, or empty when none was read.</param>
     public OAuth2TokenException(string message, System.Net.HttpStatusCode statusCode, string responseBody)
         : base(message)
     {
@@ -208,6 +216,6 @@ public sealed class OAuth2TokenException : Exception
     /// <summary>HTTP status the token endpoint returned.</summary>
     public System.Net.HttpStatusCode StatusCode { get; }
 
-    /// <summary>Raw response body, or empty when none was read.</summary>
+    /// <summary>Response body, capped at 16 MiB, or empty when none was read.</summary>
     public string ResponseBody { get; }
 }

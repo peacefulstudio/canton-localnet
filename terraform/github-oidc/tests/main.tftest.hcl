@@ -24,6 +24,39 @@ mock_provider "tls" {
   }
 }
 
+variables {
+  github_repo = "example-org/example-repo"
+}
+
+run "github_repo_has_no_default" {
+  command = plan
+
+  assert {
+    condition     = var.github_repo != "" && !can(regex("variable \"github_repo\" \\{[^}]*\\n\\s+default\\s+=", file("variables.tf")))
+    error_message = "github_repo must stay required: a default would re-point the trust policy on the next apply and can lock the scheduled lane out"
+  }
+}
+
+run "github_repo_rejects_a_value_without_an_owner" {
+  command = plan
+
+  variables {
+    github_repo = "example-repo"
+  }
+
+  expect_failures = [var.github_repo]
+}
+
+run "github_repo_rejects_a_trust_policy_wildcard" {
+  command = plan
+
+  variables {
+    github_repo = "example-org/*"
+  }
+
+  expect_failures = [var.github_repo]
+}
+
 run "oidc_security_boundary" {
   command = apply
 
@@ -61,8 +94,8 @@ run "oidc_security_boundary" {
   }
 
   assert {
-    condition     = jsondecode(data.aws_iam_policy_document.trust.json).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:peacefulstudio/canton-localnet:environment:localnet-infra"
-    error_message = "the sub condition must scope to the localnet-infra environment of this repo"
+    condition     = jsondecode(data.aws_iam_policy_document.trust.json).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:example-org/example-repo:environment:localnet-infra"
+    error_message = "the sub condition must scope to the localnet-infra environment of the repo named by github_repo"
   }
 
   assert {

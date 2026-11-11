@@ -91,6 +91,25 @@ Bug fixes and new features must follow red-green TDD:
 (cd csharp && dotnet test --configuration Release --collect:"XPlat Code Coverage" --results-directory ./coverage)
 ```
 
+## Reading a compose env value
+
+To see a value from a compose env file the way CI and the CLI read it, use the
+helper the `action-selftest` workflow runs. It works the same on Linux and
+macOS, drops inline `# ...` comments, and strips one pair of quotes:
+
+```bash
+.github/scripts/read-env-value.sh \
+  compose/modules/keycloak/env/a-validator-1/on/oauth2.env \
+  AUTH_A_VALIDATOR_1_VALIDATOR_CLIENT_SECRET
+
+.github/scripts/read-env-value.sh --shell-default \
+  compose/modules/localnet/env/common.env DB_PASSWORD
+```
+
+Avoid `grep -oP` (GNU only) and `cut -d= -f2-` (keeps an inline comment, which
+later surfaces as an `invalid_client` token error) when extracting these
+values by hand.
+
 ## Code style
 
 - **Go 1.23+** (fixture) / **Go 1.26+** (CLI) — see each `go.mod` — and

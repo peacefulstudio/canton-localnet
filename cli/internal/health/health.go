@@ -100,7 +100,9 @@ func WaitReady(ctx context.Context, opts Options) error {
 			return nil
 		}
 		if err != nil {
-			lastErr = err
+			if ctx.Err() == nil || (lastErr == nil && lastStatus == 0) {
+				lastErr = err
+			}
 			log(fmt.Sprintf("Attempt %d: %s", attempt, err.Error()))
 		} else {
 			lastStatus = status

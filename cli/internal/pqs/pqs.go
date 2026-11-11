@@ -101,7 +101,9 @@ func WaitWatermark(ctx context.Context, probe Probe, opts Options) error {
 			log(fmt.Sprintf("Ready: PQS for %s is following the ledger (watermark offset %s)", opts.Slot, offset))
 			return nil
 		case err != nil:
-			lastProblem = err.Error()
+			if ctx.Err() == nil || lastProblem == "" {
+				lastProblem = err.Error()
+			}
 			log("waiting for PQS watermark on " + opts.Slot + ": " + lastProblem)
 		default:
 			lastProblem = "latest_offset() is NULL"

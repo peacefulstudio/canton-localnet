@@ -16,6 +16,7 @@ func redactionTestEndpoints() Endpoints {
 	return Endpoints{
 		Role:             RoleAValidator1,
 		JSONLedgerAPIURL: "http://localhost:11975",
+		GRPCLedgerAPIURL: "http://localhost:11901",
 		TokenURL:         "https://keycloak.test/token",
 		ClientID:         "client-id-literal",
 		ClientSecret:     redactionTestSecret,
@@ -68,7 +69,7 @@ func TestSecretRedaction_FormattingNeverContainsTheClientSecret(t *testing.T) {
 }
 
 func TestSecretRedaction_EndpointsStringMarksSecretRedactedAndKeepsOtherFields(t *testing.T) {
-	want := `Endpoints{Role:"a-validator-1", JSONLedgerAPIURL:"http://localhost:11975", TokenURL:"https://keycloak.test/token", ClientID:"client-id-literal", ClientSecret:<redacted>, Audience:"aud-literal", Scope:"openid"}`
+	want := `Endpoints{Role:"a-validator-1", JSONLedgerAPIURL:"http://localhost:11975", GRPCLedgerAPIURL:"http://localhost:11901", TokenURL:"https://keycloak.test/token", ClientID:"client-id-literal", ClientSecret:<redacted>, Audience:"aud-literal", Scope:"openid"}`
 	endpoints := redactionTestEndpoints()
 
 	for name, got := range map[string]string{

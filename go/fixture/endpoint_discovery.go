@@ -30,6 +30,7 @@ const (
 type Endpoints struct {
 	Role             Role
 	JSONLedgerAPIURL string
+	GRPCLedgerAPIURL string
 	TokenURL         string
 	ClientID         string
 	ClientSecret     string
@@ -41,8 +42,8 @@ type Endpoints struct {
 // Endpoints value never writes the secret.
 func (e Endpoints) String() string {
 	return fmt.Sprintf(
-		"Endpoints{Role:%q, JSONLedgerAPIURL:%q, TokenURL:%q, ClientID:%q, ClientSecret:<redacted>, Audience:%q, Scope:%q}",
-		e.Role, e.JSONLedgerAPIURL, e.TokenURL, e.ClientID, e.Audience, e.Scope)
+		"Endpoints{Role:%q, JSONLedgerAPIURL:%q, GRPCLedgerAPIURL:%q, TokenURL:%q, ClientID:%q, ClientSecret:<redacted>, Audience:%q, Scope:%q}",
+		e.Role, e.JSONLedgerAPIURL, e.GRPCLedgerAPIURL, e.TokenURL, e.ClientID, e.Audience, e.Scope)
 }
 
 // GoString implements fmt.GoStringer so %#v redacts ClientSecret as String does.
@@ -74,6 +75,10 @@ func (e Endpoints) GoString() string { return e.String() }
 //	  CANTON_LOCALNET_<SLOT>_JSON_API_URL
 //	  http://CANTON_LOCALNET_HOST:CANTON_LOCALNET_<SLOT>_JSON_PORT
 //	  (host default "localhost"; port default 10975, 11975, 12975, 13975, 14975 for sv, a, b, c, d)
+//	gRPC Ledger API URL
+//	  CANTON_LOCALNET_<SLOT>_GRPC_URL
+//	  http://CANTON_LOCALNET_HOST:CANTON_LOCALNET_<SLOT>_GRPC_PORT
+//	  (host default "localhost"; port default 10901, 11901, 12901, 13901, 14901 for sv, a, b, c, d)
 //	Token URL
 //	  CANTON_LOCALNET_<SLOT>_TOKEN_URL
 //	  http://CANTON_LOCALNET_KEYCLOAK_HOST:CANTON_LOCALNET_KEYCLOAK_PORT/realms/<realm>/protocol/openid-connect/token
@@ -125,17 +130,18 @@ const (
 type slotDefaults struct {
 	envPrefix    string
 	jsonPort     string
+	grpcPort     string
 	realm        string
 	clientID     string
 	clientSecret string
 }
 
 var slotDefaultsByRole = map[Role]slotDefaults{
-	RoleAValidator1:  {"A_VALIDATOR_1", "11975", "AValidator1", "a-validator-1-validator", aValidator1DemoClientSecret},
-	RoleBValidator1:  {"B_VALIDATOR_1", "12975", "BValidator1", "b-validator-1-validator", bcdValidator1DemoClientSecret},
-	RoleCValidator1:  {"C_VALIDATOR_1", "13975", "CValidator1", "c-validator-1-validator", bcdValidator1DemoClientSecret},
-	RoleDValidator1:  {"D_VALIDATOR_1", "14975", "DValidator1", "d-validator-1-validator", bcdValidator1DemoClientSecret},
-	RoleSvValidator1: {"SV_VALIDATOR_1", "10975", "", "", ""},
+	RoleAValidator1:  {"A_VALIDATOR_1", "11975", "11901", "AValidator1", "a-validator-1-validator", aValidator1DemoClientSecret},
+	RoleBValidator1:  {"B_VALIDATOR_1", "12975", "12901", "BValidator1", "b-validator-1-validator", bcdValidator1DemoClientSecret},
+	RoleCValidator1:  {"C_VALIDATOR_1", "13975", "13901", "CValidator1", "c-validator-1-validator", bcdValidator1DemoClientSecret},
+	RoleDValidator1:  {"D_VALIDATOR_1", "14975", "14901", "DValidator1", "d-validator-1-validator", bcdValidator1DemoClientSecret},
+	RoleSvValidator1: {"SV_VALIDATOR_1", "10975", "10901", "", "", ""},
 }
 
 // For resolves the endpoint set for a given role.
@@ -150,6 +156,9 @@ func (d *EndpointDiscovery) For(role Role) (Endpoints, error) {
 	host := d.lookupOr("CANTON_LOCALNET_HOST", defaultHost)
 	jsonURL := d.lookupOr(slotVar("JSON_API_URL"),
 		fmt.Sprintf("http://%s:%s", host, d.lookupOr(slotVar("JSON_PORT"), slot.jsonPort)))
+
+	grpcURL := d.lookupOr(slotVar("GRPC_URL"),
+		fmt.Sprintf("http://%s:%s", host, d.lookupOr(slotVar("GRPC_PORT"), slot.grpcPort)))
 
 	tokenURL := d.lookupOr(slotVar("TOKEN_URL"), d.defaultTokenURL(slot.realm))
 	clientID := d.lookupOr(slotVar("CLIENT_ID"), slot.clientID)
@@ -174,6 +183,7 @@ func (d *EndpointDiscovery) For(role Role) (Endpoints, error) {
 	return Endpoints{
 		Role:             role,
 		JSONLedgerAPIURL: jsonURL,
+		GRPCLedgerAPIURL: grpcURL,
 		TokenURL:         tokenURL,
 		ClientID:         clientID,
 		ClientSecret:     clientSecret,

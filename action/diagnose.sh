@@ -7,6 +7,10 @@
 # composite step. Every command here is best-effort (`|| true`): a failing
 # diagnostic must never stop teardown's `down --volumes` from running.
 #
+# It also prints, to the step log, which containers were unhealthy, still
+# starting, restarting or exited non-zero, with the redacted tail of each one's
+# log, so a stalled node is visible without downloading the artifact.
+#
 # Deliberately never collected: the rendered env, canton-localnet.yaml, or
 # any compose/**/oauth2.env file. Those hold — or, for a consumer-supplied
 # 'config', may hold — real secrets.
@@ -19,6 +23,8 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 source "$here/lib.sh"
 
+stalled_log_lines=50
+stalled_max_containers=10
 out_dir="$RUNNER_TEMP/canton-localnet/diagnostics"
 mkdir -p "$out_dir"
 
@@ -32,13 +38,17 @@ repo_root="${CANTON_LOCALNET_ACTION_REPO_ROOT:-}"
 if [ -n "$repo_root" ]; then
   timeout 30 make -C "$repo_root" status-all >"$out_dir/docker-ps.txt" 2>&1 || true
   timeout 60 make -C "$repo_root" status >"$out_dir/compose-status.txt" 2>&1 || true
-  timeout 60 make -C "$repo_root" logs-recent >"$out_dir/compose-logs.txt" 2>&1 || true
+  timeout 60 make -C "$repo_root" logs-recent 2>&1 | bash "$here/redact-secrets.sh" >"$out_dir/compose-logs.txt" || true
 fi
 timeout 30 docker network ls >"$out_dir/docker-networks.txt" 2>&1 || true
 timeout 30 docker volume ls >"$out_dir/docker-volumes.txt" 2>&1 || true
 
 bash "$here/host-diagnostics.sh" capture "$out_dir/host" "$(canton_localnet_memory_samples_file)" || true
 bash "$here/host-diagnostics.sh" stop-sampler "$(canton_localnet_memory_samples_file)" || true
+
+if [ -n "$repo_root" ]; then
+  canton_localnet_print_stalled_container_logs "$repo_root" "$stalled_log_lines" "$stalled_max_containers"
+fi
 
 echo "Diagnostics collected in ${out_dir}:"
 ls -la "$out_dir"
