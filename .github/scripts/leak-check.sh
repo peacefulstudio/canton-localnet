@@ -18,6 +18,18 @@ own checkout takes since neither file is itself promoted there. A rejected
 .gitpublic (scripts/gitpublic-paths.sh exiting non-zero) is a hard error, not
 an empty scan.
 
+In that .gitpublic mode the scan also runs the promote's dead-ref sweep: a bare
+#NNN issue or PR reference in a promoted path fails, except upstream canton#,
+grpc/grpc# and digital-asset/daml# references. The public twin's whole-tree
+scan skips it, since the twin's own files may cite the twin's issues.
+
+ROOT/scripts/peaceful-private-repo-names.txt, when present, is the denylist of
+private peacefulstudio repos whose names do not end in -internal. Each line is
+one literal matched case-insensitively as a whole word: a distinctive name is
+listed bare (secret-widget), a name that is also a common word is listed with its
+owner (peacefulstudio/handbook). The file stays internal, so the public twin's
+scan runs without it.
+
 The terraform state/vars/keys and .env/.env.local checks are tracked-file
 existence checks, not content scans, and always cover the whole of ROOT: a
 force-added secret-shaped file is a violation regardless of whether its path
@@ -28,6 +40,7 @@ EOF
 }
 
 FORCE_WHOLE_TREE=false
+SCANNING_GITPUBLIC_ALLOWLIST=false
 
 while [[ "${1:-}" == --* ]]; do
   case "$1" in
@@ -47,6 +60,7 @@ resolve_scan_targets() {
       echo "leak-check: scripts/gitpublic-paths.sh rejected $ROOT/.gitpublic — refusing to scan" >&2
       exit 2
     fi
+    SCANNING_GITPUBLIC_ALLOWLIST=true
     while IFS= read -r path; do
       [ -n "$path" ] || continue
       [ -e "$ROOT/${path%/}" ] || continue
@@ -65,7 +79,7 @@ if [ "${#SCAN_TARGETS[@]}" -eq 0 ]; then
 fi
 
 BINARY_FIXTURE_EXCLUDES=(':!*.dar' ':!*.binpb' ':!*.png')
-OWN_SCRIPT_EXCLUDES=(':!.github/scripts/leak-check.sh' ':!.github/scripts/no-ai-workflows-audit.sh')
+OWN_SCRIPT_EXCLUDES=(':!.github/scripts/leak-check.sh' ':!.github/scripts/no-ai-workflows-audit.sh' ':!scripts/peaceful-private-repo-names.txt')
 CONTENT_SCAN_PATHSPECS=("${SCAN_TARGETS[@]}" "${BINARY_FIXTURE_EXCLUDES[@]}" "${OWN_SCRIPT_EXCLUDES[@]}")
 CRED_SCAN_PATHSPECS=("${SCAN_TARGETS[@]}" "${BINARY_FIXTURE_EXCLUDES[@]}")
 
@@ -141,6 +155,19 @@ fi
 scan_content "references to private -internal repos (peacefulstudio/-prefixed or bare)" \
   "$INTERNAL_REPO_PATTERN"
 
+PEACEFUL_PRIVATE_REPO_NAMES_FILE="$ROOT/scripts/peaceful-private-repo-names.txt"
+if [ -f "$PEACEFUL_PRIVATE_REPO_NAMES_FILE" ]; then
+  PEACEFUL_PRIVATE_REPO_NAMES=()
+  while IFS= read -r name || [ -n "$name" ]; do
+    [ -n "$name" ] || continue
+    PEACEFUL_PRIVATE_REPO_NAMES+=("$(printf '%s' "$name" | sed -E 's/[][\\.^$*+?(){}|/]/\\&/g')")
+  done <"$PEACEFUL_PRIVATE_REPO_NAMES_FILE"
+  if [ "${#PEACEFUL_PRIVATE_REPO_NAMES[@]}" -gt 0 ]; then
+    scan_content "references to private repos (scripts/peaceful-private-repo-names.txt)" \
+      "(?<![A-Za-z0-9_])($(IFS='|'; echo "${PEACEFUL_PRIVATE_REPO_NAMES[*]}"))(?![A-Za-z0-9_])"
+  fi
+fi
+
 scan_content "agent instruction files" \
   'CLAUDE\.md|AGENTS\.md|\.github/copilot-instructions'
 
@@ -160,6 +187,31 @@ scan_internal_doc_paths() {
     HITS=1
   fi
 }
+
+BARE_REF_PATTERN='(^|[^A-Za-z0-9_])#[0-9]+'
+UPSTREAM_REF_PATTERN='(canton|grpc\/grpc|digital-asset\/daml)#[0-9]+'
+
+scan_dead_refs() {
+  $SCANNING_GITPUBLIC_ALLOWLIST || return 0
+  local matches found=0 hits filtered=0
+  matches=$(git -C "$ROOT" grep -nIiE -e "$BARE_REF_PATTERN" -- "${CONTENT_SCAN_PATHSPECS[@]}") || found=$?
+  if [ "$found" -gt 1 ]; then
+    echo "leak-check: git grep failed (status $found) for [bare internal issue/PR references]" >&2
+    exit 2
+  fi
+  [ -n "$matches" ] || return 0
+  hits=$(printf '%s\n' "$matches" | sed -E "s/${UPSTREAM_REF_PATTERN}//g" | grep -iE "$BARE_REF_PATTERN") || filtered=$?
+  if [ "$filtered" -gt 1 ]; then
+    echo "leak-check: grep failed (status $filtered) for [bare internal issue/PR references]" >&2
+    exit 2
+  fi
+  if [ -n "$hits" ]; then
+    printf 'LEAK [bare internal issue/PR references (dead-ref sweep)]:\n%s\n\n' "$hits"
+    HITS=1
+  fi
+}
+
+scan_dead_refs
 
 scan_content "internal docs paths" \
   'docs/internal/'

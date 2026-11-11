@@ -97,7 +97,7 @@ jobs:
     name: ${{ matrix.scenario }}
     needs: setup
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 55
     strategy:
       fail-fast: false
       matrix:
@@ -144,6 +144,9 @@ jobs:
           set -euo pipefail
           cat > canton-localnet.yaml <<'EOF'
           schemaVersion: preview-1
+          modules:
+            obs: false
+            pqs: false
           validators:
             c-validator-1:
               enabled: false
@@ -154,6 +157,7 @@ jobs:
 
       - name: Bring up LocalNet via CLI (one retry on splice bootstrap race)
         if: env.IS_OBS == 'false'
+        timeout-minutes: 38
         run: |
           set -euo pipefail
           # Splice's SV-validator can lose a startup race on slower runners
@@ -167,11 +171,11 @@ jobs:
             echo "::warning::canton-localnet up failed on first attempt — capturing diagnostics, tearing down with volumes, and retrying once"
             docker ps -a > docker-ps-attempt1.txt 2>&1 || true
             timeout 60 make logs > logs-attempt1.txt 2>&1 || true
-            bash action/host-diagnostics.sh capture "${HOST_DIAGNOSTICS_DIR}/attempt1" "${MEMORY_SAMPLES_FILE}"
+            timeout 120 bash action/host-diagnostics.sh capture "${HOST_DIAGNOSTICS_DIR}/attempt1" "${MEMORY_SAMPLES_FILE}" || true
             if [ "${SCENARIO}" = "multi-sync" ]; then
               docker logs multi-sync-startup > multi-sync-startup-attempt1.txt 2>&1 || true
             fi
-            "${GITHUB_WORKSPACE}/canton-localnet" down --volumes || echo "::warning::pre-retry teardown failed; second up may fail with leaked state"
+            timeout --kill-after=30s 120 "${GITHUB_WORKSPACE}/canton-localnet" down --volumes || echo "::warning::pre-retry teardown failed; second up may fail with leaked state"
             sleep 30
             # shellcheck disable=SC2086
             "${GITHUB_WORKSPACE}/canton-localnet" up --timeout "${LOCALNET_UP_TIMEOUT}" ${UP_ARGS}
@@ -179,20 +183,21 @@ jobs:
 
       - name: Bring up LocalNet via make (one retry on splice bootstrap race)
         if: env.IS_OBS == 'true'
+        timeout-minutes: 38
         run: |
           set -euo pipefail
           # Splice's SV-validator can lose a startup race on slower runners
           # — "Ensuring decentralized synchronizer registered failed:
           # UNAVAILABLE: No active synchronizer serial found". The initial
           # bring-up is treated as setup, so one retry is allowed.
-          if ! timeout "${LOCALNET_UP_TIMEOUT}" make up; then
+          if ! make up UP_TIMEOUT="${LOCALNET_UP_TIMEOUT}"; then
             echo "::warning::make up failed on first attempt — capturing diagnostics, tearing down with volumes, and retrying once"
             docker ps -a > docker-ps-attempt1.txt 2>&1 || true
             timeout 60 make logs > logs-attempt1.txt 2>&1 || true
-            bash action/host-diagnostics.sh capture "${HOST_DIAGNOSTICS_DIR}/attempt1" "${MEMORY_SAMPLES_FILE}"
-            make clean || echo "::warning::pre-retry teardown failed; second up may fail with leaked state"
+            timeout 120 bash action/host-diagnostics.sh capture "${HOST_DIAGNOSTICS_DIR}/attempt1" "${MEMORY_SAMPLES_FILE}" || true
+            timeout --kill-after=30s 120 make clean || echo "::warning::pre-retry teardown failed; second up may fail with leaked state"
             sleep 30
-            timeout "${LOCALNET_UP_TIMEOUT}" make up
+            make up UP_TIMEOUT="${LOCALNET_UP_TIMEOUT}"
           fi
 
       - name: Wait for expected validators (CLI scenarios)
@@ -308,7 +313,7 @@ jobs:
             echo "::endgroup::"
           done
 
-      - name: Verify onboarding clients + sentinel users survived restart (issue 65 step 5)
+      - name: Verify onboarding clients + sentinel users survived restart
         if: matrix.scenario == 'warm-restart'
         env:
           SLOTS: a b c d
@@ -317,18 +322,18 @@ jobs:
           tests/acceptance/restart-survival.sh verify
 
       - name: Capture compose state on failure
-        if: failure()
+        if: failure() || cancelled()
         run: |
           set -euo pipefail
           docker ps -a > docker-ps.txt 2>&1 || true
           timeout 60 make logs > logs.txt 2>&1 || true
-          bash action/host-diagnostics.sh capture "${HOST_DIAGNOSTICS_DIR}/final" "${MEMORY_SAMPLES_FILE}"
+          timeout 120 bash action/host-diagnostics.sh capture "${HOST_DIAGNOSTICS_DIR}/final" "${MEMORY_SAMPLES_FILE}" || true
           if [ "${SCENARIO}" = "multi-sync" ]; then
             docker logs multi-sync-startup > multi-sync-startup.txt 2>&1 || true
           fi
 
       - name: Upload diagnostics on failure
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: integration-tests-${{ matrix.scenario }}

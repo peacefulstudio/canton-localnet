@@ -7,8 +7,7 @@
 # never needs a persistent self-hosted runner.
 #
 # T1 unit: shell-logic tests for action/*.sh with no docker daemon
-#   involved (plain bash, following scripts/gitpublic-paths.test.sh's own
-#   convention rather than adding a bats dependency), plus an in-process
+#   involved (plain bash), plus an in-process
 #   check that `env --format github` emits ::add-mask:: for a synthetic
 #   secret set through the documented per-slot override, with the raw
 #   value appearing nowhere else in that invocation's own stdout.
@@ -209,14 +208,21 @@ jobs:
           fi
           echo "ok: ${CANTON_LOCALNET_SCAN_URL} serves the token-standard registry"
 
-      - name: Assert the second enabled validator's PQS connection string is exported
+      - name: Assert the second enabled validator's PQS connection string and URL are exported
         run: |
           set -euo pipefail
           if [ -z "${CANTON_LOCALNET_C_VALIDATOR_1_PQS_CONNECTION_STRING:-}" ]; then
             echo "::error::CANTON_LOCALNET_C_VALIDATOR_1_PQS_CONNECTION_STRING is not set; pqs: true should export it"
             exit 1
           fi
-          echo "ok: PQS connection string exported for c-validator-1"
+          case "${CANTON_LOCALNET_C_VALIDATOR_1_PQS_URL:-}" in
+            postgresql://*@*/pqs-c-validator-1) ;;
+            *)
+              echo "::error::CANTON_LOCALNET_C_VALIDATOR_1_PQS_URL is not a libpq URI for pqs-c-validator-1; pqs: true should export one"
+              exit 1
+              ;;
+          esac
+          echo "ok: PQS connection string and libpq URI exported for c-validator-1"
 
       - name: Assert the PQS watermark is set the moment the boot step returns
         env:
@@ -257,7 +263,8 @@ jobs:
           for var_name in \
             CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET CANTON_LOCALNET_C_VALIDATOR_1_CLIENT_SECRET \
             CANTON_LOCALNET_A_VALIDATOR_1_PQS_PASSWORD CANTON_LOCALNET_C_VALIDATOR_1_PQS_PASSWORD \
-            CANTON_LOCALNET_A_VALIDATOR_1_PQS_CONNECTION_STRING CANTON_LOCALNET_C_VALIDATOR_1_PQS_CONNECTION_STRING; do
+            CANTON_LOCALNET_A_VALIDATOR_1_PQS_CONNECTION_STRING CANTON_LOCALNET_C_VALIDATOR_1_PQS_CONNECTION_STRING \
+            CANTON_LOCALNET_A_VALIDATOR_1_PQS_URL CANTON_LOCALNET_C_VALIDATOR_1_PQS_URL; do
             value="${!var_name:-}"
             if [ -z "$value" ]; then
               echo "::error::$var_name is empty — cannot verify it stays out of the run report"
@@ -363,11 +370,10 @@ jobs:
           if-no-files-found: warn
           retention-days: 1
 
-      - name: Download the masking-probe diagnostics artifact back down
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: canton-localnet-masking-probe-diagnostics-${{ github.job }}
-          path: downloaded-masking-probe-diagnostics
+      - name: Download the masking-probe diagnostics artifact back down (retrying a lookup that races the upload)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/download-run-artifact.sh "canton-localnet-masking-probe-diagnostics-${{ github.job }}" downloaded-masking-probe-diagnostics
 
       - name: Assert the diagnostics artifact carries none of the real secrets this boot exported
         run: |
@@ -428,19 +434,21 @@ jobs:
           # by, so the file's own default is always what the CLI used.
           client_secret() {
             local slot="$1" env_prefix="$2"
-            grep -E "^AUTH_${env_prefix}_VALIDATOR_CLIENT_SECRET=" \
-              "compose/modules/keycloak/env/${slot}/on/oauth2.env" | tail -n1 | cut -d= -f2-
+            .github/scripts/read-env-value.sh \
+              "compose/modules/keycloak/env/${slot}/on/oauth2.env" "AUTH_${env_prefix}_VALIDATOR_CLIENT_SECRET"
           }
           shell_default() {
-            local key="$1"
-            grep -E "^${key}=" compose/modules/localnet/env/common.env | tail -n1 \
-              | sed -E "s/^${key}=\\\$\\{${key}:-(.*)\\}\$/\\1/"
+            .github/scripts/read-env-value.sh --shell-default compose/modules/localnet/env/common.env "$1"
           }
+          a_client_secret="$(client_secret a-validator-1 A_VALIDATOR_1)"
+          c_client_secret="$(client_secret c-validator-1 C_VALIDATOR_1)"
+          a_pqs_password="$(shell_default PQS_A_VALIDATOR_1_READER_PASSWORD)"
+          c_pqs_password="$(shell_default DB_PASSWORD)"
           {
-            echo "a-client-secret=$(client_secret a-validator-1 A_VALIDATOR_1)"
-            echo "c-client-secret=$(client_secret c-validator-1 C_VALIDATOR_1)"
-            echo "a-pqs-password=$(shell_default PQS_A_VALIDATOR_1_READER_PASSWORD)"
-            echo "c-pqs-password=$(shell_default DB_PASSWORD)"
+            echo "a-client-secret=${a_client_secret}"
+            echo "c-client-secret=${c_client_secret}"
+            echo "a-pqs-password=${a_pqs_password}"
+            echo "c-pqs-password=${c_pqs_password}"
           } >>"$GITHUB_OUTPUT"
 
       - name: Fetch and grep the masking-probe job's own raw log for those real secrets
@@ -647,12 +655,11 @@ jobs:
           fi
           echo "ok: teardown exited non-zero on a failing down"
 
-      - name: Download the teardown diagnostics artifact
+      - name: Download the teardown diagnostics artifact (retrying a lookup that races the upload)
         if: always()
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: canton-localnet-teardown-diagnostics-${{ github.job }}
-          path: downloaded-diagnostics
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/download-run-artifact.sh "canton-localnet-teardown-diagnostics-${{ github.job }}" downloaded-diagnostics
 
       - name: Assert diagnostics were actually uploaded and non-empty — a regression here must fail this job too
         if: always()
