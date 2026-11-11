@@ -16,6 +16,7 @@ on:
       - 'Makefile'
       - 'cli/**'
       - 'go/fixture/**'
+      - 'tests/pqs-reader-role/**'
       - 'csharp/**'
       - 'canton-localnet.yaml'
       - '!**/*.md'
@@ -27,6 +28,7 @@ on:
       - 'Makefile'
       - 'cli/**'
       - 'go/fixture/**'
+      - 'tests/pqs-reader-role/**'
       - 'csharp/**'
       - 'canton-localnet.yaml'
       - '!**/*.md'
@@ -66,7 +68,7 @@ jobs:
           cache-dependency-path: cli/go.sum
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: '10.0.x'
 
@@ -135,11 +137,22 @@ jobs:
         # either because Canton 0.6.2 strictly enforces Daml-LF 2.1..2.2.
         # Build a 5-line Noop.daml in-tree with the matching SDK so the
         # DAR upload integration tests can actually run.
+        env:
+          DAML_SDK_VERSION: 3.4.11
+          DAML_SDK_SHA256: 607562a3aca62501bb2595a628e548651672186087384f60cb9fae999ba1c62d
         run: |
           set -euo pipefail
           export PATH="$HOME/.daml/bin:$PATH"
           if ! command -v daml >/dev/null 2>&1; then
-            curl -sSf https://get.daml.com/ | sh -s 3.4.11
+            sdk_tmp="$(mktemp -d)"
+            tarball="daml-sdk-${DAML_SDK_VERSION}-linux-x86_64.tar.gz"
+            curl -fsSL --retry 2 --max-time 300 -o "${sdk_tmp}/${tarball}" \
+              "https://github.com/digital-asset/daml/releases/download/v${DAML_SDK_VERSION}/${tarball}"
+            echo "${DAML_SDK_SHA256}  ${sdk_tmp}/${tarball}" | sha256sum -c -
+            mkdir "${sdk_tmp}/sdk"
+            tar xzf "${sdk_tmp}/${tarball}" -C "${sdk_tmp}/sdk" --strip-components 1
+            "${sdk_tmp}/sdk/install.sh"
+            rm -rf "${sdk_tmp}"
           fi
           daml build --project-root testdata/noop
           shopt -s nullglob
@@ -157,6 +170,13 @@ jobs:
         working-directory: go/fixture
         env:
           CANTON_LOCALNET_TEST_DAR_PATH: ${{ steps.build-dar.outputs.dar_path }}
+        run: |
+          set -euo pipefail
+          go test -tags integration -count=1 -v ./...
+
+      - name: PQS reader role integration tests
+        if: success() || failure()
+        working-directory: tests/pqs-reader-role
         run: |
           set -euo pipefail
           go test -tags integration -count=1 -v ./...
@@ -183,7 +203,7 @@ jobs:
             --output Detailed
 
       - name: Capture compose state on failure
-        if: failure()
+        if: failure() || cancelled()
         run: |
           set -euo pipefail
           make status > /tmp/compose-status.txt 2>&1 || true
@@ -192,7 +212,7 @@ jobs:
           bash action/host-diagnostics.sh capture "${HOST_DIAGNOSTICS_DIR}/final" "${MEMORY_SAMPLES_FILE}"
 
       - name: Upload diagnostics on failure
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: compose-integration-diagnostics

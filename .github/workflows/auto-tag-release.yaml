@@ -5,7 +5,7 @@ name: Auto-tag release
 
 on:
   workflow_run:
-    workflows: [csharp, public-gate, integration-tests, compose-integration, action-selftest]
+    workflows: [csharp, public-gate, integration-tests, compose-integration, action-selftest, Go CI, go-fixture, cli, terraform-ci]
     types: [completed]
     branches: [dev]
 
@@ -31,6 +31,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      REQUIRED_LANES: csharp.yml public-gate.yaml integration-tests.yaml compose-integration.yaml action-selftest.yaml
+      PATH_FILTERED_CI_LANES: go-ci.yaml go-fixture.yaml cli.yml terraform-ci.yaml
     steps:
       - name: Checkout the green dev commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -66,8 +68,10 @@ jobs:
           dev_tip="$(gh api "repos/${GH_REPO}/git/ref/heads/dev" --jq '.object.sha')"
           [ "${dev_tip}" = "${HEAD_SHA}" ] || skip "${HEAD_SHA} is no longer the tip of dev; a newer run decides"
 
+          read -ra lanes_to_pass <<< "${REQUIRED_LANES}"
+          read -ra lanes_if_triggered <<< "${PATH_FILTERED_CI_LANES}"
           lanes_status=0
-          lanes_waited_on="$(.github/scripts/required-lanes-green.sh "${HEAD_SHA}" csharp.yml public-gate.yaml integration-tests.yaml compose-integration.yaml action-selftest.yaml)" \
+          lanes_waited_on="$(.github/scripts/required-lanes-green.sh "${HEAD_SHA}" "${lanes_to_pass[@]}" -- "${lanes_if_triggered[@]}")" \
             || lanes_status=$?
           case "${lanes_status}" in
             0) ;;

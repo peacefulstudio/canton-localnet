@@ -14,6 +14,10 @@ on:
         description: 'NuGet spelling of the release version, as resolved by release.yml (e.g. 0.9.0.3).'
         required: true
         type: string
+    secrets:
+      NUGET_USER:
+        description: 'nuget.org account the OIDC trust policy is registered for.'
+        required: true
 
 permissions: {}
 
@@ -35,7 +39,7 @@ jobs:
         with:
           ref: ${{ inputs.tag }}
       - name: Setup .NET
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: '10.0.x'
       - name: Download the packages built, tested and packed by release.yml

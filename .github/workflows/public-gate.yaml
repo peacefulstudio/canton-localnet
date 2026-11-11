@@ -42,7 +42,11 @@ jobs:
           fi
 
       - name: Leak check
-        run: bash .github/scripts/leak-check.sh ${{ steps.scan-mode.outputs.extra_args }} .
+        env:
+          EXTRA_ARGS: ${{ steps.scan-mode.outputs.extra_args }}
+        run: bash .github/scripts/leak-check.sh ${EXTRA_ARGS:+"$EXTRA_ARGS"} .
 
       - name: No-AI-workflows audit
-        run: bash .github/scripts/no-ai-workflows-audit.sh ${{ steps.scan-mode.outputs.extra_args }} .
+        env:
+          EXTRA_ARGS: ${{ steps.scan-mode.outputs.extra_args }}
+        run: bash .github/scripts/no-ai-workflows-audit.sh ${EXTRA_ARGS:+"$EXTRA_ARGS"} .
