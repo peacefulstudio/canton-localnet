@@ -97,7 +97,7 @@ jobs:
     name: ${{ matrix.scenario }}
     needs: setup
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 65
     strategy:
       fail-fast: false
       matrix:
@@ -108,9 +108,9 @@ jobs:
       OBS: ${{ (matrix.scenario == 'observability-on') && 'true' || 'false' }}
       IS_OBS: ${{ startsWith(matrix.scenario, 'observability-') }}
       UP_ARGS: ${{ (matrix.scenario == 'multi-sync') && '--multi-sync' || '' }}
-      # Workaround: the vendored splice health check retries for hours, so a starved boot hangs instead of failing. 15m is above the 12m slowest healthy boot measured; 10m is above the 4.8m slowest warm restart.
+      # Workaround: the vendored splice health check retries for hours, so a starved boot hangs instead of failing. 15m is above the 12m slowest healthy boot measured; a warm restart takes 4.8m at the slowest, and 15m leaves room for splice to fail its start-up initialization once on a starved host (a 60 s deadline plus a restart) and for the CLI to run compose again.
       LOCALNET_UP_TIMEOUT: 15m
-      LOCALNET_WARM_UP_TIMEOUT: 10m
+      LOCALNET_WARM_UP_TIMEOUT: 15m
       HOST_DIAGNOSTICS_DIR: ${{ github.workspace }}/host-diagnostics
       MEMORY_SAMPLES_FILE: /tmp/memory-samples.txt
     steps:
