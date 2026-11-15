@@ -16,6 +16,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/peacefulstudio/canton-localnet/cli/internal/slot"
 )
@@ -283,25 +285,43 @@ type Runner struct {
 	Stderr io.Writer
 	Stdin  io.Reader
 	Dir    string
+	// StopGrace is how long a cancelled docker process has to exit after
+	// SIGTERM, and to release its output pipes, before it is killed.
+	StopGrace time.Duration
 }
+
+const defaultStopGrace = 15 * time.Second
 
 // NewRunner returns a Runner that wires through the standard streams of
 // the current process.
 func NewRunner(dir string) *Runner {
-	return &Runner{Stdout: os.Stdout, Stderr: os.Stderr, Stdin: os.Stdin, Dir: dir}
+	return &Runner{Stdout: os.Stdout, Stderr: os.Stderr, Stdin: os.Stdin, Dir: dir, StopGrace: defaultStopGrace}
 }
 
 // Run invokes `docker <plan.Args> <extraArgs...>` with the plan's
 // environment variables overlaid on the current process environment.
 func (r *Runner) Run(ctx context.Context, plan Plan, extraArgs ...string) error {
+	return r.RunObserved(ctx, plan, nil, extraArgs...)
+}
+
+// RunObserved is Run that also calls observe with each line docker compose
+// writes to stderr, as it is written, while still passing it through to
+// r.Stderr. A nil observe makes it Run. observe runs on the goroutine that
+// copies the process's stderr, so it must not block.
+func (r *Runner) RunObserved(ctx context.Context, plan Plan, observe func(line string), extraArgs ...string) error {
 	fullArgs := append([]string{}, plan.Args...)
 	fullArgs = append(fullArgs, extraArgs...)
 	cmd := exec.CommandContext(ctx, "docker", fullArgs...)
 	cmd.Stdout = r.Stdout
 	cmd.Stderr = r.Stderr
+	if observe != nil {
+		cmd.Stderr = newLineWriter(r.Stderr, observe)
+	}
 	cmd.Stdin = r.Stdin
 	cmd.Dir = r.Dir
 	cmd.Env = append(os.Environ(), plan.Env...)
+	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+	cmd.WaitDelay = r.StopGrace
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("docker compose %s: %w", strings.Join(extraArgs, " "), err)
 	}

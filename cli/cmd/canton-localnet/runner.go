@@ -11,6 +11,7 @@ import (
 
 type composeRunner interface {
 	Run(ctx context.Context, plan compose.Plan, extraArgs ...string) error
+	RunObserved(ctx context.Context, plan compose.Plan, observe func(line string), extraArgs ...string) error
 }
 
 type runnerFactory func(dir string) composeRunner

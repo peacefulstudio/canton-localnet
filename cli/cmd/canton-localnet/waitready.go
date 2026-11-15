@@ -48,7 +48,7 @@ func newWaitReadyCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "wait-ready",
 		Short: "Poll the JSON Ledger API until the participant is ready",
-		Long:  "Polls the host-exposed JSON Ledger API readiness endpoint (default http://localhost:11975/readyz) until HTTP 200. With --synchronizers > 1, additionally waits until the slot's participant reports that many connected synchronizers (the multi-sync profile). With --pqs, additionally waits until the slot's PQS (Scribe) pipeline has set its watermark (latest_offset() is non-null), so a contract created right after readiness is streamed with its effective time instead of being seeded from an ACS snapshot that has none. While waiting, aborts early when the `splice` container is crash-looping on a known fatal startup line (a postgres volume bootstrapped with a different party hint than the configured one), naming the mismatch and the remediation. Once ready, fails when a LocalNet node container (one Docker restarts without bound, such as `canton` and `splice`) has a RestartCount above 0, naming it, because `restart: always` would otherwise hide a crash during boot. Exit code 0 on ready, non-zero on timeout, fatal startup failure or a restarted node container.",
+		Long:  "Polls the host-exposed JSON Ledger API readiness endpoint (default http://localhost:11975/readyz) until HTTP 200. With --synchronizers > 1, additionally waits until the slot's participant reports that many connected synchronizers (the multi-sync profile). With --pqs, additionally waits until the slot's PQS (Scribe) pipeline has set its watermark (latest_offset() is non-null), so a contract created right after readiness is streamed with its effective time instead of being seeded from an ACS snapshot that has none. While waiting, aborts early when the `splice` container is crash-looping on a known fatal startup line (a postgres volume bootstrapped with a different party hint than the configured one), naming the mismatch and the remediation. Once ready, fails when a LocalNet node container (one Docker restarts without bound, such as `canton` and `splice`) has a RestartCount above 0, naming it with its exit code, OOM-kill flag and last `Caused by` line, because `restart: always` would otherwise hide a crash during boot. The one exception is a `splice` that restarted after its start-up initialization failed (`Initialization failed, so exiting`, with no OOM kill) while every other node container stayed up: that boot passes with a warning. Exit code 0 on ready, non-zero on timeout, fatal startup failure or a restarted node container.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			log := func(msg string) { cmd.PrintErrln(msg) }
 			opts.Logger = log
@@ -60,7 +60,14 @@ func newWaitReadyCommand() *cobra.Command {
 			if err := waitUntilReady(ctx, cmd, opts, synchronizers, slotFlag, waitForPqs, log); err != nil {
 				return err
 			}
-			return restartguard.Check(ctx, restartGuardRunner, composeProject())
+			warning, err := restartguard.Check(ctx, restartGuardRunner, composeProject(), time.Now())
+			if err != nil {
+				return err
+			}
+			if warning != "" {
+				printWarning(cmd, warning)
+			}
+			return nil
 		},
 	}
 	cmd.Flags().StringVar(&opts.URL, "url", health.DefaultURL, "Readiness URL to poll")

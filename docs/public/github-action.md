@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Boot LocalNet
-        uses: peacefulstudio/canton-localnet@v0.10.1-1
+        uses: peacefulstudio/canton-localnet@v0.10.1-2
         with:
           validators: a
           pqs: false
@@ -34,7 +34,7 @@ jobs:
 
       - name: Tear down
         if: always()
-        uses: peacefulstudio/canton-localnet/teardown@v0.10.1-1
+        uses: peacefulstudio/canton-localnet/teardown@v0.10.1-2
 ```
 
 The inputs under `with:` are all shown at their default values, so dropping
@@ -52,7 +52,7 @@ on the repository's `dev` branch.
 The snippet pins the action by its release tag. Every release is published as
 an immutable GitHub release. For supply-chain hardening, pin the full 40-character
 commit SHA of that tag instead, with the tag as a trailing comment
-(`@<sha> # v0.10.1-1`). A tag can move; a SHA cannot. To find
+(`@<sha> # v0.10.1-2`). A tag can move; a SHA cannot. To find
 it, resolve the tag on the public repository:
 
 ```bash
@@ -70,7 +70,7 @@ they run the same version. A SHA pin rules out `cli: release`; see
 
 | | |
 |---|---|
-| Release | `v0.10.1-1` |
+| Release | `v0.10.1-2` |
 | Splice | 0.10.1 |
 | Canton | 3.7.2 |
 | Synchronizer protocol version | 37 by default (Splice 0.10.0 moved it from 36) |
@@ -270,6 +270,13 @@ exit code and health, and the tail of the `splice` and `canton` logs. When the f
 it to tell a runner that ran out of memory or CPU from a LocalNet fault.
 Containers of other workloads on a shared Docker daemon are never listed or
 logged.
+
+A boot that passes can still carry a warning annotation: when `splice` restarted once
+because its start-up initialization timed out on a starved runner, the action accepts the
+boot and annotates it with the restart's exit code and `Caused by` line. Any other
+node-container restart (`canton`, an OOM kill, an unexplained `splice` exit) fails the
+boot with that reason in the step log. See
+[integration testing](integration-testing.md#the-attach-model) for the rule.
 
 ## Admin gRPC and the Scan registry
 

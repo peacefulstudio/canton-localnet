@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1-2] - 2026-11-14
+
+### Changed
+
+- `canton-localnet wait-ready` and the GitHub Action's boot accept a `splice` restart that heals itself, with a warning. On a starved host, splice's first `IdentityInitializationService/GetId` call to `canton` can pass its 60 s deadline, splice logs `Initialization failed, so exiting`, exits, and `restart: always` brings it back. The restart guard now fails the boot only when the restart is not that one: it passes, printing `warning: ...` (a `::warning::` annotation when `GITHUB_ACTIONS=true`), when `splice` is the only restarted node container, `docker events` records no OOM kill for it, the log splits at the JVM start banner (`Starting '/app/splice-node/bin/splice-node'`) into one run per start, and every run that ended in a restart contains `Initialization failed, so exiting` while no run contains `java.lang.OutOfMemoryError` (one JVM crash logs the line once per validator backend, so the lines are not counted), and the stack is ready. Any other restart still fails, and the error now carries the reason: the exit code of the last `die` event (`RestartCount`, exit code and OOM flag reset on restart, so `docker inspect` cannot supply them), whether an `oom` event was recorded, and the last `Caused by` line of the container's full log. Docker replays only its last ~256 events, so a restart with no `die` event left reports `OOM kill and exit code not recorded (Docker event buffer expired)` rather than claiming no OOM kill; `toleratesUnrecordedOOM` in `restartguard` decides whether such a splice restart still counts as self-healed (it does today). When `docker events` is unavailable the exit code and OOM kill are reported as unknown. `restartguard.Check` gains a boot-end time parameter and returns a warning beside the error, and `restartguard.Classify` returns the classification (`NoRestart`, `SelfHealedSpliceInit`, `Degraded`) with the reason.
+- `LOCALNET_WARM_UP_TIMEOUT` in `integration-tests.yaml` goes from 10m to 15m, so the warm `up` can absorb a splice initialization failure and the compose re-run below, and the job's `timeout-minutes` from 55 to 65 so the worst case of the bring-up step (38 minutes) followed by the warm-restart cycle still fits. `scripts/localnet-lane-diagnostics.test.sh` pins both.
+
+- The .NET fixture package now depends on `Microsoft.Extensions.Logging` directly, and its `Microsoft.Extensions.DependencyInjection`, `Microsoft.Extensions.Logging` and `Microsoft.Extensions.Logging.Abstractions` references move to 10.0.15 on net10.0, the version of its `Microsoft.Extensions.Http` reference, so the net10.0 asset ships one consistent 10.0.x set. A consumer that pins these packages at 10.0.x restores without a downgrade error.
+- `Peaceful.Canton.Localnet.Testing` ships `lib/net10.0` and `lib/net11.0`. A `net10.0` project still restores and builds with the .NET 10 SDK alone and a `net11.0` project resolves the new asset, with the `Microsoft.Extensions.*` dependencies on the 10.0.x line for `net10.0` and the 11.0.x line for `net11.0`. Both targets compile with C# 14. The repository builds on the .NET 11 SDK (`csharp/global.json` pins `11.0.100`) and `csharp/README.md` gains a "Supported .NET versions" section.
+- The `alpine` image of the Splice onboarding container moves to a newer digest of its `3.24` tag.
+
+### Fixed
+
+- `canton-localnet up` no longer fails, or hangs until `--timeout`, when compose abandons the boot over a splice restart. Docker marks a container `unhealthy` from its exit until its restart, so compose's 500 ms `service_healthy` poll could catch that gap and print `dependency failed to start: container splice is unhealthy`; Compose 5.1.3 (the ubuntu-26.04 image) then did not exit. `up` now watches compose's stderr for that error, stops compose (SIGTERM, then SIGKILL after 15 s, since a plugin child can hold the output pipes open) and classifies the restart as above. For a self-healed `splice` initialization restart it warns and runs `docker compose up -d` once more within the remaining `--timeout`, which brings up the services compose abandoned. Any other restart fails with the finding in front of compose's error, and a compose that exits non-zero with no restart returns its own error. The docker calls that classify run on a fresh 60 s context, so an expired `--timeout` still gets its explanation.
+
 ## [0.10.1-1] - 2026-11-10
 
 ### Added
@@ -2013,7 +2028,8 @@ final was drafted but never pushed to nuget.org.
   SHA-pinned third-party action `dependabot/fetch-metadata`, added
   `set -euo pipefail` and fork-PR-token guards on write-API steps.
 
-[Unreleased]: https://github.com/peacefulstudio/canton-localnet/compare/v0.10.1-1...HEAD
+[Unreleased]: https://github.com/peacefulstudio/canton-localnet/compare/v0.10.1-2...HEAD
+[0.10.1-2]: https://github.com/peacefulstudio/canton-localnet/compare/v0.10.1-1...v0.10.1-2
 [0.10.1-1]: https://github.com/peacefulstudio/canton-localnet/compare/v0.10.0-1...v0.10.1-1
 [0.10.0-1]: https://github.com/peacefulstudio/canton-localnet/compare/v0.9.4-1...v0.10.0-1
 [0.9.4-1]: https://github.com/peacefulstudio/canton-localnet/compare/v0.9.3-1...v0.9.4-1
