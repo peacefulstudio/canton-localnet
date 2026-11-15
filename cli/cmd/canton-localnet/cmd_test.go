@@ -25,6 +25,12 @@ type capturedRun struct {
 	bounded   bool
 }
 
+type scriptedRun struct {
+	stderrLines        []string
+	hangUntilCancelled bool
+	err                error
+}
+
 type fakeRunner struct {
 	mu    sync.Mutex
 	calls []capturedRun
@@ -32,18 +38,41 @@ type fakeRunner struct {
 	err   error
 
 	blockUntilDone bool
+	scripted       []scriptedRun
 }
 
 func (f *fakeRunner) Run(ctx context.Context, plan compose.Plan, extraArgs ...string) error {
+	return f.RunObserved(ctx, plan, nil, extraArgs...)
+}
+
+func (f *fakeRunner) RunObserved(ctx context.Context, plan compose.Plan, observe func(string), extraArgs ...string) error {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	deadline, bounded := ctx.Deadline()
 	f.calls = append(f.calls, capturedRun{dir: f.dir, plan: plan, extraArgs: append([]string{}, extraArgs...), deadline: deadline, bounded: bounded})
-	if f.blockUntilDone {
+	var script *scriptedRun
+	if len(f.scripted) > 0 {
+		script = &f.scripted[0]
+		f.scripted = f.scripted[1:]
+	}
+	blockUntilDone, err := f.blockUntilDone, f.err
+	f.mu.Unlock()
+	if script != nil {
+		for _, line := range script.stderrLines {
+			if observe != nil {
+				observe(line)
+			}
+		}
+		if script.hangUntilCancelled {
+			<-ctx.Done()
+			return ctx.Err()
+		}
+		return script.err
+	}
+	if blockUntilDone {
 		<-ctx.Done()
 		return ctx.Err()
 	}
-	return f.err
+	return err
 }
 
 func newFakeRunnerFactory() (*fakeRunner, runnerFactory) {

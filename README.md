@@ -69,14 +69,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Boot LocalNet
-        uses: peacefulstudio/canton-localnet@v0.10.1-1
+        uses: peacefulstudio/canton-localnet@v0.10.1-2
         with:
           validators: a
       - name: Run your tests
         run: your-test-command # reads CANTON_LOCALNET_A_VALIDATOR_1_* from the environment
       - name: Tear down
         if: always()
-        uses: peacefulstudio/canton-localnet/teardown@v0.10.1-1
+        uses: peacefulstudio/canton-localnet/teardown@v0.10.1-2
 ```
 
 The [GitHub Action page](docs/public/github-action.md) shows how to

@@ -75,6 +75,12 @@ dispose explicitly when the test body has assertions of its own. Dispose the
 lease before the fixture: disposing the fixture deletes `globex-user-…`, and a
 deleted user takes its rights with it.
 
+## Supported .NET versions
+
+`Peaceful.Canton.Localnet.Testing` targets every .NET version Microsoft supports, from `net10.0` up. Today that is `net10.0` and `net11.0`, and the package carries a `lib/` folder for each. The assemblies are compiled with C# 14 for both, and the `Microsoft.Extensions.*` dependencies are the 10.0.x line on `net10.0` and the 11.0.x line on `net11.0`.
+
+A project that targets `net10.0` restores and builds with the .NET 10 SDK alone; a `net11.0` project needs the .NET 11 SDK.
+
 ## Environment variables
 
 The fixture reads these env vars (matching the compose stack ports in `compose/modules/localnet/env/common.env`):
@@ -110,7 +116,7 @@ dotnet pack src/Peaceful.Canton.Localnet.Testing -c Release
 
 ```
 csharp/
-  Directory.Build.props          # net10.0, nullable, treat warnings as errors
+  Directory.Build.props          # C# 14, nullable, treat warnings as errors
   Directory.Packages.props       # central package versions
   NuGet.config                   # pins source to nuget.org with mapping
   coverage.settings.xml          # MTP code-coverage config shared with csharp-ci.yaml

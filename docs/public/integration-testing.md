@@ -37,10 +37,27 @@ Once the stack is ready, `wait-ready` fails when a node container has restarted 
 boot. `restart: always` brings a crashed `canton` or `splice` back silently, and the stack
 then comes up degraded, so any container of the `localnet` compose project (or of
 `COMPOSE_PROJECT_NAME`) that Docker restarts without bound and whose `RestartCount` is above
-0 stops `wait-ready` with an error naming it. Containers without a restart policy and the
+0 stops `wait-ready` with an error naming it, its exit code, whether it was OOM-killed and
+the last `Caused by` line of its log. Containers without a restart policy and the
 bounded `on-failure` PQS pipelines never trip it. Recreate the stack with
 `canton-localnet down --volumes` and bring it up again; the composite action's failure
 diagnostics record each container's restart count, OOM-kill flag and exit code.
+
+One restart is tolerated. On a starved host (a 2 vCPU runner), splice's first call to
+`canton` can pass its 60 s deadline, splice logs `Initialization failed, so exiting`, exits,
+and `restart: always` starts it again, after which it comes up healthy. When `splice` is the
+only container that restarted, every JVM run of its log that ended in a restart shows that
+failure and none shows a `java.lang.OutOfMemoryError`, and Docker recorded no OOM kill for it, `wait-ready` passes and prints a warning (a `::warning::`
+annotation under GitHub Actions) with the exit code and the `Caused by` line. A restart of
+`canton`, an OOM kill, or a `splice` restart for any other reason still fails.
+
+`up` handles the same restart. Docker reports a container that exited as `unhealthy` until
+it restarts, so compose can abandon the boot with `dependency failed to start: container
+splice is unhealthy`, and some Compose releases (5.1.3) then hang instead of exiting. When
+`up` sees that error, or compose exits non-zero, it checks why. If the cause is the
+tolerated `splice` restart, `up` stops compose, prints the warning and runs
+`docker compose up -d` once more within the remaining `--timeout`. Any other cause fails
+`up` with the finding in front of compose's error.
 
 With PQS enabled, add `--pqs` and `--slot a`, `b` or `c` to `wait-ready` (or
 `--slot sv` for an SV PQS started through Make). Under Make, `make up PQS=true`
