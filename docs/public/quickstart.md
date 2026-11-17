@@ -3,7 +3,7 @@
 
 # Local quickstart
 
-Boot a complete Canton LocalNet (Splice 0.10.1) on your machine:
+Boot a complete Canton LocalNet (Splice 0.10.2) on your machine:
 
 ```bash
 make up           # docker compose up -d, OAuth2 mode by default
