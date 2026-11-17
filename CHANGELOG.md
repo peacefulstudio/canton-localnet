@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2-1] - 2026-11-17
+
+### Changed
+
+- The vendored Splice moves from 0.10.1 to 0.10.2. The Canton inside moves from 3.7.2 to 3.7.3, a patch release. The Daml SDK (3.5.2), the Splice DARs and the default protocol version (37) do not change.
+  - Splice 0.10.2 carries the CIP-104 v1.1 (traffic-based app rewards, TBAR) amendment in the SV and Scan apps. Scan's `/v0/events` responses gain `asset_activity_records` and `submitting_app_provider` on each event, `OpenMiningRoundSummary` gains four optional fields (`optIssuancePerFeaturedAppRewardCoupon`, `optUnclaimedAppRewards`, `optIssuancePerFeaturedAssetRewardCoupon`, `optTotalFeaturedAssetRewardCoupons`), and `POST /v0/reward-coupons-v2-disclosures` returns the created event blobs of active `RewardCouponV2` contracts. A client that reads the scan API ignores the new fields or ingests them.
+  - Splice 0.10.2 removes the remaining CometBFT support from the SV app: the `/v0/admin/domain/cometbft/*` endpoints, the `splice_sv_cometbft_*` metrics and the SV UI's CometBFT debug tab are gone, and so is the unused `comet-bft-config` block of the SV app config, which is the only change in upstream's `cluster/compose/localnet` tree. `compose/modules/localnet/conf/splice/sv-validator-1/app.conf` drops the same block. Nothing here set the `SPLICE_APP_SV_COMETBFT_*` variables it read, so no override needs a change.
+  - The validator and scan databases gain two Flyway migrations (V082 and V083, which makes the ACS stores track a single synchronizer). They apply on start, and a stack started on 0.10.1 volumes came up ready with no container restart. On such a volume the scan app's reward computation logs an `ERROR` for each round opened before the upgrade (`its OpenMiningRound is not in the rewards reference store`), repeating roughly every 30 seconds while the stack runs. LocalNet works regardless; recreate the volumes to start without those lines. The Hetzner LocalNet VM still wipes its volumes on any `SPLICE_VERSION` change.
+
 ## [0.10.1-2] - 2026-11-14
 
 ### Changed
@@ -2028,7 +2037,8 @@ final was drafted but never pushed to nuget.org.
   SHA-pinned third-party action `dependabot/fetch-metadata`, added
   `set -euo pipefail` and fork-PR-token guards on write-API steps.
 
-[Unreleased]: https://github.com/peacefulstudio/canton-localnet/compare/v0.10.1-2...HEAD
+[Unreleased]: https://github.com/peacefulstudio/canton-localnet/compare/v0.10.2-1...HEAD
+[0.10.2-1]: https://github.com/peacefulstudio/canton-localnet/compare/v0.10.1-2...v0.10.2-1
 [0.10.1-2]: https://github.com/peacefulstudio/canton-localnet/compare/v0.10.1-1...v0.10.1-2
 [0.10.1-1]: https://github.com/peacefulstudio/canton-localnet/compare/v0.10.0-1...v0.10.1-1
 [0.10.0-1]: https://github.com/peacefulstudio/canton-localnet/compare/v0.9.4-1...v0.10.0-1

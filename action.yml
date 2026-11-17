@@ -79,7 +79,7 @@ inputs:
       against that release's checksums.txt and its build provenance
       attestation; it is valid only when the
       action's own `uses:` is pinned to a literal release tag, not its
-      commit SHA (e.g. `uses: peacefulstudio/canton-localnet@v0.10.1-2`) and
+      commit SHA (e.g. `uses: peacefulstudio/canton-localnet@v0.10.2-1`) and
       fails closed — never silently — on a non-tag ref, a missing asset, a
       download error, a checksum mismatch or a failed attestation check.
     default: 'source'

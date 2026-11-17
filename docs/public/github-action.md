@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Boot LocalNet
-        uses: peacefulstudio/canton-localnet@v0.10.1-2
+        uses: peacefulstudio/canton-localnet@v0.10.2-1
         with:
           validators: a
           pqs: false
@@ -34,7 +34,7 @@ jobs:
 
       - name: Tear down
         if: always()
-        uses: peacefulstudio/canton-localnet/teardown@v0.10.1-2
+        uses: peacefulstudio/canton-localnet/teardown@v0.10.2-1
 ```
 
 The inputs under `with:` are all shown at their default values, so dropping
@@ -52,7 +52,7 @@ on the repository's `dev` branch.
 The snippet pins the action by its release tag. Every release is published as
 an immutable GitHub release. For supply-chain hardening, pin the full 40-character
 commit SHA of that tag instead, with the tag as a trailing comment
-(`@<sha> # v0.10.1-2`). A tag can move; a SHA cannot. To find
+(`@<sha> # v0.10.2-1`). A tag can move; a SHA cannot. To find
 it, resolve the tag on the public repository:
 
 ```bash
@@ -70,9 +70,9 @@ they run the same version. A SHA pin rules out `cli: release`; see
 
 | | |
 |---|---|
-| Release | `v0.10.1-2` |
-| Splice | 0.10.1 |
-| Canton | 3.7.2 |
+| Release | `v0.10.2-1` |
+| Splice | 0.10.2 |
+| Canton | 3.7.3 |
 | Synchronizer protocol version | 37 by default (Splice 0.10.0 moved it from 36) |
 | Auth | OAuth2 through a Keycloak realm per validator slot, with the fixed public LocalNet demo clients |
 | PQS (Participant Query Store) | Off. Set `pqs: true` for slots `a`, `b` and `c` |
