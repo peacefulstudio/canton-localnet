@@ -31,6 +31,10 @@ const (
 	// Degraded means a node container restarted for a reason that is not a
 	// self-healed splice initialization.
 	Degraded
+	// RestartedBeforeBoot means every node container that restarted last
+	// restarted before the boot the Window starts at, so its restarts say
+	// nothing about that boot.
+	RestartedBeforeBoot
 )
 
 // Finding is a Classification and the reason behind it, empty for NoRestart.
@@ -39,8 +43,18 @@ type Finding struct {
 	Reason         string
 }
 
+// Window bounds the restarts that are judged. Since is when the boot being
+// judged started, such as when `up` ran; zero means since the project's
+// earliest container was created, and the restarts are then reported as
+// "since it was created" rather than "during boot". Until is when the boot
+// ended.
+type Window struct {
+	Since time.Time
+	Until time.Time
+}
+
 const (
-	inspectFormat  = "{{.Name}} {{.HostConfig.RestartPolicy.Name}} {{.RestartCount}} {{.Created}}"
+	inspectFormat  = "{{.Name}} {{.HostConfig.RestartPolicy.Name}} {{.RestartCount}} {{.Created}} {{.State.StartedAt}}"
 	eventsFormat   = "{{.Action}} {{.Actor.Attributes.name}} {{.Actor.Attributes.exitCode}}"
 	diagnoseFormat = "{{.Name}} restarts={{.RestartCount}} oom={{.State.OOMKilled}} exit={{.State.ExitCode}}"
 
@@ -52,16 +66,12 @@ const (
 	causedByMaxLength = 240
 )
 
-// toleratesUnrecordedOOM decides whether a splice restart whose `die` events
-// Docker no longer holds (its event buffer holds the last ~256 events) may
-// still count as self-healed. A recorded `oom` event always rejects it.
-var toleratesUnrecordedOOM = func() bool { return true }
-
 var nodeRestartPolicies = map[string]bool{"always": true, "unless-stopped": true}
 
 type restarted struct {
-	name  string
-	count int
+	name      string
+	count     int
+	startedAt time.Time
 }
 
 type containerEvents struct {
@@ -74,13 +84,18 @@ func (e containerEvents) recorded(name string, restarts int) bool {
 	return e.dieCounts[name] >= restarts
 }
 
-// Check returns a warning for a self-healed splice initialization restart,
-// an error for any other node container restart, and neither when nothing
-// restarted or docker cannot list or inspect the project. See Classify.
-func Check(ctx context.Context, run Runner, project string, until time.Time) (warning string, err error) {
-	finding := Classify(ctx, run, project, until)
+// Check returns a warning for a self-healed splice initialization restart or
+// for restarts before the boot, an error for any other node container
+// restart, and neither when nothing restarted or docker cannot list or
+// inspect the project. It also returns an error when ctx ends before docker
+// answers. See Classify.
+func Check(ctx context.Context, run Runner, project string, window Window) (warning string, err error) {
+	finding, err := Classify(ctx, run, project, window)
+	if err != nil {
+		return "", err
+	}
 	switch finding.Classification {
-	case SelfHealedSpliceInit:
+	case SelfHealedSpliceInit, RestartedBeforeBoot:
 		return finding.Reason, nil
 	case Degraded:
 		return "", fmt.Errorf("%s", finding.Reason)
@@ -94,53 +109,98 @@ func Check(ctx context.Context, run Runner, project string, until time.Time) (wa
 // policy never counts a restart, and one with a bounded `on-failure` policy is
 // a retry loop that waits for its dependencies by design.
 //
+// Only a node container whose last start falls inside the window is judged:
+// one that last restarted before window.Since is reported as
+// RestartedBeforeBoot when no other node container restarted inside it.
+//
 // The exit code and OOM-kill flag that `docker inspect` reports reset on
 // restart, so they come from the `die` and `oom` events Docker recorded
-// between the creation of the project's earliest container and until.
-func Classify(ctx context.Context, run Runner, project string, until time.Time) Finding {
-	names := projectContainers(ctx, run, project)
-	if len(names) == 0 {
-		return Finding{}
-	}
-	out, err := run(ctx, "docker", append([]string{"inspect", "--format", inspectFormat}, names...)...)
-	if err != nil {
-		return Finding{}
-	}
-	crashed := restartedNodes(string(out))
-	if len(crashed) == 0 {
-		return Finding{}
-	}
-	events, eventsErr := fetchEvents(ctx, run, project, earliestCreation(string(out)), until)
-	logs := make(map[string]string, len(crashed))
-	for _, node := range crashed {
-		logs[node.name] = containerLog(ctx, run, node.name)
-	}
-	if eventsErr == nil && healedSpliceInit(crashed, events, logs) {
-		return Finding{Classification: SelfHealedSpliceInit, Reason: describeHealedSplice(crashed[0], events, logs)}
-	}
-	return Finding{Classification: Degraded, Reason: describeDegraded(crashed, events, eventsErr == nil, logs)}
-}
-
-func projectContainers(ctx context.Context, run Runner, project string) []string {
+// between window.Since (or, when it is zero, the creation of the project's
+// earliest container) and window.Until.
+//
+// A docker that cannot list or inspect the project, such as one that is not
+// installed, reports NoRestart: no restart can be established. Once a restart
+// is established, a docker that cannot report its events leaves its reason
+// unknown, which is Degraded. A docker call cut short because ctx ended is
+// neither: it is an error, so an expired deadline never decides the verdict.
+func Classify(ctx context.Context, run Runner, project string, window Window) (Finding, error) {
 	out, err := run(ctx, "docker", "ps", "-a", "--filter", "label=com.docker.compose.project="+project, "--format", "{{.Names}}")
 	if err != nil {
+		return Finding{}, expired(ctx, "ps")
+	}
+	names := strings.Fields(string(out))
+	if len(names) == 0 {
+		return Finding{}, nil
+	}
+	out, err = run(ctx, "docker", append([]string{"inspect", "--format", inspectFormat}, names...)...)
+	if err != nil {
+		return Finding{}, expired(ctx, "inspect")
+	}
+	crashed, before := splitAtBoot(restartedNodes(string(out)), window.Since)
+	if len(crashed) == 0 && len(before) == 0 {
+		return Finding{}, nil
+	}
+	if len(crashed) == 0 {
+		return Finding{Classification: RestartedBeforeBoot, Reason: describeBeforeBoot(before, window.Since)}, nil
+	}
+	since := earliestCreation(string(out))
+	if !window.Since.IsZero() {
+		since = window.Since.UTC().Format(time.RFC3339Nano)
+	}
+	bootKnown := !window.Since.IsZero()
+	events, eventsErr := fetchEvents(ctx, run, project, since, window.Until)
+	if eventsErr != nil {
+		if err := expired(ctx, "events"); err != nil {
+			return Finding{}, err
+		}
+	}
+	logs := make(map[string]string, len(crashed))
+	for _, node := range crashed {
+		log, err := run(ctx, "docker", "logs", node.name)
+		if err != nil {
+			if err := expired(ctx, "logs"); err != nil {
+				return Finding{}, err
+			}
+		}
+		logs[node.name] = string(log)
+	}
+	if eventsErr == nil && healedSpliceInit(crashed, events, logs) {
+		return Finding{Classification: SelfHealedSpliceInit, Reason: describeHealedSplice(crashed[0], events, bootKnown, logs)}, nil
+	}
+	return Finding{Classification: Degraded, Reason: describeDegraded(crashed, events, eventsErr == nil, bootKnown, logs)}, nil
+}
+
+func splitAtBoot(nodes []restarted, bootStarted time.Time) (inBoot, before []restarted) {
+	for _, node := range nodes {
+		if !bootStarted.IsZero() && !node.startedAt.IsZero() && node.startedAt.Before(bootStarted) {
+			before = append(before, node)
+			continue
+		}
+		inBoot = append(inBoot, node)
+	}
+	return inBoot, before
+}
+
+func expired(ctx context.Context, verb string) error {
+	if ctx.Err() == nil {
 		return nil
 	}
-	return strings.Fields(string(out))
+	return fmt.Errorf("restart guard: docker %s: %w", verb, ctx.Err())
 }
 
 func restartedNodes(inspectOutput string) []restarted {
 	var crashed []restarted
 	for _, line := range strings.Split(inspectOutput, "\n") {
 		fields := strings.Fields(line)
-		if len(fields) != 4 || !nodeRestartPolicies[fields[1]] {
+		if len(fields) != 5 || !nodeRestartPolicies[fields[1]] {
 			continue
 		}
 		count, err := strconv.Atoi(fields[2])
 		if err != nil || count == 0 {
 			continue
 		}
-		crashed = append(crashed, restarted{name: strings.TrimPrefix(fields[0], "/"), count: count})
+		startedAt, _ := time.Parse(time.RFC3339Nano, fields[4])
+		crashed = append(crashed, restarted{name: strings.TrimPrefix(fields[0], "/"), count: count, startedAt: startedAt})
 	}
 	return crashed
 }
@@ -150,7 +210,7 @@ func earliestCreation(inspectOutput string) string {
 	var earliestTime time.Time
 	for _, line := range strings.Split(inspectOutput, "\n") {
 		fields := strings.Fields(line)
-		if len(fields) != 4 {
+		if len(fields) != 5 {
 			continue
 		}
 		created, err := time.Parse(time.RFC3339Nano, fields[3])
@@ -195,20 +255,12 @@ func fetchEvents(ctx context.Context, run Runner, project, since string, until t
 	return events, nil
 }
 
-func containerLog(ctx context.Context, run Runner, name string) string {
-	out, err := run(ctx, "docker", "logs", name)
-	if err != nil {
-		return ""
-	}
-	return string(out)
-}
-
 func healedSpliceInit(crashed []restarted, events containerEvents, logs map[string]string) bool {
 	if len(crashed) != 1 || crashed[0].name != spliceContainer {
 		return false
 	}
 	restarts := crashed[0].count
-	if events.oomKilled[spliceContainer] || (!events.recorded(spliceContainer, restarts) && !toleratesUnrecordedOOM()) {
+	if events.oomKilled[spliceContainer] {
 		return false
 	}
 	runs := jvmRuns(logs[spliceContainer])
@@ -256,7 +308,7 @@ func lastCausedBy(log string) string {
 	return last
 }
 
-func describeNode(node restarted, events containerEvents, eventsKnown bool, log string) string {
+func describeNode(node restarted, events containerEvents, eventsKnown, bootKnown bool, log string) string {
 	var detail string
 	switch {
 	case !eventsKnown:
@@ -271,7 +323,11 @@ func describeNode(node restarted, events containerEvents, eventsKnown bool, log 
 	if causedBy := lastCausedBy(log); causedBy != "" {
 		detail += fmt.Sprintf(", last %q: %s", causedByMarker, causedBy)
 	}
-	return fmt.Sprintf("%s restarted %d %s during boot (%s)", node.name, node.count, plural(node.count), detail)
+	when := "since it was created"
+	if bootKnown {
+		when = "during boot"
+	}
+	return fmt.Sprintf("%s restarted %d %s %s (%s)", node.name, node.count, plural(node.count), when, detail)
 }
 
 func exitCodeOf(name string, events containerEvents) string {
@@ -281,23 +337,36 @@ func exitCodeOf(name string, events containerEvents) string {
 	return "unknown"
 }
 
-func describeHealedSplice(node restarted, events containerEvents, logs map[string]string) string {
+func describeHealedSplice(node restarted, events containerEvents, bootKnown bool, logs map[string]string) string {
 	return fmt.Sprintf("%s: its initialization failed (%q) and Docker's restart policy brought it back, "+
 		"which a host starved of CPU or memory causes.",
-		describeNode(node, events, true, logs[node.name]), initFailureLine)
+		describeNode(node, events, true, bootKnown, logs[node.name]), initFailureLine)
 }
 
-func describeDegraded(crashed []restarted, events containerEvents, eventsKnown bool, logs map[string]string) string {
+func describeDegraded(crashed []restarted, events containerEvents, eventsKnown, bootKnown bool, logs map[string]string) string {
 	names := make([]string, len(crashed))
 	parts := make([]string, len(crashed))
 	for i, node := range crashed {
 		names[i] = node.name
-		parts[i] = describeNode(node, events, eventsKnown, logs[node.name])
+		parts[i] = describeNode(node, events, eventsKnown, bootKnown, logs[node.name])
 	}
 	return fmt.Sprintf("%s: Docker's restart policy brought it back, so the stack is degraded. "+
-		"Inspect it with `docker inspect --format '%s' %s`, "+
-		"then recreate the stack with `canton-localnet down --volumes` and bring it up again.",
-		strings.Join(parts, "; "), diagnoseFormat, strings.Join(names, " "))
+		"Inspect it with `docker inspect --format '%s' %s` and `docker logs %s`, "+
+		"then recreate the containers with `canton-localnet down` and `canton-localnet up`, "+
+		"which keeps the volumes and the ledger state in them.",
+		strings.Join(parts, "; "), diagnoseFormat, strings.Join(names, " "), strings.Join(names, " "))
+}
+
+func describeBeforeBoot(before []restarted, bootStarted time.Time) string {
+	parts := make([]string, len(before))
+	for i, node := range before {
+		parts[i] = fmt.Sprintf("%s restarted %d %s before this boot (last at %s, the boot started at %s)",
+			node.name, node.count, plural(node.count),
+			node.startedAt.UTC().Format(time.RFC3339Nano), bootStarted.UTC().Format(time.RFC3339Nano))
+	}
+	return fmt.Sprintf("%s, so it does not fail the boot. "+
+		"Recreate the containers with `canton-localnet down` and `canton-localnet up` to clear the count; "+
+		"the volumes and the ledger state in them are kept.", strings.Join(parts, "; "))
 }
 
 func plural(count int) string {

@@ -22,7 +22,7 @@ func newUpCommand(makeRunner runnerFactory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "up",
 		Short: "Bring up the Canton LocalNet stack",
-		Long:  "Runs `docker compose ... up -d` against the vendored splice LocalNet modules in compose/. Mirrors `make up`. The vendored splice health check retries for hours, so a stalled boot never fails on its own; --timeout bounds the run and exits non-zero when it is exceeded. When compose abandons the boot because a dependency is unhealthy, or exits non-zero, `up` checks why: if only `splice` restarted, after its start-up initialization failed and without an OOM kill, it stops compose, warns, and runs `docker compose up -d` once more within the remaining --timeout; any other restart fails with its exit code, OOM-kill flag and last `Caused by` line.",
+		Long:  "Runs `docker compose ... up -d` against the vendored splice LocalNet modules in compose/. Mirrors `make up`. First reads the Docker server version and warns, without failing, when it is below 28.0.0, where a port published to 127.0.0.1 can be reachable from the local network segment. The vendored splice health check retries for hours, so a stalled boot never fails on its own; --timeout bounds the run and exits non-zero when it is exceeded. When compose abandons the boot because a dependency is unhealthy, or exits non-zero, `up` checks why: if only `splice` restarted, after its start-up initialization failed and without an OOM kill, it stops compose, warns, and runs `docker compose up -d` once more within the remaining --timeout; any other restart fails with its exit code, OOM-kill flag and last `Caused by` line.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if timeout < 0 {
 				return fmt.Errorf("--timeout must not be negative, got %s", timeout)
@@ -35,14 +35,16 @@ func newUpCommand(makeRunner runnerFactory) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			warnIfDockerPublishesLoopbackToTheLan(cmd.Context(), cmd)
+			started := time.Now()
 			ctx := cmd.Context()
 			if timeout > 0 {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithTimeout(ctx, timeout)
 				defer cancel()
 			}
-			err = bringUp(ctx, cmd, makeRunner(opts.RepoRoot), plan)
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			err = bringUp(ctx, cmd, makeRunner(opts.RepoRoot), plan, started)
+			if err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				return fmt.Errorf("docker compose up did not finish within %s: %w", timeout, err)
 			}
 			return err
@@ -53,24 +55,25 @@ func newUpCommand(makeRunner runnerFactory) *cobra.Command {
 	return cmd
 }
 
-const (
-	classifyTimeout  = 60 * time.Second
-	classifyAttempts = 5
-)
+const classifyAttempts = 5
 
 var (
 	composeDependencyFailure = regexp.MustCompile(`dependency.*failed to start`)
+	classifyTimeout          = 60 * time.Second
 	classifyRetryDelay       = 2 * time.Second
 )
 
-func bringUp(ctx context.Context, cmd *cobra.Command, runner composeRunner, plan compose.Plan) error {
+func bringUp(ctx context.Context, cmd *cobra.Command, runner composeRunner, plan compose.Plan, started time.Time) error {
 	dependencyFailed, err := attemptUp(ctx, runner, plan)
 	if err == nil {
 		return nil
 	}
 	classifyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), classifyTimeout)
 	defer cancel()
-	finding := classifyRestarts(classifyCtx, dependencyFailed)
+	finding, classifyErr := classifyRestarts(classifyCtx, dependencyFailed, started)
+	if classifyErr != nil {
+		return fmt.Errorf("%w (%v)", err, classifyErr)
+	}
 	switch finding.Classification {
 	case restartguard.SelfHealedSpliceInit:
 		if ctx.Err() != nil {
@@ -85,15 +88,15 @@ func bringUp(ctx context.Context, cmd *cobra.Command, runner composeRunner, plan
 	return err
 }
 
-func classifyRestarts(ctx context.Context, restartExpected bool) restartguard.Finding {
+func classifyRestarts(ctx context.Context, restartExpected bool, started time.Time) (restartguard.Finding, error) {
 	for attempt := 1; ; attempt++ {
-		finding := restartguard.Classify(ctx, restartGuardRunner, composeProject(), time.Now())
-		if finding.Classification != restartguard.NoRestart || !restartExpected || attempt == classifyAttempts {
-			return finding
+		finding, err := restartguard.Classify(ctx, restartGuardRunner, composeProject(), restartguard.Window{Since: started, Until: time.Now()})
+		if err != nil || finding.Classification != restartguard.NoRestart || !restartExpected || attempt == classifyAttempts {
+			return finding, err
 		}
 		select {
 		case <-ctx.Done():
-			return finding
+			return finding, nil
 		case <-time.After(classifyRetryDelay):
 		}
 	}

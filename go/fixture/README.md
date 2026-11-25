@@ -14,7 +14,7 @@ Module path: `github.com/peacefulstudio/canton-localnet/go/fixture`. Go 1.23+.
 - `DarUploader` — `POST /v2/dars` per DAR, once per connected synchronizer with `?synchronizerId=` (a stack that lists none gets one upload without it), so it works on single-sync and multi-sync stacks. A transient `503` is retried with bounded backoff. HTTP 400 with `KNOWN_PACKAGE_VERSION` is success only when the DAR's own main package, read from its `META-INF/MANIFEST.MF`, is vetted on that synchronizer (checked through `POST /v2/package-vetting/list`); otherwise Canton rejected a different package id with the name and version of a vetted one, and `Upload` returns `*DarNotVettedError` naming the main package id and the ids Canton's error names. Re-uploading the same DAR is safe. `UploadAll` runs paths sequentially and stops at the first failure.
 - `PartyAllocator` — `POST /v2/parties` with hints of the form `<prefix>-<suffix>`. The suffix is a random 16-character hex string generated once per allocator instance, so test runs sharing a ledger never collide. The party is allocated on the global synchronizer (resolved by alias, so it works on single-sync and multi-sync stacks); a transient `503`/`504`, `409 REQUEST_ALREADY_IN_FLIGHT` or request timeout is retried with backoff, and a party that an earlier attempt already created is found by its hint. `AllocateOnSynchronizer` targets an explicit synchronizer id.
 - `UserBuilder` — a single `POST /v2/users` carrying the `actAs` / `readAs` rights; the rights array is empty when both lists are empty. Each user the fixture created is deleted on `Teardown` with one `DELETE /v2/users/{id}` and no `GET`: the first `Teardown` returns an error for any non-2xx response, and a retry of a failed `Teardown` counts a `404` with code `USER_NOT_FOUND` as success.
-- `Fixture` — composes the above behind `Setup(ctx)` / `Teardown(ctx)` and exposes convenience methods `GetParticipantId`, `UploadDar`, `UploadDars`, `AllocateParty`, `CreateUser`. `CreateUser` records the user and `Teardown` deletes it, on the fixture and on every `Validator` view; a failed `Teardown` leaves the fixture set up, so calling it again retries only the users still outstanding.
+- `Fixture` — composes the above behind `Setup(ctx)` / `Teardown(ctx)` and exposes convenience methods `GetParticipantId`, `UploadDar`, `UploadDars`, `AllocateParty`, `CreateUser`. `CreateUser` records the user and `Teardown` deletes it, on the fixture and on every `Validator` view; a failed `Teardown` leaves the fixture set up, so calling it again retries only the users still outstanding. After a successful `Teardown`, `CreateUser` on a `Validator` view you kept returns an error, since no later `Teardown` would delete the user; call `Validator` again after the next `Setup`.
 - `ValidatorFixture` — per-slot view returned by `Fixture.Validator(role)` (or `Fixture.MustValidator(role)`). Exposes the same deep modules scoped to a single validator slot so tests that span multiple validators (e.g. allocate a party on `a-validator-1`, observe it on `b-validator-1`) don't have to juggle separate top-level fixtures. The first call for each role builds scoped clients; repeat calls return the cached instance. `KnownRoles()` returns the canonical slot set in stable order (sv, a, b, c, d).
 
 ## Usage
@@ -27,7 +27,11 @@ func TestMyLedgerThing(t *testing.T) {
     f, err := fixture.New(fixture.Config{Role: fixture.RoleAValidator1})
     if err != nil { t.Fatal(err) }
     if err := f.Setup(ctx); err != nil { t.Fatal(err) }
-    t.Cleanup(func() { _ = f.Teardown(context.Background()) })
+    t.Cleanup(func() {
+        if err := f.Teardown(context.Background()); err != nil {
+            t.Errorf("teardown: %v", err)
+        }
+    })
 
     if err := f.UploadDar(ctx, "testdata/my-package.dar"); err != nil {
         t.Fatal(err)
@@ -51,9 +55,14 @@ when a test allocates a party on one validator and verifies it from
 another:
 
 ```go
-f, _ := fixture.New(fixture.Config{Role: fixture.RoleAValidator1})
-_ = f.Setup(ctx)
-defer f.Teardown(ctx)
+f, err := fixture.New(fixture.Config{Role: fixture.RoleAValidator1})
+if err != nil { t.Fatal(err) }
+if err := f.Setup(ctx); err != nil { t.Fatal(err) }
+t.Cleanup(func() {
+    if err := f.Teardown(context.Background()); err != nil {
+        t.Errorf("teardown: %v", err)
+    }
+})
 
 a := f.MustValidator(fixture.RoleAValidator1)
 b := f.MustValidator(fixture.RoleBValidator1)

@@ -180,7 +180,7 @@ for short in "${wait_ready_slots[@]}"; do
   remaining="$(canton_localnet_deadline_remaining "$deadline" "wait-ready for ${short}")"
   prefix="$(canton_localnet_slot_prefix "$short")"
   echo "::group::Wait for ${short} (http://localhost:${prefix}975/readyz)"
-  "$CLI_PATH" wait-ready --url "http://localhost:${prefix}975/readyz" --timeout "${remaining}s" --interval 5s
+  "$CLI_PATH" wait-ready --url "http://localhost:${prefix}975/readyz" --timeout "${remaining}s" --interval 5s --repo-root "$ACTION_PATH" --config "$config_path"
   echo "::endgroup::"
 done
 

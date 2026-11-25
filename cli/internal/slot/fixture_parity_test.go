@@ -49,6 +49,15 @@ func csharpProfileTable(field func(Slot) string) map[string]string {
 	return table
 }
 
+func defaultEndpoints(t *testing.T, s Slot) Endpoints {
+	t.Helper()
+	ep, err := Resolve(s, "", emptyEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ep
+}
+
 func nonSvSlots() []Slot {
 	return slotsWhere(func(s Slot) bool { return s.AuthKind == AuthKindOAuth2 })
 }
@@ -121,10 +130,10 @@ func TestCSharpEndpointDiscoveryDefaultsMatchSlot(t *testing.T) {
 
 	assertTableMatches(t, "C# EndpointDiscovery.DefaultJsonApiUrl",
 		csharpProfileArms(t, source, "DefaultJsonApiUrl", `"([^"]+)"`),
-		csharpProfileTable(func(s Slot) string { return "http://localhost:" + s.JSONLedgerPort() }))
+		csharpProfileTable(func(s Slot) string { return defaultEndpoints(t, s).JSONLedgerAPIURL }))
 	assertTableMatches(t, "C# EndpointDiscovery.DefaultGrpcLedgerApiUrl",
 		csharpProfileArms(t, source, "DefaultGrpcLedgerApiUrl", `"([^"]+)"`),
-		csharpProfileTable(func(s Slot) string { return "http://localhost:" + s.LedgerGrpcPort() }))
+		csharpProfileTable(func(s Slot) string { return "http://" + defaultEndpoints(t, s).LedgerGrpcURL }))
 	assertTableMatches(t, "C# EndpointDiscovery.DefaultTokenUrl realms",
 		csharpProfileArms(t, source, "DefaultTokenUrl", `"(\w+)"`),
 		csharpProfileTable(func(s Slot) string { return s.Realm }))
@@ -162,9 +171,11 @@ func TestGoFixtureSlotDefaultsMatchSlot(t *testing.T) {
 	assertTableMatches(t, "go/fixture slotDefaultsByRole env prefix", column(2),
 		csharpProfileTable(func(s Slot) string { return s.EnvPrefix() }))
 	assertTableMatches(t, "go/fixture slotDefaultsByRole JSON port", column(3),
-		csharpProfileTable(func(s Slot) string { return s.JSONLedgerPort() }))
+		csharpProfileTable(func(s Slot) string {
+			return strings.TrimPrefix(defaultEndpoints(t, s).JSONLedgerAPIURL, "http://localhost:")
+		}))
 	assertTableMatches(t, "go/fixture slotDefaultsByRole gRPC port", column(4),
-		csharpProfileTable(func(s Slot) string { return s.LedgerGrpcPort() }))
+		csharpProfileTable(func(s Slot) string { return defaultEndpoints(t, s).LedgerGrpcPort }))
 	assertTableMatches(t, "go/fixture slotDefaultsByRole realm", withoutEmpty(column(5)),
 		csharpProfileTable(func(s Slot) string { return s.Realm }))
 	assertTableMatches(t, "go/fixture slotDefaultsByRole client id", withoutEmpty(column(6)),

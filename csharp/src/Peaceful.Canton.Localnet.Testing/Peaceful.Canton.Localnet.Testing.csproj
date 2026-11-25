@@ -6,8 +6,8 @@
   <PropertyGroup>
     <TargetFrameworks>net10.0;net11.0</TargetFrameworks>
     <PackageId>Peaceful.Canton.Localnet.Testing</PackageId>
-    <Description>xUnit fixtures for Canton LocalNet integration tests (OAuth2 + JSON Ledger API).</Description>
-    <PackageTags>canton;localnet;splice;daml;ledger;json-ledger-api;oauth2;xunit;integration-testing;test-fixtures</PackageTags>
+    <Description>Test fixtures for Canton LocalNet integration tests (OAuth2 + JSON Ledger API).</Description>
+    <PackageTags>canton;localnet;splice;daml;ledger;json-ledger-api;oauth2;integration-testing;test-fixtures</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <IsPackable>true</IsPackable>
   </PropertyGroup>

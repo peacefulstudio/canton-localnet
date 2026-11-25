@@ -31,6 +31,8 @@ var restartGuardRunner restartguard.Runner = func(ctx context.Context, name stri
 
 const defaultComposeProject = "localnet"
 
+var restartGuardTimeout = 60 * time.Second
+
 func composeProject() string {
 	if project := os.Getenv("COMPOSE_PROJECT_NAME"); project != "" {
 		return project
@@ -44,12 +46,17 @@ func newWaitReadyCommand() *cobra.Command {
 		synchronizers int
 		slotFlag      string
 		waitForPqs    bool
+		since         string
 	)
 	cmd := &cobra.Command{
 		Use:   "wait-ready",
 		Short: "Poll the JSON Ledger API until the participant is ready",
-		Long:  "Polls the host-exposed JSON Ledger API readiness endpoint (default http://localhost:11975/readyz) until HTTP 200. With --synchronizers > 1, additionally waits until the slot's participant reports that many connected synchronizers (the multi-sync profile). With --pqs, additionally waits until the slot's PQS (Scribe) pipeline has set its watermark (latest_offset() is non-null), so a contract created right after readiness is streamed with its effective time instead of being seeded from an ACS snapshot that has none. While waiting, aborts early when the `splice` container is crash-looping on a known fatal startup line (a postgres volume bootstrapped with a different party hint than the configured one), naming the mismatch and the remediation. Once ready, fails when a LocalNet node container (one Docker restarts without bound, such as `canton` and `splice`) has a RestartCount above 0, naming it with its exit code, OOM-kill flag and last `Caused by` line, because `restart: always` would otherwise hide a crash during boot. The one exception is a `splice` that restarted after its start-up initialization failed (`Initialization failed, so exiting`, with no OOM kill) while every other node container stayed up: that boot passes with a warning. Exit code 0 on ready, non-zero on timeout, fatal startup failure or a restarted node container.",
+		Long:  "Polls the host-exposed JSON Ledger API readiness endpoint (default http://localhost:11975/readyz) until HTTP 200. With --synchronizers > 1, additionally waits until the slot's participant reports that many connected synchronizers (the multi-sync profile). With --pqs, additionally waits until the slot's PQS (Scribe) pipeline has set its watermark (latest_offset() is non-null), so a contract created right after readiness is streamed with its effective time instead of being seeded from an ACS snapshot that has none. While waiting, aborts early when the `splice` container is crash-looping on a known fatal startup line (a postgres volume bootstrapped with a different party hint than the configured one), naming the mismatch and the remediation. Once ready, fails when a LocalNet node container (one Docker restarts without bound, such as `canton` and `splice`) has a RestartCount above 0, naming it with its exit code, OOM-kill flag and last `Caused by` line, because `restart: always` would otherwise hide a crash during boot. RestartCount covers the container's whole life; with --since, a container that last restarted before that instant only warns. The one exception is a `splice` that restarted after its start-up initialization failed (`Initialization failed, so exiting`, with no OOM kill) while every other node container stayed up: that boot passes with a warning. The restart check runs after the wait under its own 60 s budget, and fails when docker does not answer within it. Exit code 0 on ready, non-zero on timeout, fatal startup failure or a restarted node container.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			bootStarted, err := parseSince(since)
+			if err != nil {
+				return err
+			}
 			log := func(msg string) { cmd.PrintErrln(msg) }
 			opts.Logger = log
 			opts.Abort = func(ctx context.Context) error {
@@ -60,7 +67,9 @@ func newWaitReadyCommand() *cobra.Command {
 			if err := waitUntilReady(ctx, cmd, opts, synchronizers, slotFlag, waitForPqs, log); err != nil {
 				return err
 			}
-			warning, err := restartguard.Check(ctx, restartGuardRunner, composeProject(), time.Now())
+			guardCtx, cancelGuard := context.WithTimeout(context.WithoutCancel(cmd.Context()), restartGuardTimeout)
+			defer cancelGuard()
+			warning, err := restartguard.Check(guardCtx, restartGuardRunner, composeProject(), restartguard.Window{Since: bootStarted, Until: time.Now()})
 			if err != nil {
 				return err
 			}
@@ -77,7 +86,19 @@ func newWaitReadyCommand() *cobra.Command {
 	cmd.Flags().IntVar(&synchronizers, "synchronizers", 1, "Also wait until the slot's participant reports this many connected synchronizers")
 	cmd.Flags().StringVar(&slotFlag, "slot", "a-validator-1", "Slot to check for connected synchronizers or PQS readiness (used with --synchronizers and --pqs)")
 	cmd.Flags().BoolVar(&waitForPqs, "pqs", false, "Also wait until the slot's PQS (Scribe) pipeline has set its watermark")
+	cmd.Flags().StringVar(&since, "since", "", "When the boot being waited on started, as an RFC 3339 time (such as when `up` ran); a node container that last restarted before it warns instead of failing (default: judge every restart since the containers were created)")
 	return cmd
+}
+
+func parseSince(since string) (time.Time, error) {
+	if since == "" {
+		return time.Time{}, nil
+	}
+	bootStarted, err := time.Parse(time.RFC3339Nano, since)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("--since must be an RFC 3339 time such as 2026-11-21T09:00:00Z, got %q", since)
+	}
+	return bootStarted, nil
 }
 
 func waitUntilReady(ctx context.Context, cmd *cobra.Command, opts health.Options, synchronizers int, slotFlag string, waitForPqs bool, log func(string)) error {

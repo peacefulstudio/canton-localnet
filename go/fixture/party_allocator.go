@@ -33,7 +33,8 @@ const (
 // is allocated on the global synchronizer, resolved by alias, so allocation
 // works unchanged on single-sync and multi-sync stacks. A transient 503 or
 // 504, a 409 REQUEST_ALREADY_IN_FLIGHT or a request timeout is retried with
-// bounded backoff; when an earlier attempt may have committed, a 400 "Party
+// bounded backoff, on the allocation and on the synchronizer discovery before
+// it, which is also retried while it lists no synchronizer; when an earlier attempt may have committed, a 400 "Party
 // already exists" is resolved by looking the party up by its hint.
 type PartyAllocator struct {
 	baseURL    string
@@ -174,7 +175,13 @@ func (p *PartyAllocator) AllocateOnSynchronizer(ctx context.Context, prefix, syn
 		return "", errors.New("party: prefix is required")
 	}
 	if strings.TrimSpace(synchronizerID) == "" {
-		resolved, err := p.admin.GetGlobalSynchronizerId(ctx)
+		syncs, err := retryRead(ctx, p.retry, func() ([]ConnectedSynchronizer, error) {
+			return p.admin.listConnectedSynchronizers(ctx, participantSynchronizersPath)
+		}, func(syncs []ConnectedSynchronizer) bool { return len(syncs) == 0 })
+		if err != nil {
+			return "", fmt.Errorf("party: resolve global synchronizer: %w", err)
+		}
+		resolved, err := globalSynchronizerID(syncs)
 		if err != nil {
 			return "", fmt.Errorf("party: resolve global synchronizer: %w", err)
 		}

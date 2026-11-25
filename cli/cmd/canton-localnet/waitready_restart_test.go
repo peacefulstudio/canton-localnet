@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/peacefulstudio/canton-localnet/cli/internal/restartguard"
 )
@@ -17,6 +18,7 @@ func TestMain(m *testing.M) {
 	restartGuardRunner = func(context.Context, string, ...string) ([]byte, error) {
 		return nil, errors.New("docker is not reachable from unit tests")
 	}
+	dockerServerVersion = func(context.Context) (string, error) { return "28.0.0", nil }
 	os.Exit(m.Run())
 }
 
@@ -56,20 +58,20 @@ func swapRestartGuardRunner(t *testing.T, run restartguard.Runner) {
 	t.Cleanup(func() { restartGuardRunner = original })
 }
 
-func TestWaitReadyFailsNamingTheContainerThatRestartedDuringBoot(t *testing.T) {
-	containers := &scriptedContainers{inspectOutput: "/postgres no 0 2026-11-11T11:50:00Z\n/canton always 1 2026-11-11T11:50:00Z\n/splice always 0 2026-11-11T11:50:00Z\n"}
+func TestWaitReadyFailsNamingTheContainerThatRestartedSinceItWasCreated(t *testing.T) {
+	containers := &scriptedContainers{inspectOutput: "/postgres no 0 2026-11-11T11:50:00Z 2099-01-01T00:00:00Z\n/canton always 1 2026-11-11T11:50:00Z 2099-01-01T00:00:00Z\n/splice always 0 2026-11-11T11:50:00Z 2099-01-01T00:00:00Z\n"}
 	swapRestartGuardRunner(t, containers.run)
 	server := readyzServer(t)
 
 	_, err := executeWaitReady(t, "wait-ready", "--url", server.URL, "--timeout", "30s", "--interval", "1ms")
 
-	if err == nil || !strings.Contains(err.Error(), "canton restarted 1 time during boot") {
+	if err == nil || !strings.Contains(err.Error(), "canton restarted 1 time since it was created") {
 		t.Fatalf("want an error naming canton, got %v", err)
 	}
 }
 
 func TestWaitReadySucceedsWhenNoNodeContainerRestarted(t *testing.T) {
-	containers := &scriptedContainers{inspectOutput: "/postgres no 0 2026-11-11T11:50:00Z\n/canton always 0 2026-11-11T11:50:00Z\n/splice always 0 2026-11-11T11:50:00Z\n"}
+	containers := &scriptedContainers{inspectOutput: "/postgres no 0 2026-11-11T11:50:00Z 2099-01-01T00:00:00Z\n/canton always 0 2026-11-11T11:50:00Z 2099-01-01T00:00:00Z\n/splice always 0 2026-11-11T11:50:00Z 2099-01-01T00:00:00Z\n"}
 	swapRestartGuardRunner(t, containers.run)
 	server := readyzServer(t)
 
@@ -82,7 +84,7 @@ func TestWaitReadySucceedsWhenNoNodeContainerRestarted(t *testing.T) {
 
 func TestWaitReadyGuardsTheLocalnetComposeProjectByDefault(t *testing.T) {
 	t.Setenv("COMPOSE_PROJECT_NAME", "")
-	containers := &scriptedContainers{inspectOutput: "/canton always 0 2026-11-11T11:50:00Z\n"}
+	containers := &scriptedContainers{inspectOutput: "/canton always 0 2026-11-11T11:50:00Z 2099-01-01T00:00:00Z\n"}
 	swapRestartGuardRunner(t, containers.run)
 	server := readyzServer(t)
 
@@ -95,7 +97,7 @@ func TestWaitReadyGuardsTheLocalnetComposeProjectByDefault(t *testing.T) {
 
 func TestWaitReadyGuardsTheComposeProjectNamedByTheEnvironment(t *testing.T) {
 	t.Setenv("COMPOSE_PROJECT_NAME", "slot2")
-	containers := &scriptedContainers{inspectOutput: "/canton always 0 2026-11-11T11:50:00Z\n"}
+	containers := &scriptedContainers{inspectOutput: "/canton always 0 2026-11-11T11:50:00Z 2099-01-01T00:00:00Z\n"}
 	swapRestartGuardRunner(t, containers.run)
 	server := readyzServer(t)
 
@@ -107,7 +109,7 @@ func TestWaitReadyGuardsTheComposeProjectNamedByTheEnvironment(t *testing.T) {
 }
 
 func TestWaitReadyReportsTheReadinessTimeoutRatherThanTheRestartGuard(t *testing.T) {
-	containers := &scriptedContainers{inspectOutput: "/canton always 3 2026-11-11T11:50:00Z\n"}
+	containers := &scriptedContainers{inspectOutput: "/canton always 3 2026-11-11T11:50:00Z 2099-01-01T00:00:00Z\n"}
 	swapRestartGuardRunner(t, containers.run)
 	server := notReadyServer(t)
 
@@ -125,7 +127,7 @@ const spliceInitFailureLog = "Starting '/app/splice-node/bin/splice-node' with a
 
 func spliceRestartedOnce() *scriptedContainers {
 	return &scriptedContainers{
-		inspectOutput: "/postgres no 0 2026-11-11T11:50:00Z\n/canton always 0 2026-11-11T11:50:00Z\n/splice always 1 2026-11-11T11:50:00Z\n",
+		inspectOutput: "/postgres no 0 2026-11-11T11:50:00Z 2099-01-01T00:00:00Z\n/canton always 0 2026-11-11T11:50:00Z 2099-01-01T00:00:00Z\n/splice always 1 2026-11-11T11:50:00Z 2099-01-01T00:00:00Z\n",
 		eventsOutput:  "die splice 1\n",
 		logs:          map[string]string{"splice": spliceInitFailureLog},
 	}
@@ -141,7 +143,7 @@ func TestWaitReadySucceedsWithAWarningWhenSpliceRestartedAfterItsInitializationF
 	if err != nil {
 		t.Fatalf("want nil, got %v\n%s", err, stderr)
 	}
-	if !strings.Contains(stderr.String(), "warning: splice restarted 1 time during boot (exit code 1, no OOM kill") {
+	if !strings.Contains(stderr.String(), "warning: splice restarted 1 time since it was created (exit code 1, no OOM kill") {
 		t.Fatalf("want a warning naming the splice restart, got\n%s", stderr)
 	}
 }
@@ -156,7 +158,7 @@ func TestWaitReadyEmitsAGitHubWarningAnnotationInGitHubActions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("want nil, got %v\n%s", err, stderr)
 	}
-	if !strings.Contains(stderr.String(), "::warning::splice restarted 1 time during boot") {
+	if !strings.Contains(stderr.String(), "::warning::splice restarted 1 time since it was created") {
 		t.Fatalf("want a ::warning:: annotation, got\n%s", stderr)
 	}
 }
@@ -169,7 +171,80 @@ func TestWaitReadyFailsWhenSpliceWasOomKilledDuringBoot(t *testing.T) {
 
 	_, err := executeWaitReady(t, "wait-ready", "--url", server.URL, "--timeout", "30s", "--interval", "1ms")
 
-	if err == nil || !strings.Contains(err.Error(), "splice restarted 1 time during boot (exit code 137, OOM-killed") {
+	if err == nil || !strings.Contains(err.Error(), "splice restarted 1 time since it was created (exit code 137, OOM-killed") {
 		t.Fatalf("want an error naming the OOM kill, got %v", err)
+	}
+}
+
+func TestWaitReadyRunsTheRestartGuardUnderItsOwnBudgetRatherThanTheWaitDeadline(t *testing.T) {
+	var guardDeadline time.Time
+	swapRestartGuardRunner(t, func(ctx context.Context, _ string, _ ...string) ([]byte, error) {
+		guardDeadline, _ = ctx.Deadline()
+		return []byte("\n"), nil
+	})
+	server := readyzServer(t)
+	started := time.Now()
+
+	_, err := executeWaitReady(t, "wait-ready", "--url", server.URL, "--timeout", "1s", "--interval", "1ms")
+
+	if err != nil {
+		t.Fatalf("want nil, got %v", err)
+	}
+	if guardDeadline.Before(started.Add(restartGuardTimeout)) {
+		t.Fatalf("want the guard's deadline at least %s after the start, got %s", restartGuardTimeout, guardDeadline.Sub(started))
+	}
+}
+
+func TestWaitReadyFailsWhenTheRestartGuardOutlastsItsBudget(t *testing.T) {
+	original := restartGuardTimeout
+	restartGuardTimeout = 20 * time.Millisecond
+	t.Cleanup(func() { restartGuardTimeout = original })
+	swapRestartGuardRunner(t, func(ctx context.Context, _ string, _ ...string) ([]byte, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})
+	server := readyzServer(t)
+
+	_, err := executeWaitReady(t, "wait-ready", "--url", server.URL, "--timeout", "30s", "--interval", "1ms")
+
+	if err == nil || err.Error() != "restart guard: docker ps: context deadline exceeded" {
+		t.Fatalf("want the guard's deadline error, got %v", err)
+	}
+}
+
+func TestWaitReadyFailsNamingTheContainerThatRestartedDuringTheBootStartedAtSince(t *testing.T) {
+	swapRestartGuardRunner(t, cantonRestartedOnce().run)
+	server := readyzServer(t)
+
+	_, err := executeWaitReady(t, "wait-ready", "--url", server.URL, "--timeout", "30s", "--interval", "1ms", "--since", "2026-11-11T11:50:00Z")
+
+	if err == nil || !strings.HasPrefix(err.Error(), "canton restarted 1 time during boot (exit code 137, no OOM kill)") {
+		t.Fatalf("want an error naming canton during boot, got %v", err)
+	}
+}
+
+func TestWaitReadySucceedsWithAWarningWhenTheNodeRestartedBeforeTheBootStartedAtSince(t *testing.T) {
+	t.Setenv("GITHUB_ACTIONS", "")
+	containers := &scriptedContainers{inspectOutput: "/canton always 1 2026-11-11T11:50:00Z 2026-11-12T08:00:00Z\n"}
+	swapRestartGuardRunner(t, containers.run)
+	server := readyzServer(t)
+
+	stderr, err := executeWaitReady(t, "wait-ready", "--url", server.URL, "--timeout", "30s", "--interval", "1ms", "--since", "2026-11-20T09:00:00Z")
+
+	if err != nil {
+		t.Fatalf("want nil, got %v\n%s", err, stderr)
+	}
+	if !strings.Contains(stderr.String(), "warning: canton restarted 1 time before this boot (last at 2026-11-12T08:00:00Z, the boot started at 2026-11-20T09:00:00Z)") {
+		t.Fatalf("want a warning naming the earlier restart, got\n%s", stderr)
+	}
+}
+
+func TestWaitReadyRejectsASinceThatIsNotAnRFC3339Time(t *testing.T) {
+	server := readyzServer(t)
+
+	_, err := executeWaitReady(t, "wait-ready", "--url", server.URL, "--timeout", "30s", "--since", "yesterday")
+
+	if err == nil || err.Error() != `--since must be an RFC 3339 time such as 2026-11-21T09:00:00Z, got "yesterday"` {
+		t.Fatalf("want the --since error, got %v", err)
 	}
 }

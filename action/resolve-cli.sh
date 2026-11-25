@@ -9,14 +9,16 @@
 #   release           — download the release asset matching $ACTION_REF
 #                       and verify it against that release's checksums.txt
 #                       and against the build provenance attestation
-#                       release.yml signs for it (gh attestation verify).
+#                       release.yml signs for it from that tag
+#                       (gh attestation verify --source-ref).
 #                       Fails closed: valid only when $ACTION_REF is a
 #                       literal release tag, and any download, checksum or
 #                       attestation problem aborts rather than falling back
 #                       to source.
 #
 # Required env: CLI_MODE, ACTION_PATH, ACTION_REF, RUNNER_TEMP, GITHUB_OUTPUT,
-# GITHUB_PATH, and for cli: release a GH_TOKEN that gh can verify with.
+# GITHUB_PATH, and for cli: release the GitHub CLI (gh) on PATH and a GH_TOKEN
+# that gh can verify with.
 
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,6 +31,7 @@ mkdir -p "$bin_dir"
 resolve_started="$(date +%s)"
 cli_path="$bin_dir/canton-localnet"
 download_max_seconds=120
+attestation_max_seconds=120
 
 build_from_source() {
   echo "Building canton-localnet from source (${ACTION_PATH}/cli)"
@@ -55,6 +58,10 @@ download_release() {
       return 1
       ;;
   esac
+  if ! command -v gh >/dev/null 2>&1; then
+    canton_localnet_log_error "canton-localnet action: cli: release needs the GitHub CLI (gh) on PATH to verify the build attestation, and none was found. GitHub-hosted runners ship it; install it on a self-hosted runner, or use cli: source."
+    return 1
+  fi
   local version="${ACTION_REF#v}"
   local asset="canton-localnet-${version}-linux-${arch_label}"
   local base_url="${release_repo}/releases/download/${ACTION_REF}"
@@ -75,12 +82,22 @@ download_release() {
     canton_localnet_log_error "canton-localnet action: cli: release checksum verification failed for ${asset} — refusing to run an unverified binary."
     return 1
   fi
-  if ! gh attestation verify "$work_dir/$asset" \
+  local verify_status=0
+  timeout "$attestation_max_seconds" gh attestation verify "$work_dir/$asset" \
     --repo peacefulstudio/canton-localnet \
-    --signer-workflow peacefulstudio/canton-localnet/.github/workflows/release.yml; then
-    canton_localnet_log_error "canton-localnet action: cli: release attestation verification failed for ${asset} — the binary was not built by peacefulstudio/canton-localnet's release workflow; refusing to run it."
-    return 1
-  fi
+    --signer-workflow peacefulstudio/canton-localnet/.github/workflows/release.yml \
+    --source-ref "refs/tags/${ACTION_REF}" || verify_status=$?
+  case "$verify_status" in
+    0) ;;
+    124)
+      canton_localnet_log_error "canton-localnet action: cli: release could not verify the build attestation of ${asset}: gh attestation verify did not finish within ${attestation_max_seconds}s — the attestation API may be unreachable from this runner. Refusing to run an unverified binary; retry, or use cli: source."
+      return 1
+      ;;
+    *)
+      canton_localnet_log_error "canton-localnet action: cli: release attestation verification failed for ${asset} (gh exit ${verify_status}; its output is above) — either the binary was not built by peacefulstudio/canton-localnet's release workflow from tag ${ACTION_REF}, or gh could not reach the attestation API with this GH_TOKEN; refusing to run it."
+      return 1
+      ;;
+  esac
   install -m 0755 "$work_dir/$asset" "$cli_path"
 }
 

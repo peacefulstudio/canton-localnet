@@ -42,7 +42,9 @@ public sealed partial class DarUploader
     /// <param name="tokenProvider">Supplies the bearer token for each upload.</param>
     /// <param name="logger">Optional logger; defaults to a no-op logger.</param>
     /// <param name="options">
-    /// Retry policy for a transient 503, 504 or 409 REQUEST_ALREADY_IN_FLIGHT; defaults to <see cref="DarUploaderRetryOptions.Default"/>.
+    /// Retry policy for a transient 503, 504 or 409 REQUEST_ALREADY_IN_FLIGHT from the upload, and for
+    /// one of those or a request timeout from synchronizer discovery and the vetting read-back;
+    /// defaults to <see cref="DarUploaderRetryOptions.Default"/>.
     /// </param>
     /// <param name="adminClient">
     /// Admin client used for synchronizer discovery and the vetting check;
@@ -141,7 +143,14 @@ public sealed partial class DarUploader
             if (response.StatusCode == HttpStatusCode.BadRequest && body.Contains(KnownPackageVersionMarker, StringComparison.Ordinal))
             {
                 mainPackageId ??= DarManifest.ReadMainPackageId(darBytes);
-                if (!await _adminClient.IsPackageVettedAsync(mainPackageId, synchronizerId, cancellationToken).ConfigureAwait(false))
+                var packageId = mainPackageId;
+                var vetted = await LedgerReadRetry.RunAsync(
+                    "POST v2/package-vetting/list",
+                    token => _adminClient.IsPackageVettedAsync(packageId, synchronizerId, token),
+                    _retryOptions,
+                    _logger,
+                    cancellationToken).ConfigureAwait(false);
+                if (!vetted)
                 {
                     throw new DarNotVettedException(sourceLabel, mainPackageId, synchronizerId, ConflictingPackageIds(body, mainPackageId), body);
                 }
@@ -167,7 +176,11 @@ public sealed partial class DarUploader
         try
         {
             using var doc = System.Text.Json.JsonDocument.Parse(knownPackageVersionBody);
-            cause = doc.RootElement.TryGetProperty("cause", out var element) ? element.GetString() ?? string.Empty : string.Empty;
+            cause = doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("cause", out var element)
+                && element.ValueKind == System.Text.Json.JsonValueKind.String
+                ? element.GetString()!
+                : string.Empty;
         }
         catch (System.Text.Json.JsonException)
         {
@@ -186,7 +199,12 @@ public sealed partial class DarUploader
 
     private async Task<IReadOnlyList<string?>> ResolveVettingTargetsAsync(CancellationToken cancellationToken)
     {
-        var synchronizers = await _adminClient.GetConnectedSynchronizersAsync(party: null, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var synchronizers = await LedgerReadRetry.RunAsync(
+            "GET v2/state/connected-synchronizers",
+            token => _adminClient.GetConnectedSynchronizersAsync(party: null, cancellationToken: token),
+            _retryOptions,
+            _logger,
+            cancellationToken).ConfigureAwait(false);
         if (synchronizers.Count == 0)
         {
             return new string?[] { null };
@@ -213,13 +231,13 @@ public sealed partial class DarUploader
             request.Content = new ByteArrayContent(darBytes);
             request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
 
-            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            var body = await BoundedBody.ReadAsync(response, $"POST {requestUri} for {sourceLabel}", _httpClient.Timeout, cancellationToken).ConfigureAwait(false);
             if (response.IsSuccessStatusCode)
             {
-                return new UploadResponse(response.StatusCode, response.ReasonPhrase, string.Empty);
+                return new UploadResponse(response.StatusCode, response.ReasonPhrase, body);
             }
 
-            var body = await BoundedBody.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
             if (!TransientHttpStatus.IsTransient(response.StatusCode, body) || attempt >= _retryOptions.MaxAttempts)
             {
                 return new UploadResponse(response.StatusCode, response.ReasonPhrase, body);
@@ -280,11 +298,12 @@ public sealed record DarUploadResult(string Source, DarUploadOutcome Outcome);
 /// <summary>
 /// Bounded exponential-backoff configuration for retrying a transient
 /// <c>503</c> or <c>504</c> or a <c>409</c> <c>REQUEST_ALREADY_IN_FLIGHT</c>
-/// from <c>POST /v2/dars</c> or <c>POST /v2/parties</c> while the
+/// from <c>POST /v2/dars</c> or <c>POST /v2/parties</c>, or from the
+/// synchronizer discovery and vetting reads before them, while the
 /// participant is still warming up. Defaults give ~6 attempts with a 1s
 /// base delay capped at 16s (total budget on the order of ~30s).
 /// </summary>
-/// <param name="MaxAttempts">Total number of POST attempts, including the first.</param>
+/// <param name="MaxAttempts">Total number of attempts per request, including the first.</param>
 /// <param name="BaseDelay">Delay before the first retry; doubles each subsequent retry.</param>
 /// <param name="MaxDelay">Upper bound applied to every computed backoff delay.</param>
 /// <param name="Delay">
@@ -298,7 +317,7 @@ public sealed record DarUploaderRetryOptions(
     TimeSpan MaxDelay,
     Func<TimeSpan, CancellationToken, Task> Delay)
 {
-    /// <summary>Total number of POST attempts, including the first.</summary>
+    /// <summary>Total number of attempts per request, including the first.</summary>
     public int MaxAttempts { get; } = Validated(MaxAttempts, BaseDelay, MaxDelay, Delay);
 
     /// <summary>Delay before the first retry; doubles each subsequent retry.</summary>

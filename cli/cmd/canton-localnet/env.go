@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -404,15 +405,23 @@ func (f pqsFields) libpqURI() string {
 	return uri.String()
 }
 
-// npgsqlEscape quotes a connection-string value if it contains a Npgsql
-// keyword-value delimiter (';' or '=') or a double-quote, following the
-// Npgsql keyword-value connection-string escaping rules: enclose in
-// double-quotes and escape any embedded double-quote as '""'.
+// npgsqlEscape quotes a connection-string value if a Npgsql keyword-value
+// parser would not read it back verbatim: it contains a delimiter (';' or
+// '='), a double-quote, leading or trailing whitespace (trimmed when bare),
+// or starts with a single quote (read as an opening quote when bare). It
+// follows the Npgsql escaping rules: enclose in double-quotes and escape any
+// embedded double-quote as '""'.
 func npgsqlEscape(s string) string {
-	if !strings.ContainsAny(s, `;"=`) {
+	if !needsNpgsqlQuoting(s) {
 		return s
 	}
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+}
+
+func needsNpgsqlQuoting(s string) bool {
+	return strings.ContainsAny(s, `;"=`) ||
+		strings.HasPrefix(s, "'") ||
+		strings.TrimSpace(s) != s
 }
 
 // resolvePqsFields reads DB_USER/DB_PASSWORD (or, for a-validator-1,
@@ -424,10 +433,10 @@ func npgsqlEscape(s string) string {
 // `${NAME:-default}` shell substitution in that file, the same shape
 // docker compose itself resolves at `up` time, so a real environment
 // variable of that name overrides the file's default, exactly as it
-// would for the running stack. POSTGRES_HOST_PORT, when set, is a
-// docker compose ports-mapping value (bare "PORT", "HOST:PORT", or
-// "HOST_IP:HOST:PORT|:PORT"); only its host-port segment is what a
-// client outside the compose network connects to.
+// would for the running stack. POSTGRES_HOST_PORT, when set, is the bare
+// host port compose publishes Postgres on, which is what a client outside
+// the compose network connects to; compose supplies the bind address and
+// the container port itself, so any other shape is rejected.
 func resolvePqsFields(repoRoot string, ep slot.Endpoints) (pqsFields, error) {
 	if !ep.Slot.Pqs {
 		return pqsFields{}, fmt.Errorf("env: --pqs is not supported for slot %s: only %s have a PQS pipeline", ep.Slot.Canonical, slot.JoinCanonicals(slot.PqsSlots()))
@@ -457,7 +466,9 @@ func resolvePqsFields(repoRoot string, ep slot.Endpoints) (pqsFields, error) {
 		return pqsFields{}, err
 	}
 	if raw, ok := os.LookupEnv("POSTGRES_HOST_PORT"); ok && strings.TrimSpace(raw) != "" {
-		port = portMappingHostSegment(raw)
+		if port, err = bareHostPort(raw); err != nil {
+			return pqsFields{}, err
+		}
 	}
 	return pqsFields{
 		Host:     ep.Host,
@@ -487,16 +498,12 @@ func shellDefaultOverride(parsed map[string]string, path, key string) (string, e
 	return raw, nil
 }
 
-// portMappingHostSegment returns the host-port segment of a docker
-// compose short-syntax ports-mapping value: bare "PORT" is both sides
-// (compose's own shorthand), "HOST:PORT" and "HOST_IP:HOST:PORT" both
-// give up the second-to-last colon-separated segment.
-func portMappingHostSegment(raw string) string {
-	parts := strings.Split(raw, ":")
-	if len(parts) == 1 {
-		return parts[0]
+func bareHostPort(raw string) (string, error) {
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 || n > 65535 || strconv.Itoa(n) != raw {
+		return "", fmt.Errorf("env: POSTGRES_HOST_PORT=%q is not a bare host port between 1 and 65535", raw)
 	}
-	return parts[len(parts)-2]
+	return raw, nil
 }
 
 func splitURLHostPort(raw string) (string, string, error) {

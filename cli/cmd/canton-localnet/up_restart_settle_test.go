@@ -21,7 +21,7 @@ func fastClassifyRetries(t *testing.T) {
 
 func restartCountAppearsOnTheThirdInspect() (restartguard.Runner, *int) {
 	settled := spliceRestartedOnce()
-	unsettled := &scriptedContainers{inspectOutput: "/canton always 0 2026-11-11T11:50:00Z\n/splice always 0 2026-11-11T11:50:00Z\n"}
+	unsettled := &scriptedContainers{inspectOutput: "/canton always 0 2026-11-11T11:50:00Z 2099-01-01T00:00:00Z\n/splice always 0 2026-11-11T11:50:00Z 2099-01-01T00:00:00Z\n"}
 	inspects := 0
 	return func(ctx context.Context, name string, args ...string) ([]byte, error) {
 		if args[0] == "inspect" {
@@ -59,5 +59,24 @@ func TestUpClassifiesOnceWhenComposeExitedNonZeroWithoutAnyDependencyFailure(t *
 
 	if err == nil || err.Error() != "pull access denied" || *inspects != 1 {
 		t.Fatalf("want the compose error after one inspect, got %v after %d inspects", err, *inspects)
+	}
+}
+
+func TestUpReportsTheComposeErrorAndTheUnfinishedRestartCheckWhenDockerOutlastsTheClassifyBudget(t *testing.T) {
+	original := classifyTimeout
+	classifyTimeout = 20 * time.Millisecond
+	t.Cleanup(func() { classifyTimeout = original })
+	swapRestartGuardRunner(t, func(ctx context.Context, _ string, _ ...string) ([]byte, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})
+	runner, factory := newFakeRunnerFactory()
+	runner.scripted = []scriptedRun{{err: errors.New("pull access denied")}}
+
+	_, err := executeUp(t, factory)
+
+	want := "pull access denied (restart guard: docker ps: context deadline exceeded)"
+	if err == nil || err.Error() != want {
+		t.Fatalf("want %q, got %v", want, err)
 	}
 }

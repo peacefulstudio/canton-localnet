@@ -6,6 +6,7 @@ package fixture
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 )
 
 // ValidatorFixture is a per-slot view of a Fixture. It exposes the same
@@ -26,6 +27,7 @@ type ValidatorFixture struct {
 	parties   *PartyAllocator
 	users     *UserBuilder
 	created   createdUsers
+	tornDown  atomic.Bool
 }
 
 // String formats the validator view with its endpoints' ClientSecret
@@ -92,8 +94,13 @@ func (v *ValidatorFixture) AllocateParty(ctx context.Context, prefix string) (st
 
 // CreateUser creates a ledger user on this validator and grants
 // ActAs/ReadAs rights from opts. The user is recorded, so the owning
-// Fixture's Teardown deletes it from this validator.
+// Fixture's Teardown deletes it from this validator. It returns an error once
+// the owning Fixture has been torn down, because no later Teardown would
+// delete the user; call Fixture.Validator after the next Setup for a fresh view.
 func (v *ValidatorFixture) CreateUser(ctx context.Context, opts UserOptions) (string, error) {
+	if v.tornDown.Load() {
+		return "", fmt.Errorf("fixture: view for %s was torn down; request a new one with Fixture.Validator after Setup", v.role)
+	}
 	id, err := v.users.Create(ctx, opts)
 	if err != nil {
 		return "", err

@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 
 For the full consumer guide, see `docs/public/integration-testing.md`.
 
-xUnit fixtures for Canton LocalNet integration tests. Sub-modules:
+Test fixtures for Canton LocalNet integration tests (OAuth2 + JSON Ledger API). Sub-modules:
 
 - `EndpointDiscovery` — env vars to URLs (JSON Ledger API, gRPC Ledger API, Keycloak token endpoint).
 - `OAuth2TokenProvider` — `client_credentials` grant with in-memory cache + refresh.
@@ -37,8 +37,9 @@ xUnit fixtures for Canton LocalNet integration tests. Sub-modules:
   long-lived shared stack take the lease — see *User rights on a shared
   stack* in `docs/public/integration-testing.md` for what it owns, when its
   disposal throws, and why `RevokeRightsAsync` is not the teardown tool.
-- `LocalnetFixture` — composes the above into a single user-facing surface
-  via `Microsoft.Extensions.DependencyInjection` and exposes convenience
+- `LocalnetFixture` — an `IAsyncDisposable` that composes the above into a
+  single user-facing surface via `Microsoft.Extensions.DependencyInjection`
+  and exposes convenience
   pass-throughs (`UploadDarAsync`, `AllocatePartyAsync`, `CreateUserAsync`,
   `GetParticipantIdAsync`). `CreateUserAsync` records the user and
   `DisposeAsync` deletes it, on the fixture and on every per-slot view; see
@@ -47,7 +48,10 @@ xUnit fixtures for Canton LocalNet integration tests. Sub-modules:
   exposing the same deep modules scoped to a single validator (handy for
   cross-validator scenarios); `KnownSlots()` returns the canonical slot
   set in stable order (`sv-validator-1`, `a-validator-1`,
-  `b-validator-1`, `c-validator-1`, `d-validator-1`).
+  `b-validator-1`, `c-validator-1`, `d-validator-1`). Its constructor is
+  private and it is not an xUnit class fixture on its own: create it per test
+  with `await using var fixture = LocalnetFixture.FromEnvironment();`, or wrap
+  it in your own `IAsyncLifetime` class fixture.
 
 ## 30-line example
 

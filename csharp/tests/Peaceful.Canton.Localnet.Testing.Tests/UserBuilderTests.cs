@@ -339,6 +339,27 @@ public class UserBuilderTests
         await Assert.ThrowsAsync<JsonLedgerApiException>(() => builder.CreateAsync("frank"));
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("<html>proxy</html>")]
+    [InlineData("{\"user\":")]
+    public async Task CreateAsync_wraps_an_empty_or_malformed_2xx_body_in_JsonLedgerApiException(string body)
+    {
+        var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/json"),
+        }));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var builder = new UserBuilder(http, StaticTokenProvider("tok"));
+
+        var exception = await Assert.ThrowsAsync<JsonLedgerApiException>(() => builder.CreateAsync("frank"));
+
+        Assert.Equal(HttpStatusCode.OK, exception.StatusCode);
+        Assert.Equal(body, exception.ResponseBody);
+        Assert.Contains("not valid JSON", exception.Message);
+        Assert.IsType<JsonException>(exception.InnerException, exactMatch: false);
+    }
+
     [Fact]
     public async Task CreateAsync_rejects_empty_user_id()
     {

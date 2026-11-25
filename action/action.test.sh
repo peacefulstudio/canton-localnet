@@ -208,6 +208,13 @@ STUB
 echo "\$*" >>"\$STUB_DIR/gh.log"
 exit $gh_exit
 STUB
+  cat >"$stub_dir/bin/timeout" <<'STUB'
+#!/usr/bin/env bash
+echo "$*" >>"$STUB_DIR/timeout.log"
+[ -z "${TIMEOUT_STUB_EXIT:-}" ] || exit "$TIMEOUT_STUB_EXIT"
+shift
+exec "$@"
+STUB
   chmod +x "$stub_dir"/bin/*
   printf '#!/usr/bin/env bash\necho canton-localnet 0.10.0-1\n' >"$stub_dir/asset"
   local digest
@@ -233,10 +240,28 @@ run_release_resolve "$attested_dir"
 assert_status "resolve-cli: cli: release with a valid checksum and attestation succeeds" "0" "$release_status"
 assert_eq "resolve-cli: cli: release bounds both downloads with --max-time" "2" \
   "$(grep -c -- '--max-time 120' "$attested_dir/curl.log")"
-assert_contains "resolve-cli: cli: release verifies the attestation against the release repo and workflow" \
-  "$(cat "$attested_dir/gh.log")" \
-  "attestation verify $RUNNER_TEMP/canton-localnet/release-download/canton-localnet-0.10.0-1-linux-amd64 --repo peacefulstudio/canton-localnet --signer-workflow peacefulstudio/canton-localnet/.github/workflows/release.yml"
+assert_eq "resolve-cli: cli: release verifies the attestation against the release repo, workflow and tag" \
+  "attestation verify $RUNNER_TEMP/canton-localnet/release-download/canton-localnet-0.10.0-1-linux-amd64 --repo peacefulstudio/canton-localnet --signer-workflow peacefulstudio/canton-localnet/.github/workflows/release.yml --source-ref refs/tags/v0.10.0-1" \
+  "$(cat "$attested_dir/gh.log")"
+assert_eq "resolve-cli: cli: release bounds the attestation check with timeout 120" \
+  "120 gh attestation verify $RUNNER_TEMP/canton-localnet/release-download/canton-localnet-0.10.0-1-linux-amd64 --repo peacefulstudio/canton-localnet --signer-workflow peacefulstudio/canton-localnet/.github/workflows/release.yml --source-ref refs/tags/v0.10.0-1" \
+  "$(cat "$attested_dir/timeout.log")"
 rm -rf "$attested_dir"
+
+timed_out_dir="$(mktemp -d)"
+make_release_stubs "$timed_out_dir" 0
+TIMEOUT_STUB_EXIT=124 run_release_resolve "$timed_out_dir"
+assert_status "resolve-cli: cli: release whose attestation check times out fails closed" "1" "$release_status"
+assert_contains "resolve-cli: cli: release names the attestation timeout" "$(cat "$timed_out_dir/resolve.log")" \
+  "cli: release could not verify the build attestation of canton-localnet-0.10.0-1-linux-amd64: gh attestation verify did not finish within 120s"
+if grep -q "was not built by" "$timed_out_dir/resolve.log"; then
+  echo "FAIL: resolve-cli: cli: release reported an attestation timeout as a provenance failure"
+  failures=$((failures + 1))
+else
+  echo "ok: resolve-cli: cli: release does not report an attestation timeout as a provenance failure"
+fi
+tests_run=$((tests_run + 1))
+rm -rf "$timed_out_dir"
 
 unattested_dir="$(mktemp -d)"
 make_release_stubs "$unattested_dir" 1
@@ -251,6 +276,40 @@ else
 fi
 tests_run=$((tests_run + 1))
 rm -rf "$unattested_dir"
+
+## resolve-cli.sh cli: release reports a missing gh as such, not as a provenance failure
+
+no_gh_dir="$(mktemp -d)"
+make_release_stubs "$no_gh_dir" 0
+rm "$no_gh_dir/bin/gh"
+mkdir -p "$no_gh_dir/system-bin"
+IFS=: read -ra path_dirs <<<"$PATH"
+for path_dir in "${path_dirs[@]}"; do
+  for tool in "$path_dir"/*; do
+    tool_name="$(basename "$tool")"
+    [ "$tool_name" = "gh" ] && continue
+    [ -x "$tool" ] && [ ! -e "$no_gh_dir/system-bin/$tool_name" ] && ln -s "$tool" "$no_gh_dir/system-bin/$tool_name"
+  done
+done
+RUNNER_TEMP="$(mktemp -d)"
+export RUNNER_TEMP
+set +e
+STUB_DIR="$no_gh_dir" PATH="$no_gh_dir/bin:$no_gh_dir/system-bin" CLI_MODE=release ACTION_PATH="$here/.." ACTION_REF="v0.10.0-1" \
+  GITHUB_OUTPUT="$(mktemp)" GITHUB_PATH="$(mktemp)" \
+  bash "$here/resolve-cli.sh" >"$no_gh_dir/resolve.log" 2>&1
+release_status=$?
+set -e
+assert_status "resolve-cli: cli: release without gh on PATH fails closed" "1" "$release_status"
+assert_contains "resolve-cli: cli: release names the missing gh" "$(cat "$no_gh_dir/resolve.log")" \
+  "cli: release needs the GitHub CLI (gh) on PATH to verify the build attestation, and none was found"
+if grep -q "was not built by" "$no_gh_dir/resolve.log"; then
+  echo "FAIL: resolve-cli: cli: release reported a missing gh as a provenance failure"
+  failures=$((failures + 1))
+else
+  echo "ok: resolve-cli: cli: release does not report a missing gh as a provenance failure"
+fi
+tests_run=$((tests_run + 1))
+rm -rf "$no_gh_dir"
 
 ## down.sh (STRICT=true) with no saved boot state fails closed
 
@@ -347,6 +406,55 @@ dial postgresql://pqs-a-validator-1-reader:***@localhost:5432/pqs-a-validator-1 
 redis://cache:6379 and https://example.com/a:b are not userinfo
 {"clientSecret":"***","clientId":"app"}
 plain line stays untouched' "$redacted"
+
+## redact-secrets.sh scrubs the wider secret shapes: Basic auth, any-case keys, opaque tokens, API and private keys, flags and greedy URI passwords
+
+pem_dashes='-----'
+redacted="$(printf '%s\n' \
+  'Authorization: Basic dXNlcjpwYXNzd29yZA==' \
+  '{"authorization":"Basic dXNlcjpwYXNzd29yZA=="}' \
+  'BEARER UPPERCASE-TOKEN-1 sent' \
+  'Host=postgres;Username=cnadmin;Password=NpgsqlPass9;Database=pqs' \
+  'Server=db;User Id=sa;Pwd=ShortPwd1;' \
+  'Passwd=TitleCasePasswd' \
+  '{"token":"opaque-token-1234","user":"alice"}' \
+  'X-Auth-Token: header-token-99' \
+  'api_key=snake-api-key-1 apiKey: camel-api-key-2 api-key=kebab-api-key-3' \
+  'private-key = "pem-ref-value"' \
+  'client_credentials: credential-value-5' \
+  "${pem_dashes}BEGIN RSA PRIVATE KEY${pem_dashes}\\nMIIEpAIBAAKCAQEA\\n${pem_dashes}END RSA PRIVATE KEY${pem_dashes} tail" \
+  "${pem_dashes}BEGIN PRIVATE KEY${pem_dashes}" \
+  'MIIEvQIBADANBgkqhkiG9w0BAQEFAASC' \
+  'AoIBAQC7VJTUt9Us8cKjMzEfYyjiWA4R' \
+  "${pem_dashes}END PRIVATE KEY${pem_dashes}" \
+  'after the key block' \
+  'run --target-postgres-password flag-pass-6 --client-secret=flag-secret-7 --no-token --verbose' \
+  'dial postgresql://cnadmin:pa@ssword9@host:5432/db failed' \
+  'inline wallet-env-key-value and cred-env-value-8 leak' \
+  'tokens are fine and basic auth is a phrase' |
+  env -i PATH="$PATH" MY_API_KEY="wallet-env-key-value" GOOGLE_CREDENTIALS_JSON="cred-env-value-8" bash "$here/redact-secrets.sh")"
+assert_eq "redact-secrets.sh: Basic auth, any-case keys, opaque tokens, API and private keys, flag forms, greedy URI passwords, and *KEY/*CREDENTIAL* env values" \
+  'Authorization: Basic ***
+{"authorization":"Basic ***"}
+BEARER *** sent
+Host=postgres;Username=cnadmin;Password=***;Database=pqs
+Server=db;User Id=sa;Pwd=***;
+Passwd=***
+{"token":"***","user":"alice"}
+X-Auth-Token: ***
+api_key=*** apiKey: *** api-key=***
+private-key = "***"
+client_credentials: ***
+*** tail
+***
+***
+***
+***
+after the key block
+run --target-postgres-password *** --client-secret=*** --no-token --verbose
+dial postgresql://cnadmin:***@host:5432/db failed
+inline *** and *** leak
+tokens are fine and basic auth is a phrase' "$redacted"
 
 ## diagnose.sh redacts the compose logs it uploads
 
@@ -744,7 +852,7 @@ out="$(mktemp)"
 bash "$here/host-diagnostics.sh" start-sampler "$(canton_localnet_memory_samples_file)"
 sampler_pid="$(cat "$(canton_localnet_memory_samples_file).pid")"
 set +e
-PATH="$stub_dir:$PATH" STRICT=true GITHUB_OUTPUT="$out" GITHUB_STEP_SUMMARY="$summary" GITHUB_JOB=probe \
+PATH="$stub_dir:$PATH" STRICT=true GITHUB_OUTPUT="$out" GITHUB_STEP_SUMMARY="$summary" GITHUB_JOB=probe JOB_INDEX=2 GITHUB_RUN_ATTEMPT=3 \
   CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET="TEARDOWN-SYNTHETIC-SECRET-41d8" \
   bash "$here/down.sh" >/dev/null 2>&1
 status=$?
@@ -752,7 +860,7 @@ set -e
 assert_status "down.sh (strict): a succeeding stub 'down' exits 0 with unhealthy containers present" "0" "$status"
 assert_contains "down.sh (strict): summary has the Teardown section" "$(cat "$summary")" '`down --volumes` succeeded.'
 assert_contains "down.sh (strict): summary lists the unhealthy container" "$(cat "$summary")" '| `sv-app` | unhealthy |'
-assert_contains "down.sh (strict): summary names the teardown diagnostics artifact" "$(cat "$summary")" "canton-localnet-teardown-diagnostics-probe"
+assert_contains "down.sh (strict): summary names the teardown diagnostics artifact" "$(cat "$summary")" "canton-localnet-teardown-diagnostics-probe-2-3"
 assert_contains "down.sh (strict): unhealthy containers set unhealthy=true" "$(cat "$out")" "unhealthy=true"
 for _ in 1 2 3 4 5; do
   kill -0 "$sampler_pid" 2>/dev/null || break
@@ -862,6 +970,10 @@ assert_status "boot.sh (pqs: true): runs to completion against a stub CLI" "0" "
 pqs_wait_line="$(grep -- '--pqs' "$boot_argv_log" | grep '^wait-ready' || true)"
 assert_contains "boot.sh (pqs: true): the PQS wait-ready call is recorded" "$pqs_wait_line" "--slot a-validator-1"
 assert_contains "boot.sh (pqs: true): the PQS wait-ready call carries the selected --config" "$pqs_wait_line" "--config $boot_dir/ci-specific.yaml"
+readyz_wait_lines="$(grep '^wait-ready' "$boot_argv_log" | grep -v -- '--pqs' || true)"
+assert_eq "boot.sh (pqs: true): the per-slot readyz waits cover a-validator-1 and sv" "2" "$(printf '%s\n' "$readyz_wait_lines" | grep -c '^wait-ready --url ')"
+assert_eq "boot.sh (pqs: true): every per-slot readyz wait carries the selected --config and --repo-root" "2" \
+  "$(printf '%s\n' "$readyz_wait_lines" | grep -c -F -e "--repo-root $here/.. --config $boot_dir/ci-specific.yaml")"
 bash "$here/host-diagnostics.sh" stop-sampler "$boot_dir/runner-temp/canton-localnet/memory-samples.txt"
 rm -rf "$boot_dir"
 

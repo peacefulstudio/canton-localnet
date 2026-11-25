@@ -23,8 +23,9 @@ the persistent tier.
 Provisioning brings LocalNet up through `scripts/bring-up-localnet.sh`, which
 decides whether the docker volumes survive. After every successful `make up` it
 records a state key in `/mnt/canton-localnet-data/localnet-state-key`:
-`SPLICE_VERSION` (which pins the Canton image), `POSTGRES_VERSION` and
-`CANTON_PROTOCOL_VERSION`. On the next boot it compares that key with the one the
+`SPLICE_VERSION` (which pins the Canton image), the Postgres major (`POSTGRES_VERSION`
+up to its first `.`, `-` or `@`, so a patch bump or digest refresh keeps the
+volumes) and `CANTON_PROTOCOL_VERSION`. On the next boot it compares that key with the one the
 checkout now resolves:
 
 - **Unchanged:** `make down`, which resets containers and keeps the volumes, so

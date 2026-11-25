@@ -87,3 +87,33 @@ func sleepContext(ctx context.Context, d time.Duration) error {
 		return nil
 	}
 }
+
+// retryRead runs an idempotent read under retry: it retries a transient
+// status (see isTransientStatus) or a request timeout, and a result for which
+// incomplete reports true. When the attempts run out it returns the last
+// result or error unchanged.
+func retryRead[T any](ctx context.Context, retry retryOptions, read func() (T, error), incomplete func(T) bool) (T, error) {
+	for attempt := 1; ; attempt++ {
+		result, err := read()
+		if attempt >= retry.MaxAttempts || ctx.Err() != nil {
+			return result, err
+		}
+		if err == nil && !incomplete(result) {
+			return result, nil
+		}
+		if err != nil && !isRetryableReadError(err) {
+			return result, err
+		}
+		if sleepErr := retry.Sleep(ctx, retry.delayForAttempt(attempt)); sleepErr != nil {
+			var zero T
+			return zero, sleepErr
+		}
+	}
+}
+
+func isRetryableReadError(err error) bool {
+	var statusErr *httpStatusError
+	return (errors.As(err, &statusErr) && isTransientStatus(statusErr)) || isRequestTimeout(err)
+}
+
+func neverIncomplete[T any](T) bool { return false }

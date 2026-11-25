@@ -30,6 +30,10 @@ const (
 
 var hexRunPattern = regexp.MustCompile(`[0-9a-f]{64,}`)
 
+// ErrEmptyDar is returned by DarUploader.Upload, wrapped with the DAR path,
+// when the file is zero bytes long. Nothing is sent to the participant.
+var ErrEmptyDar = errors.New("dar: file is empty")
+
 // DarNotVettedError is returned by DarUploader when a synchronizer answered
 // KNOWN_PACKAGE_VERSION but the DAR's main package is not vetted there:
 // Canton rejected a different package id that shares the name and version of
@@ -76,7 +80,8 @@ func (e *DarNotVettedError) Error() string {
 //     multi-sync stacks alike. A stack that reports no connected synchronizer
 //     gets one upload without synchronizerId.
 //   - Transient 503, 504 or 409 REQUEST_ALREADY_IN_FLIGHT: each post is retried
-//     with bounded exponential backoff.
+//     with bounded exponential backoff; the synchronizer discovery and the
+//     vetting read-back are also retried on those and on a request timeout.
 //   - Known version: an HTTP 400 whose body contains "KNOWN_PACKAGE_VERSION"
 //     is success only when the DAR's main package (read from its manifest) is
 //     vetted on that synchronizer; otherwise Upload returns *DarNotVettedError.
@@ -153,6 +158,9 @@ func (d *DarUploader) Upload(ctx context.Context, path string) error {
 	if err != nil {
 		return fmt.Errorf("dar: read %s: %w", path, err)
 	}
+	if len(data) == 0 {
+		return fmt.Errorf("%w: %s", ErrEmptyDar, path)
+	}
 	return d.uploadBytes(ctx, path, data)
 }
 
@@ -188,7 +196,9 @@ func (d *DarUploader) uploadBytes(ctx context.Context, path string, data []byte)
 				return fmt.Errorf("dar: %s reported %s and its manifest is unreadable: %w", path, KnownPackageVersionMarker, err)
 			}
 		}
-		vetted, err := d.admin.isPackageVetted(ctx, mainID, synchronizerID)
+		vetted, err := retryRead(ctx, d.retry, func() (bool, error) {
+			return d.admin.isPackageVetted(ctx, mainID, synchronizerID)
+		}, neverIncomplete[bool])
 		if err != nil {
 			return err
 		}
@@ -206,7 +216,9 @@ func (d *DarUploader) uploadBytes(ctx context.Context, path string, data []byte)
 }
 
 func (d *DarUploader) resolveTargets(ctx context.Context) ([]string, error) {
-	synchronizers, err := d.admin.listConnectedSynchronizers(ctx, "/v2/state/connected-synchronizers")
+	synchronizers, err := retryRead(ctx, d.retry, func() ([]ConnectedSynchronizer, error) {
+		return d.admin.listConnectedSynchronizers(ctx, participantSynchronizersPath)
+	}, neverIncomplete[[]ConnectedSynchronizer])
 	if err != nil {
 		return nil, err
 	}

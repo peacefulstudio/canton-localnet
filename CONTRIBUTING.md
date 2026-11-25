@@ -51,7 +51,7 @@ You'll need [Go 1.23+](https://go.dev/dl/) for the fixture module and
 Go 1.26+ for the CLI module (see each `go.mod` for the authoritative
 minimum), the [.NET SDK](https://dotnet.microsoft.com/download) version
 pinned in `global.json` (when present),
-[Terraform 1.6+](https://developer.hashicorp.com/terraform/install),
+[Terraform 1.14+](https://developer.hashicorp.com/terraform/install),
 and [Docker](https://docs.docker.com/get-docker/) with Compose v2.
 
 ### Pre-commit hook

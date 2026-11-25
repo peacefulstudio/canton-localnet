@@ -52,6 +52,13 @@ type darStub struct {
 	mu       sync.Mutex
 	uploads  []recordedUpload
 	vettings []map[string]any
+	hits     map[string]int
+}
+
+func (s *darStub) hitCount(methodAndPath string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.hits[methodAndPath]
 }
 
 func (s *darStub) uploadCount() int {
@@ -74,6 +81,13 @@ type darStubBehaviour struct {
 	synchronizers string
 	upload        func(attempt int, synchronizerID string, w http.ResponseWriter)
 	vettedOn      map[string]bool
+	failFirst     map[string]darStubFailure
+}
+
+type darStubFailure struct {
+	times  int
+	status int
+	body   string
 }
 
 func newDarStub(t *testing.T, behaviour darStubBehaviour) *darStub {
@@ -84,8 +98,17 @@ func newDarStub(t *testing.T, behaviour darStubBehaviour) *darStub {
 	if behaviour.upload == nil {
 		behaviour.upload = func(int, string, http.ResponseWriter) {}
 	}
-	stub := &darStub{}
+	stub := &darStub{hits: map[string]int{}}
 	stub.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		stub.mu.Lock()
+		stub.hits[r.Method+" "+r.URL.Path]++
+		hit := stub.hits[r.Method+" "+r.URL.Path]
+		stub.mu.Unlock()
+		if failure, ok := behaviour.failFirst[r.Method+" "+r.URL.Path]; ok && hit <= failure.times {
+			w.WriteHeader(failure.status)
+			_, _ = io.WriteString(w, failure.body)
+			return
+		}
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/v2/state/connected-synchronizers":
 			_, _ = io.WriteString(w, behaviour.synchronizers)
@@ -264,6 +287,104 @@ func TestDarUploader_KnownPackageVersionWithTheMainPackageNotVettedFailsNamingTh
 	}
 }
 
+func TestDarUploader_RetriesATransientSynchronizerDiscoveryAnswerThenUploads(t *testing.T) {
+	for name, failure := range map[string]darStubFailure{
+		"503":                           {times: 1, status: http.StatusServiceUnavailable},
+		"504":                           {times: 1, status: http.StatusGatewayTimeout},
+		"409 request already in flight": {times: 1, status: http.StatusConflict, body: requestAlreadyInFlight},
+	} {
+		t.Run(name, func(t *testing.T) {
+			stub := newDarStub(t, darStubBehaviour{failFirst: map[string]darStubFailure{
+				"GET /v2/state/connected-synchronizers": failure,
+			}})
+			u := newDarUploaderFor(t, stub, withDarRetry(noSleepRetry(6, nil)))
+
+			if err := u.Upload(context.Background(), writeTempDar(t, "warming.dar", noopDar(t))); err != nil {
+				t.Fatalf("Upload: %v", err)
+			}
+			if got := stub.hitCount("GET /v2/state/connected-synchronizers"); got != 2 {
+				t.Errorf("discovery calls = %d, want 2", got)
+			}
+			if got := stub.uploadedSynchronizers(); len(got) != 1 || got[0] != "global::122a" {
+				t.Errorf("uploaded synchronizers = %v, want [global::122a]", got)
+			}
+		})
+	}
+}
+
+func TestDarUploader_GivesUpAfterTheAttemptBoundOnAPersistent503FromSynchronizerDiscovery(t *testing.T) {
+	stub := newDarStub(t, darStubBehaviour{failFirst: map[string]darStubFailure{
+		"GET /v2/state/connected-synchronizers": {times: 100, status: http.StatusServiceUnavailable, body: `{"cause":"warming up"}`},
+	}})
+	u := newDarUploaderFor(t, stub, withDarRetry(noSleepRetry(4, nil)))
+
+	err := u.Upload(context.Background(), writeTempDar(t, "cold.dar", noopDar(t)))
+
+	var statusErr *httpStatusError
+	if !errors.As(err, &statusErr) || statusErr.statusCode != http.StatusServiceUnavailable {
+		t.Fatalf("err = %v, want the discovery 503", err)
+	}
+	if got := stub.hitCount("GET /v2/state/connected-synchronizers"); got != 4 {
+		t.Errorf("discovery calls = %d, want 4", got)
+	}
+	if got := stub.uploadCount(); got != 0 {
+		t.Errorf("uploads = %d, want 0", got)
+	}
+}
+
+func TestDarUploader_RetriesATransient503FromTheVettingReadBack(t *testing.T) {
+	for _, flaky := range []string{"GET /v2/parties/participant-id", "POST /v2/package-vetting/list"} {
+		t.Run(flaky, func(t *testing.T) {
+			stub := newDarStub(t, darStubBehaviour{
+				upload:    answerKnownPackageVersion,
+				vettedOn:  map[string]bool{"global::122a": true},
+				failFirst: map[string]darStubFailure{flaky: {times: 1, status: http.StatusServiceUnavailable}},
+			})
+			u := newDarUploaderFor(t, stub, withDarRetry(noSleepRetry(6, nil)))
+
+			if err := u.Upload(context.Background(), writeTempDar(t, "again.dar", noopDar(t))); err != nil {
+				t.Fatalf("Upload: %v", err)
+			}
+			if got := stub.hitCount(flaky); got != 2 {
+				t.Errorf("%s calls = %d, want 2", flaky, got)
+			}
+		})
+	}
+}
+
+func TestDarUploader_MalformedKnownPackageVersionBodyFailsAsNotVettedWithoutConflictingIDs(t *testing.T) {
+	for name, body := range map[string]string{
+		"numeric cause": `{"code":"KNOWN_PACKAGE_VERSION","cause":42}`,
+		"object cause":  `{"code":"KNOWN_PACKAGE_VERSION","cause":{"text":"` + conflictingPackageID + `"}}`,
+		"array root":    `["KNOWN_PACKAGE_VERSION"]`,
+		"string root":   `"KNOWN_PACKAGE_VERSION"`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			stub := newDarStub(t, darStubBehaviour{upload: func(_ int, _ string, w http.ResponseWriter) {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = io.WriteString(w, body)
+			}})
+			u := newDarUploaderFor(t, stub)
+
+			err := u.Upload(context.Background(), writeTempDar(t, "hostile.dar", noopDar(t)))
+
+			var notVetted *DarNotVettedError
+			if !errors.As(err, &notVetted) {
+				t.Fatalf("error = %v, want *DarNotVettedError", err)
+			}
+			if notVetted.MainPackageID != noopMainPackageID {
+				t.Errorf("MainPackageID = %q, want %q", notVetted.MainPackageID, noopMainPackageID)
+			}
+			if len(notVetted.ConflictingPackageIDs) != 0 {
+				t.Errorf("ConflictingPackageIDs = %v, want none", notVetted.ConflictingPackageIDs)
+			}
+			if string(notVetted.ResponseBody) != body {
+				t.Errorf("ResponseBody = %q, want %q", notVetted.ResponseBody, body)
+			}
+		})
+	}
+}
+
 func TestDarUploader_FailsWhenTheMainPackageIsNotVettedOnALaterSynchronizer(t *testing.T) {
 	stub := newDarStub(t, darStubBehaviour{
 		synchronizers: appSynchronizersRaw,
@@ -413,6 +534,32 @@ func TestDarUploader_PropagatesNon2xxNotKnownPackage(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "400") || !strings.Contains(err.Error(), "INVALID_DAR") {
 		t.Errorf("error %q missing status or body", err.Error())
+	}
+}
+
+func TestDarUploader_RejectsAnEmptyDarWithoutContactingTheLedger(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(server.Close)
+	u, err := NewDarUploader(server.URL, staticTokenProvider{token: "tok"}, withDarRetry(noSleepRetry(6, nil)))
+	if err != nil {
+		t.Fatalf("NewDarUploader: %v", err)
+	}
+	path := writeTempDar(t, "empty.dar", nil)
+
+	err = u.Upload(context.Background(), path)
+
+	if !errors.Is(err, ErrEmptyDar) {
+		t.Fatalf("error = %v, want ErrEmptyDar", err)
+	}
+	if !strings.Contains(err.Error(), path) {
+		t.Errorf("error %q does not name the DAR path", err.Error())
+	}
+	if requests != 0 {
+		t.Errorf("requests = %d, want 0", requests)
 	}
 }
 

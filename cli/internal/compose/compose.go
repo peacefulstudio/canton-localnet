@@ -16,7 +16,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/peacefulstudio/canton-localnet/cli/internal/slot"
@@ -286,7 +285,8 @@ type Runner struct {
 	Stdin  io.Reader
 	Dir    string
 	// StopGrace is how long a cancelled docker process has to exit after
-	// SIGTERM, and to release its output pipes, before it is killed.
+	// SIGTERM (on Windows, which has no SIGTERM, it is killed at once), and
+	// to release its output pipes, before it is killed.
 	StopGrace time.Duration
 }
 
@@ -320,7 +320,7 @@ func (r *Runner) RunObserved(ctx context.Context, plan Plan, observe func(line s
 	cmd.Stdin = r.Stdin
 	cmd.Dir = r.Dir
 	cmd.Env = append(os.Environ(), plan.Env...)
-	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+	cmd.Cancel = func() error { return stopProcess(cmd.Process) }
 	cmd.WaitDelay = r.StopGrace
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("docker compose %s: %w", strings.Join(extraArgs, " "), err)

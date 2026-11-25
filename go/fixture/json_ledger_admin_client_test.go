@@ -154,19 +154,46 @@ func TestJsonLedgerAdminClient_PropagatesTokenError(t *testing.T) {
 	}
 }
 
-func TestJsonLedgerAdminClient_RejectsInvalidJSON(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `not json`)
-	}))
-	t.Cleanup(server.Close)
-
-	client, err := NewJsonLedgerAdminClient(server.URL, staticTokenProvider{token: "tok"})
-	if err != nil {
-		t.Fatalf("NewJsonLedgerAdminClient: %v", err)
+func TestJsonLedgerAdminClient_WrapsAnEmptyOrMalformed2xxBodyAsADecodeError(t *testing.T) {
+	calls := map[string]func(context.Context, *JsonLedgerAdminClient) error{
+		"participant-id": func(ctx context.Context, c *JsonLedgerAdminClient) error {
+			_, err := c.GetParticipantId(ctx)
+			return err
+		},
+		"connected-synchronizers": func(ctx context.Context, c *JsonLedgerAdminClient) error {
+			_, err := c.GetConnectedSynchronizers(ctx, "alice::122a")
+			return err
+		},
+		"package-vetting": func(ctx context.Context, c *JsonLedgerAdminClient) error {
+			_, err := c.isPackageVetted(ctx, noopMainPackageID, "global::122a")
+			return err
+		},
 	}
-	if _, err := client.GetParticipantId(context.Background()); err == nil {
-		t.Fatal("expected decode error")
+	for call, invoke := range calls {
+		for _, body := range []string{"", "<html>proxy</html>", `{"participantId":`} {
+			t.Run(call+"/"+body, func(t *testing.T) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					if call == "package-vetting" && r.URL.Path == "/v2/parties/participant-id" {
+						_, _ = io.WriteString(w, `{"participantId":"p1::122a"}`)
+						return
+					}
+					_, _ = io.WriteString(w, body)
+				}))
+				t.Cleanup(server.Close)
+				client, err := NewJsonLedgerAdminClient(server.URL, staticTokenProvider{token: "tok"})
+				if err != nil {
+					t.Fatalf("NewJsonLedgerAdminClient: %v", err)
+				}
+
+				err = invoke(context.Background(), client)
+
+				var syntaxErr *json.SyntaxError
+				if !errors.As(err, &syntaxErr) || !strings.Contains(err.Error(), "admin: decode") {
+					t.Fatalf("error = %v, want an admin decode error wrapping *json.SyntaxError", err)
+				}
+			})
+		}
 	}
 }
 

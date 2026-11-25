@@ -102,17 +102,6 @@ func TestBuildArgsHonoursCustomPort(t *testing.T) {
 	}
 }
 
-func TestBuildArgsAppendsExtraArgs(t *testing.T) {
-	t.Parallel()
-	args, err := BuildArgs(Options{Host: "h", ExtraArgs: []string{"-o", "LogLevel=DEBUG"}})
-	if err != nil {
-		t.Fatalf("BuildArgs: %v", err)
-	}
-	if !containsAdjacent(args, "-o", "LogLevel=DEBUG") {
-		t.Errorf("expected extra args appended, got %v", args)
-	}
-}
-
 func TestBuildArgsSetsStrictHostKeyCheckingAcceptNew(t *testing.T) {
 	t.Parallel()
 	args, err := BuildArgs(Options{Host: "h"})
@@ -267,7 +256,7 @@ func TestBuildArgsRejectsADestinationThatReadsAsAnSSHOption(t *testing.T) {
 
 func TestBuildArgsEndsOptionsBeforeTheDestination(t *testing.T) {
 	t.Parallel()
-	args, err := BuildArgs(Options{Host: "203.0.113.10", User: "ubuntu", ExtraArgs: []string{"-o", "LogLevel=DEBUG"}})
+	args, err := BuildArgs(Options{Host: "203.0.113.10", User: "ubuntu"})
 	if err != nil {
 		t.Fatalf("BuildArgs: %v", err)
 	}

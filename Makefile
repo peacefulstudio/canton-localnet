@@ -133,8 +133,13 @@ UP_TIMEOUT ?=
 UP_KILL_AFTER ?= 30s
 UP_TIMEOUT_PREFIX := $(if $(UP_TIMEOUT),timeout --kill-after=$(UP_KILL_AFTER) $(UP_TIMEOUT))
 
+DOCKER_VERSION_CHECK_STRICT := $(filter true,$(STRICT))
+DOCKER_VERSION_CHECK := $(UP_TIMEOUT_PREFIX) $(COMPOSE_DIR)/scripts/check-docker-version.sh $(if $(DOCKER_VERSION_CHECK_STRICT),--strict)
+DOCKER_VERSION_CHECK_FAILED := $(if $(DOCKER_VERSION_CHECK_STRICT),exit 1,echo "::warning::could not verify the Docker server version: ports published to 127.0.0.1 are reachable from the local network segment on Docker servers below 28.0.0" >&2)
+
 .PHONY: up
-up: ## Start LocalNet (auth mode: $(AUTH_MODE)); UP_TIMEOUT=15m kills a start that hangs, UP_KILL_AFTER after a SIGTERM it ignores
+up: ## Start LocalNet (auth mode: $(AUTH_MODE)); UP_TIMEOUT=15m kills a start that hangs, UP_KILL_AFTER after a SIGTERM it ignores; warns on Docker below 28 (STRICT=true fails)
+	@$(DOCKER_VERSION_CHECK) || $(DOCKER_VERSION_CHECK_FAILED)
 	$(UP_TIMEOUT_PREFIX) $(DOCKER_COMPOSE) up -d
 
 .PHONY: down
@@ -192,6 +197,24 @@ check-port-bind-ip: ## Assert every published port is bound to HOST_BIND_IP (def
 .PHONY: check-docker-version
 check-docker-version: ## Warn (or, with STRICT=true, fail) if the local Docker server is below the loopback-safe minimum
 	@$(COMPOSE_DIR)/scripts/check-docker-version.sh $(if $(filter true,$(STRICT)),--strict,)
+
+.PHONY: lint
+lint: lint-conflict-markers lint-shell ## Fail on a tracked conflict marker, then shellcheck the shell scripts
+
+.PHONY: lint-conflict-markers
+lint-conflict-markers: ## Fail on a tracked line that opens with a git conflict marker
+	@if git grep -nE '^(<{7}|={7}|>{7})( |$$)'; then \
+	  echo "error: the lines above open with a git conflict marker; finish the merge before committing." >&2; \
+	  exit 1; \
+	else \
+	  status=$$?; \
+	  [ "$$status" -eq 1 ] || { echo "error: git grep failed with status $$status" >&2; exit "$$status"; }; \
+	  echo "No conflict marker in the tracked files."; \
+	fi
+
+.PHONY: lint-shell
+lint-shell: ## Shellcheck scripts/*.sh and .github/scripts/*.sh
+	shellcheck $(wildcard scripts/*.sh .github/scripts/*.sh)
 
 .PHONY: prune-rights
 prune-rights: ## Revoke the leaked ledger rights on SLOT's validator user. Destructive, and SLOT defaults to a: prints the plan and asks before revoking, unless YES is set to anything other than 0

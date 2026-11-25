@@ -12,6 +12,8 @@ paired teardown action removes the stack and uploads diagnostics if anything
 went wrong. Your tests only read environment variables, so any language works:
 Rust, TypeScript, Java, .NET, Go.
 
+![Diagram of one GitHub Actions job on a Linux runner with Docker. The boot step resolves the canton-localnet CLI, cleans up any leftover localnet compose project, runs docker compose up with one retry, waits until every slot is ready and exports every endpoint and credential to GITHUB_ENV with secrets masked. Your test steps read the CANTON_LOCALNET slot variables, get a token from the slot's Keycloak realm and call the JSON or gRPC Ledger API. The teardown step always runs, removes the stack with its volumes and uploads diagnostics on failure. Docker runs the Super Validator, Scan and the token-standard registry, Keycloak and validator slot a, plus optional slots b to d, PQS and observability, on 127.0.0.1 only.](images/github-action.svg)
+
 ## Quickstart
 
 ```yaml
@@ -22,7 +24,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Boot LocalNet
-        uses: peacefulstudio/canton-localnet@v0.10.2-1
+        uses: peacefulstudio/canton-localnet@v0.10.3-1
         with:
           validators: a
           pqs: false
@@ -34,7 +36,7 @@ jobs:
 
       - name: Tear down
         if: always()
-        uses: peacefulstudio/canton-localnet/teardown@v0.10.2-1
+        uses: peacefulstudio/canton-localnet/teardown@v0.10.3-1
 ```
 
 The inputs under `with:` are all shown at their default values, so dropping
@@ -52,7 +54,7 @@ on the repository's `dev` branch.
 The snippet pins the action by its release tag. Every release is published as
 an immutable GitHub release. For supply-chain hardening, pin the full 40-character
 commit SHA of that tag instead, with the tag as a trailing comment
-(`@<sha> # v0.10.2-1`). A tag can move; a SHA cannot. To find
+(`@<sha> # v0.10.3-1`). A tag can move; a SHA cannot. To find
 it, resolve the tag on the public repository:
 
 ```bash
@@ -70,9 +72,9 @@ they run the same version. A SHA pin rules out `cli: release`; see
 
 | | |
 |---|---|
-| Release | `v0.10.2-1` |
-| Splice | 0.10.2 |
-| Canton | 3.7.3 |
+| Release | `v0.10.3-1` |
+| Splice | 0.10.3 |
+| Canton | 3.7.4 |
 | Synchronizer protocol version | 37 by default (Splice 0.10.0 moved it from 36) |
 | Auth | OAuth2 through a Keycloak realm per validator slot, with the fixed public LocalNet demo clients |
 | PQS (Participant Query Store) | Off. Set `pqs: true` for slots `a`, `b` and `c` |
@@ -102,7 +104,8 @@ verified.
   standard `ubuntu-latest` runner of a public repository or a larger runner.
 - **Tested on Linux x86_64 only**, on GitHub-hosted `ubuntu-latest` and on
   self-hosted runners with rootless Docker. arm64, macOS and Windows runners
-  are untested.
+  are untested. `cli: release` also needs the GitHub CLI (`gh`) on `PATH`;
+  install it on a self-hosted runner.
 - **One LocalNet per Docker daemon.** See below.
 
 ## What your tests get
@@ -214,7 +217,7 @@ error.
 | `party` | `false` | Export each enabled slot's validator primary party as `CANTON_LOCALNET_<SLOT>_PARTY` (for `a`: `a-validator-1::1220…`), read from the validator user (`GET /v2/users/{id}` → `primaryParty`) after a token mint. The validator user holds `CanActAs` on that party. Off by default. The token is minted for the lookup only; it is exported only with `jwt: true`. |
 | `timeout` | `15m` | One total deadline shared by pre-boot cleanup, `up` (with its one retry) and `wait-ready` together — not a per-slot timeout. |
 | `up-timeout` | empty | Longest one `up` attempt may take (e.g. `15m`) before it is killed and the one retry starts. Empty or zero lets an attempt use whatever is left of `timeout`; set it below `timeout` to keep room for the retry, because LocalNet's own health check retries for hours and a stalled boot otherwise spends the whole budget. |
-| `cli` | `source` | `source` builds the CLI with `go build` from the action's own checkout (~9s measured with a warm Go module cache). `release` downloads the release asset matching the action's pinned ref and verifies it against that release's `checksums.txt`; valid only when the action's own `uses:` is pinned to a literal release tag (not its commit SHA — `github.action_ref` resolves to whichever form the pin used), and it fails closed — never falls back silently — on a non-tag ref, a missing asset, a download error, or a checksum mismatch. |
+| `cli` | `source` | `source` builds the CLI with `go build` from the action's own checkout (~9s measured with a warm Go module cache). `release` downloads the release asset matching the action's pinned ref and verifies it against that release's `checksums.txt` and against the build provenance attestation `release.yml` signed for it from that release's tag (`gh attestation verify --source-ref refs/tags/<tag>`, bounded at 120s); it needs the GitHub CLI (`gh`) on the runner's `PATH`, which GitHub-hosted runners ship and a self-hosted runner must install, and reports a missing `gh` or a timed-out check as such. Valid only when the action's own `uses:` is pinned to a literal release tag (not its commit SHA — `github.action_ref` resolves to whichever form the pin used), and it fails closed — never falls back silently — on a non-tag ref, a missing asset, a download error, a checksum mismatch, or an attestation that does not match the release workflow and tag. |
 | `config` | *(empty)* | Path (relative to your workspace) to a `canton-localnet.yaml` to use verbatim, instead of the one generated from `validators`/`pqs`/`observability`/`multi-sync`. When set, also set `validators` (and `pqs`) to match what that file actually enables — `wait-ready` and the env export still key off `validators`, not off parsing your file. |
 
 ## Outputs
@@ -246,7 +249,7 @@ Every run leaves a compact report in the job summary:
 - a **Teardown** section, appended by `.../teardown`: whether `down --volumes`
   succeeded, and any container that was unhealthy or had exited non-zero when
   teardown began. Their logs are uploaded in the
-  `canton-localnet-teardown-diagnostics-<job>` artifact.
+  `canton-localnet-teardown-diagnostics-<job>-<job-index>-<run-attempt>` artifact.
 
 The tables are rendered by `canton-localnet env --format github
 --summary-file <path>` from the same values it writes to `$GITHUB_ENV`, so the
@@ -260,7 +263,7 @@ still `health: starting`, restarting or exited non-zero, and prints the last 50
 log lines of each (at most ten containers, secrets redacted), so a node that
 never finished initializing is named without downloading anything. The action
 also uploads the
-`canton-localnet-diagnostics-<job>` artifact, kept for 7 days: container
+`canton-localnet-diagnostics-<job>-<job-index>-<run-attempt>` artifact, kept for 7 days: container
 status, recent compose logs, and the Docker networks and volumes. Its `host/`
 folder holds `free -m`, `nproc`, the kernel out-of-memory lines from `dmesg`
 and the peak memory used during the run and, for this LocalNet's compose
@@ -270,6 +273,8 @@ exit code and health, and the tail of the `splice` and `canton` logs. When the f
 it to tell a runner that ran out of memory or CPU from a LocalNet fault.
 Containers of other workloads on a shared Docker daemon are never listed or
 logged.
+
+`<job-index>` is the matrix leg's `strategy.job-index` (`0` outside a matrix) and `<run-attempt>` is `github.run_attempt`, so the legs of a matrix and the re-run of a job each upload under their own name. Download by that name, for example `canton-localnet-diagnostics-test-0-1`.
 
 A boot that passes can still carry a warning annotation: when `splice` restarted once
 because its start-up initialization timed out on a starved runner, the action accepts the

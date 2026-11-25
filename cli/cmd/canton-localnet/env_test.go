@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -319,11 +320,11 @@ func TestEnvPqsPercentEncodesUserAndPasswordInTheLibpqURI(t *testing.T) {
 	}
 }
 
-func TestEnvPqsHonoursPostgresHostPortHostSegment(t *testing.T) {
+func TestEnvPqsUsesABarePostgresHostPortAsThePqsPort(t *testing.T) {
 	root := newEnvTestRepoRoot(t, "0.8.3-pin")
 	t.Setenv("CANTON_LOCALNET_HOST", "localhost")
 	t.Setenv("CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET", "x")
-	t.Setenv("POSTGRES_HOST_PORT", "127.0.0.1:6543:5432")
+	t.Setenv("POSTGRES_HOST_PORT", "6543")
 
 	stdout := captureRoot(t, "env", "--slot", "a", "--pqs", "--format", "json", "--repo-root", root)
 	var got map[string]string
@@ -331,7 +332,27 @@ func TestEnvPqsHonoursPostgresHostPortHostSegment(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got["CANTON_LOCALNET_A_VALIDATOR_1_PQS_PORT"] != "6543" {
-		t.Errorf("pqs port: got %q, want the host-port segment 6543", got["CANTON_LOCALNET_A_VALIDATOR_1_PQS_PORT"])
+		t.Errorf("pqs port: got %q, want 6543", got["CANTON_LOCALNET_A_VALIDATOR_1_PQS_PORT"])
+	}
+}
+
+func TestEnvPqsRejectsAPostgresHostPortComposeDoesNotAccept(t *testing.T) {
+	for _, raw := range []string{"5433:5432", "127.0.0.1:6543:5432", "127.0.0.1:6543", "abc", "0", "65536", "-1", "6543 "} {
+		t.Run(raw, func(t *testing.T) {
+			root := newEnvTestRepoRoot(t, "0.8.3-pin")
+			t.Setenv("CANTON_LOCALNET_HOST", "localhost")
+			t.Setenv("CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET", "x")
+			t.Setenv("POSTGRES_HOST_PORT", raw)
+
+			err := executeRootError(t, "env", "--slot", "a", "--pqs", "--format", "json", "--repo-root", root)
+			if err == nil {
+				t.Fatalf("POSTGRES_HOST_PORT=%q: want an error", raw)
+			}
+			want := "env: POSTGRES_HOST_PORT=" + strconv.Quote(raw) + " is not a bare host port between 1 and 65535"
+			if err.Error() != want {
+				t.Errorf("got %q, want %q", err.Error(), want)
+			}
+		})
 	}
 }
 
@@ -1107,5 +1128,46 @@ func TestEnvPortsFollowParticipantPortSuffixOverrides(t *testing.T) {
 		if got[k] != v {
 			t.Errorf("%s: got %q, want %q", k, got[k], v)
 		}
+	}
+}
+
+func TestEnvPqsRendersAnEdgeCaseReaderPasswordTheSameWayInBothForms(t *testing.T) {
+	cases := []struct {
+		name         string
+		password     string
+		wantPassword string
+	}{
+		{"leading double quote", `"quoted`, `Password="""quoted"`},
+		{"leading single quote", `'quoted`, `Password="'quoted"`},
+		{"leading space", " lead", `Password=" lead"`},
+		{"trailing space", "trail ", `Password="trail "`},
+		{"leading tab", "\ttab", "Password=\"\ttab\""},
+		{"inner space", "in ner", "Password=in ner"},
+		{"inner single quote", "it's", "Password=it's"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := newEnvTestRepoRoot(t, "0.8.3-pin")
+			t.Setenv("CANTON_LOCALNET_HOST", "localhost")
+			t.Setenv("CANTON_LOCALNET_A_VALIDATOR_1_CLIENT_SECRET", "x")
+			t.Setenv("PQS_A_VALIDATOR_1_READER_PASSWORD", tc.password)
+
+			stdout := captureRoot(t, "env", "--slot", "a", "--pqs", "--format", "json", "--repo-root", root)
+			var got map[string]string
+			if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+				t.Fatal(err)
+			}
+			want := "Host=localhost;Port=5432;Database=pqs-a-validator-1;Username=pqs-a-validator-1-reader;" + tc.wantPassword
+			if got["CANTON_LOCALNET_A_VALIDATOR_1_PQS_CONNECTION_STRING"] != want {
+				t.Errorf("pqs connection string: got %q, want %q", got["CANTON_LOCALNET_A_VALIDATOR_1_PQS_CONNECTION_STRING"], want)
+			}
+			uri, err := url.Parse(got["CANTON_LOCALNET_A_VALIDATOR_1_PQS_URL"])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if password, _ := uri.User.Password(); password != tc.password {
+				t.Errorf("pqs url password: got %q, want %q", password, tc.password)
+			}
+		})
 	}
 }

@@ -426,6 +426,97 @@ public class DarUploaderTests
         Assert.Empty(exception.ConflictingPackageIds);
     }
 
+    [Theory]
+    [InlineData(503, "")]
+    [InlineData(504, "")]
+    [InlineData(409, """{"code":"REQUEST_ALREADY_IN_FLIGHT"}""")]
+    public async Task UploadAsync_retries_a_transient_synchronizer_discovery_answer_then_uploads(int status, string body)
+    {
+        var discoveries = 0;
+        var handler = new RecordingHandler((request, _) =>
+        {
+            if (request.Method == HttpMethod.Get && Interlocked.Increment(ref discoveries) == 1)
+            {
+                return Task.FromResult(new HttpResponseMessage((HttpStatusCode)status)
+                {
+                    Content = new StringContent(body, Encoding.UTF8, "application/json"),
+                });
+            }
+            return SynchronizerDiscoveryResponder.WithConnectedSynchronizers((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)))(request, CancellationToken.None);
+        });
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var uploader = NoSleepUploader(http, StaticTokenProvider("tok"));
+
+        var outcome = await uploader.UploadAsync(new byte[] { 1, 2, 3 }, "warming.dar");
+
+        Assert.Equal(DarUploadOutcome.Uploaded, outcome);
+        Assert.Equal(2, discoveries);
+        var post = Assert.Single(handler.Requests, r => r.Method == HttpMethod.Post);
+        Assert.Equal(SynchronizerDiscoveryResponder.DefaultGlobalSynchronizerId, SynchronizerIdFromQuery(post.Uri));
+    }
+
+    [Fact]
+    public async Task UploadAsync_gives_up_after_the_attempt_bound_on_a_persistent_503_from_synchronizer_discovery()
+    {
+        var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+        {
+            Content = new StringContent("""{"cause":"warming up"}""", Encoding.UTF8, "application/json"),
+        }));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var uploader = NoSleepUploader(http, StaticTokenProvider("tok"));
+
+        var exception = await Assert.ThrowsAsync<JsonLedgerApiException>(
+            () => uploader.UploadAsync(new byte[] { 1, 2, 3 }, "cold.dar"));
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, exception.StatusCode);
+        Assert.Equal(6, handler.Requests.Count(r => r.Method == HttpMethod.Get));
+        Assert.DoesNotContain(handler.Requests, r => r.Method == HttpMethod.Post);
+    }
+
+    [Theory]
+    [InlineData("v2/parties/participant-id")]
+    [InlineData("v2/package-vetting/list")]
+    public async Task UploadAsync_retries_a_transient_503_from_the_vetting_read_back(string flakyPath)
+    {
+        var flaked = 0;
+        var vetting = WithVetting((_, _) => Task.FromResult(KnownPackageVersion()), _ => true);
+        var handler = new RecordingHandler((request, ct) =>
+            request.RequestUri!.AbsolutePath.EndsWith(flakyPath, StringComparison.Ordinal) && Interlocked.Increment(ref flaked) == 1
+                ? Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable))
+                : vetting(request, ct));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var uploader = NoSleepUploader(http, StaticTokenProvider("tok"));
+
+        var outcome = await uploader.UploadAsync(DarFixtures.NoopDar(), "again.dar");
+
+        Assert.Equal(DarUploadOutcome.AlreadyKnown, outcome);
+        Assert.Equal(2, flaked);
+    }
+
+    [Theory]
+    [InlineData("""{"code":"KNOWN_PACKAGE_VERSION","cause":42}""")]
+    [InlineData("""{"code":"KNOWN_PACKAGE_VERSION","cause":{"text":"d0048119d779f3dc1c02dd2549c6281cdd72998bc3c9bc514fe07ff5d5365bbd"}}""")]
+    [InlineData("""["KNOWN_PACKAGE_VERSION"]""")]
+    [InlineData("\"KNOWN_PACKAGE_VERSION\"")]
+    public async Task UploadAsync_throws_dar_not_vetted_without_conflicting_ids_for_a_malformed_known_package_version_body(string body)
+    {
+        var handler = new RecordingHandler(WithVetting(
+            (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
+            }),
+            _ => false));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var uploader = new DarUploader(http, StaticTokenProvider("tok"));
+
+        var exception = await Assert.ThrowsAsync<DarNotVettedException>(
+            () => uploader.UploadAsync(DarFixtures.NoopDar(), "hostile.dar"));
+
+        Assert.Equal("b1008daac9810baa8ca7ff313c13bd48d65f18040b2d33faabe5b5d39acaac9e", exception.MainPackageId);
+        Assert.Empty(exception.ConflictingPackageIds);
+        Assert.Equal(body, exception.ResponseBody);
+    }
+
     [Fact]
     public async Task UploadAsync_throws_when_the_main_package_is_not_vetted_on_the_second_synchronizer_only()
     {
@@ -627,14 +718,34 @@ public class DarUploaderTests
     [Fact]
     public async Task UploadAsync_rejects_empty_payload()
     {
-        using var http = new HttpClient(new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK))))
-        {
-            BaseAddress = JsonApiBase,
-        };
+        var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
         var uploader = new DarUploader(http, StaticTokenProvider("tok"));
 
         await Assert.ThrowsAsync<ArgumentException>(
             () => uploader.UploadAsync(Array.Empty<byte>(), "empty.dar"));
+        Assert.Empty(handler.Requests);
+    }
+
+    [Fact]
+    public async Task UploadAsync_rejects_an_empty_dar_file_without_contacting_the_ledger()
+    {
+        var directory = Directory.CreateTempSubdirectory("dar-uploader-tests-");
+        try
+        {
+            var path = Path.Combine(directory.FullName, "empty.dar");
+            await File.WriteAllBytesAsync(path, Array.Empty<byte>());
+            var handler = new RecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)));
+            using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+            var uploader = NoSleepUploader(http, StaticTokenProvider("tok"));
+
+            await Assert.ThrowsAsync<ArgumentException>(() => uploader.UploadAsync(path));
+            Assert.Empty(handler.Requests);
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
     }
 
     [Fact]

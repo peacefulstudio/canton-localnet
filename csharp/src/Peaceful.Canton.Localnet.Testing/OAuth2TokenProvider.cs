@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Peaceful Studio OÜ
 // SPDX-License-Identifier: Apache-2.0
 
-using System.Net.Http.Json;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -136,23 +136,41 @@ public sealed class OAuth2TokenProvider : IDisposable
             _options.ClientId,
             _options.Audience);
 
-        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        var body = await BoundedBody.ReadWithinBoundAsync(response.Content, _httpClient.Timeout, cancellationToken).ConfigureAwait(false)
+            ?? throw new OAuth2TokenException(
+                BoundedBody.TooLargeMessage($"Token endpoint {_options.TokenEndpoint}", response),
+                response.StatusCode,
+                string.Empty);
         if (!response.IsSuccessStatusCode)
         {
-            var body = await BoundedBody.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
             throw new OAuth2TokenException(
                 $"Token endpoint {_options.TokenEndpoint} returned {(int)response.StatusCode} {response.ReasonPhrase}: {BoundedBody.ForMessage(body)}",
                 response.StatusCode,
                 body);
         }
 
-        var payload = await response.Content
-            .ReadFromJsonAsync<TokenResponse>(cancellationToken: cancellationToken)
-            .ConfigureAwait(false)
-            ?? throw new OAuth2TokenException(
+        TokenResponse? payload;
+        try
+        {
+            payload = JsonSerializer.Deserialize<TokenResponse>(body, JsonSerializerOptions.Web);
+        }
+        catch (JsonException e)
+        {
+            throw new OAuth2TokenException(
+                $"Token endpoint {_options.TokenEndpoint} returned {(int)response.StatusCode} {response.ReasonPhrase} with a body that is not valid JSON.",
+                response.StatusCode,
+                string.Empty,
+                e);
+        }
+
+        if (payload is null)
+        {
+            throw new OAuth2TokenException(
                 $"Token endpoint {_options.TokenEndpoint} returned an empty body.",
                 response.StatusCode,
                 string.Empty);
+        }
 
         if (string.IsNullOrEmpty(payload.AccessToken))
         {
@@ -205,9 +223,20 @@ public sealed class OAuth2TokenException : Exception
     /// </summary>
     /// <param name="message">Human-readable description of the failure.</param>
     /// <param name="statusCode">HTTP status the token endpoint returned.</param>
-    /// <param name="responseBody">Response body, capped at 16 MiB, or empty when none was read.</param>
+    /// <param name="responseBody">Response body of at most 16 MiB, or empty when none was read or the body exceeded that bound.</param>
     public OAuth2TokenException(string message, System.Net.HttpStatusCode statusCode, string responseBody)
         : base(message)
+    {
+        StatusCode = statusCode;
+        ResponseBody = responseBody;
+    }
+
+    internal OAuth2TokenException(
+        string message,
+        System.Net.HttpStatusCode statusCode,
+        string responseBody,
+        Exception innerException)
+        : base(message, innerException)
     {
         StatusCode = statusCode;
         ResponseBody = responseBody;
@@ -216,6 +245,6 @@ public sealed class OAuth2TokenException : Exception
     /// <summary>HTTP status the token endpoint returned.</summary>
     public System.Net.HttpStatusCode StatusCode { get; }
 
-    /// <summary>Response body, capped at 16 MiB, or empty when none was read.</summary>
+    /// <summary>Response body of at most 16 MiB, or empty when none was read or the body exceeded that bound.</summary>
     public string ResponseBody { get; }
 }

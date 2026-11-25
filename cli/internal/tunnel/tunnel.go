@@ -62,7 +62,6 @@ type Options struct {
 	Port         int
 	Ports        []int
 	Binary       string
-	ExtraArgs    []string
 }
 
 // ErrSSHMissing is returned when the ssh binary cannot be located on
@@ -135,7 +134,6 @@ func BuildArgs(opts Options) ([]string, error) {
 	args = append(args, "-o", "StrictHostKeyChecking=accept-new")
 	args = append(args, "-o", "ServerAliveInterval=60")
 	args = append(args, "-o", "ServerAliveCountMax=3")
-	args = append(args, opts.ExtraArgs...)
 
 	dest := opts.Host
 	if opts.User != "" {
