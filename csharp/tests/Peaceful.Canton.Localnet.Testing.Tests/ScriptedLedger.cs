@@ -84,8 +84,10 @@ internal sealed class ScriptedLedger : IDisposable
             {
                 context = await _listener.GetContextAsync().ConfigureAwait(false);
             }
-            catch (Exception e) when (e is HttpListenerException or ObjectDisposedException)
+            catch (Exception e) when (e is HttpListenerException or ObjectDisposedException || !_listener.IsListening)
             {
+                // Workaround: on Windows the HTTP.sys-backed HttpListener throws ArgumentException
+                // from ThreadPoolBoundHandle.BindHandleCore when Close() lands before BeginGetContext.
                 return;
             }
 
