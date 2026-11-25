@@ -26,18 +26,19 @@ permissions:
 
 jobs:
   unit:
-    name: unit (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    name: unit (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(github.event_name == 'push' && '["ubuntu-latest","macos-latest"]' || '["ubuntu-latest"]') }}
+        include: ${{ fromJSON(github.repository == 'peacefulstudio/canton-localnet' && (github.event_name == 'push' && '[{"name":"ubuntu-latest","runner":"ubuntu-latest"},{"name":"macos-latest","runner":"macos-latest"}]' || '[{"name":"ubuntu-latest","runner":"ubuntu-latest"}]') || (vars.CI_MATRIX_MODE == 'full' && github.event_name == 'push' && '[{"name":"hetzner","runner":["self-hosted","hetzner"]},{"name":"macos-latest","runner":"macos-latest"}]' || '[{"name":"hetzner","runner":["self-hosted","hetzner"]}]')) }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: '1.26'
           cache-dependency-path: go/fixture/go.sum
@@ -56,13 +57,14 @@ jobs:
 
   floor:
     name: floor (go.mod minimum)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.repository == 'peacefulstudio/canton-localnet' && '"ubuntu-latest"' || '["self-hosted","hetzner"]') }}
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go/fixture/go.mod
           cache-dependency-path: go/fixture/go.sum

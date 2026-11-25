@@ -48,7 +48,7 @@ jobs:
   net10-runtime-tests:
     name: tests on the .NET 10 runtime
     if: github.repository == 'peacefulstudio/canton-localnet' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.repository == 'peacefulstudio/canton-localnet' && '"ubuntu-latest"' || '["self-hosted","hetzner"]') }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -73,7 +73,7 @@ jobs:
     name: consumer build with only the .NET 10 SDK
     needs: ci
     if: github.repository == 'peacefulstudio/canton-localnet' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.repository == 'peacefulstudio/canton-localnet' && '"ubuntu-latest"' || '["self-hosted","hetzner"]') }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -113,6 +113,14 @@ jobs:
               <add key="packed" value="../feed" />
               <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
             </packageSources>
+            <packageSourceMapping>
+              <packageSource key="packed">
+                <package pattern="Peaceful.Canton.Localnet.Testing" />
+              </packageSource>
+              <packageSource key="nuget.org">
+                <package pattern="*" />
+              </packageSource>
+            </packageSourceMapping>
           </configuration>
           XML
           cat >"${consumer}/Consumer.csproj" <<XML
@@ -135,6 +143,6 @@ jobs:
           CS
           cd "${consumer}"
           dotnet --version | grep -E '^10\.'
-          dotnet restore
+          dotnet restore --packages "${consumer}/packages"
           dotnet build --no-restore
           dotnet run --no-build | grep -F 'a-validator-1'

@@ -46,7 +46,7 @@ jobs:
     name: integration (compose stack)
     # LocalNet peaks near 7.6 GiB and starves 2 vCPU / 8 GB runners; these lanes run on 4 vCPU / 16 GB runners, or by manual dispatch.
     if: github.repository == 'peacefulstudio/canton-localnet' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.repository == 'peacefulstudio/canton-localnet' && '"ubuntu-latest"' || '["self-hosted","hetzner","localnet"]') }}
     timeout-minutes: 40
     env:
       AUTH_MODE: oauth2
@@ -62,7 +62,7 @@ jobs:
         run: bash action/host-diagnostics.sh start-sampler "${MEMORY_SAMPLES_FILE}"
 
       - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: '1.26'
           cache-dependency-path: cli/go.sum
@@ -109,7 +109,7 @@ jobs:
           if ! "${GITHUB_WORKSPACE}/canton-localnet" up --timeout "${LOCALNET_UP_TIMEOUT}"; then
             echo "::warning::canton-localnet up failed on first attempt — capturing diagnostics, tearing down with volumes, and retrying once"
             docker ps -a > /tmp/docker-ps-attempt1.txt 2>&1 || true
-            timeout 60 make logs > /tmp/logs-attempt1.txt 2>&1 || true
+            timeout 60 make logs 2>&1 | bash action/redact-secrets.sh > /tmp/logs-attempt1.txt || true
             bash action/host-diagnostics.sh capture "${HOST_DIAGNOSTICS_DIR}/attempt1" "${MEMORY_SAMPLES_FILE}"
             "${GITHUB_WORKSPACE}/canton-localnet" down --volumes || echo "::warning::pre-retry teardown failed; second up may fail with leaked state"
             sleep 30
@@ -208,7 +208,7 @@ jobs:
         run: |
           set -euo pipefail
           make status > /tmp/compose-status.txt 2>&1 || true
-          timeout 30 make logs > /tmp/compose-logs.txt 2>&1 || true
+          timeout 30 make logs 2>&1 | bash action/redact-secrets.sh > /tmp/compose-logs.txt || true
           docker ps -a > /tmp/docker-ps.txt 2>&1 || true
           bash action/host-diagnostics.sh capture "${HOST_DIAGNOSTICS_DIR}/final" "${MEMORY_SAMPLES_FILE}"
 

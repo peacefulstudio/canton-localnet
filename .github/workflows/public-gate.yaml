@@ -20,7 +20,7 @@ permissions:
 jobs:
   gate:
     name: public-gate
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.repository == 'peacefulstudio/canton-localnet' && '"ubuntu-latest"' || '["self-hosted","hetzner"]') }}
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -41,12 +41,32 @@ jobs:
             echo "extra_args=" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Take the gate scripts from the trusted base ref, not the PR's own tree
+        id: gate-scripts
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ] && [ -n "${GITHUB_BASE_REF:-}" ]; then
+            gate_dir="${RUNNER_TEMP}/gate-scripts"
+            mkdir -p "${gate_dir}"
+            for script in leak-check.sh no-ai-workflows-audit.sh; do
+              if ! git show "origin/${GITHUB_BASE_REF}:.github/scripts/${script}" > "${gate_dir}/${script}"; then
+                echo "::error::origin/${GITHUB_BASE_REF} has no .github/scripts/${script}, so the gate has no trusted copy to run against this PR."
+                exit 1
+              fi
+            done
+          else
+            gate_dir=".github/scripts"
+          fi
+          echo "dir=${gate_dir}" >> "$GITHUB_OUTPUT"
+
       - name: Leak check
         env:
           EXTRA_ARGS: ${{ steps.scan-mode.outputs.extra_args }}
-        run: bash .github/scripts/leak-check.sh ${EXTRA_ARGS:+"$EXTRA_ARGS"} .
+          GATE_DIR: ${{ steps.gate-scripts.outputs.dir }}
+        run: bash "${GATE_DIR}/leak-check.sh" ${EXTRA_ARGS:+"$EXTRA_ARGS"} .
 
       - name: No-AI-workflows audit
         env:
           EXTRA_ARGS: ${{ steps.scan-mode.outputs.extra_args }}
-        run: bash .github/scripts/no-ai-workflows-audit.sh ${EXTRA_ARGS:+"$EXTRA_ARGS"} .
+          GATE_DIR: ${{ steps.gate-scripts.outputs.dir }}
+        run: bash "${GATE_DIR}/no-ai-workflows-audit.sh" ${EXTRA_ARGS:+"$EXTRA_ARGS"} .
