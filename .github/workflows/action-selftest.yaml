@@ -2,9 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Self-test for the composite Action (/action.yml, /teardown/action.yml).
-# Runs on the same free ubuntu-latest runner as compose-integration.yaml
-# and integration-tests.yaml — this repo's own boot/teardown self-test
-# never needs a persistent self-hosted runner.
+# Runs on GitHub-hosted runners on the public twin and on the Hetzner
+# pool here, like compose-integration.yaml and integration-tests.yaml.
 #
 # T1 unit: shell-logic tests for action/*.sh with no docker daemon
 #   involved (plain bash), plus an in-process
@@ -83,14 +82,14 @@ permissions:
 jobs:
   unit:
     name: T1 unit (action/*.sh, no docker) + in-process masking check
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.repository == 'peacefulstudio/canton-localnet' && '"ubuntu-latest"' || '["self-hosted","hetzner"]') }}
     timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: cli/go.mod
           cache-dependency-path: cli/go.sum
@@ -106,7 +105,7 @@ jobs:
 
   pinned-literal-contract:
     name: T3 pinned-literal contract
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.repository == 'peacefulstudio/canton-localnet' && '"ubuntu-latest"' || '["self-hosted","hetzner"]') }}
     timeout-minutes: 5
     steps:
       - name: Checkout
@@ -124,14 +123,14 @@ jobs:
           echo "ok: every 'uses:' line in action.yml, teardown/action.yml and this workflow is a literal"
 
   boot:
-    name: T2 boot end-to-end (validators a,c + pqs) on ${{ matrix.runner }}
+    name: T2 boot end-to-end (validators a,c + pqs) on ${{ matrix.name }}
     # LocalNet peaks near 7.6 GiB and starves 2 vCPU / 8 GB runners; these lanes run on 4 vCPU / 16 GB runners, or by manual dispatch.
     if: github.repository == 'peacefulstudio/canton-localnet' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-latest, ubuntu-26.04]
+        include: ${{ fromJSON(github.repository == 'peacefulstudio/canton-localnet' && '[{"name":"ubuntu-latest","runner":"ubuntu-latest"},{"name":"ubuntu-26.04","runner":"ubuntu-26.04"}]' || '[{"name":"hetzner-localnet","runner":["self-hosted","hetzner","localnet"]}]') }}
     timeout-minutes: 45
     steps:
       - name: Checkout
@@ -335,7 +334,7 @@ jobs:
   masking-probe:
     name: T4 masking-probe (real boot, real exported secrets)
     if: github.repository == 'peacefulstudio/canton-localnet' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.repository == 'peacefulstudio/canton-localnet' && '"ubuntu-latest"' || '["self-hosted","hetzner","localnet"]') }}
     timeout-minutes: 40
     steps:
       - name: Checkout
@@ -416,7 +415,7 @@ jobs:
     name: T4 masking-log-check (fetches masking-probe's own raw log via REST)
     needs: [masking-probe]
     if: always() && (github.repository == 'peacefulstudio/canton-localnet' || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.repository == 'peacefulstudio/canton-localnet' && '"ubuntu-latest"' || '["self-hosted","hetzner"]') }}
     timeout-minutes: 5
     steps:
       - name: Checkout
@@ -520,7 +519,7 @@ jobs:
 
   boot-failure-injection:
     name: T5 injected readiness failure
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.repository == 'peacefulstudio/canton-localnet' && '"ubuntu-latest"' || '["self-hosted","hetzner"]') }}
     timeout-minutes: 5
     steps:
       - name: Checkout
@@ -598,7 +597,7 @@ jobs:
 
   teardown-failure-injection:
     name: T6 injected teardown failure
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.repository == 'peacefulstudio/canton-localnet' && '"ubuntu-latest"' || '["self-hosted","hetzner"]') }}
     timeout-minutes: 5
     steps:
       - name: Checkout
@@ -659,7 +658,7 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash .github/scripts/download-run-artifact.sh "canton-localnet-teardown-diagnostics-${{ github.job }}" downloaded-diagnostics
+        run: bash .github/scripts/download-run-artifact.sh "canton-localnet-teardown-diagnostics-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}" downloaded-diagnostics
 
       - name: Assert diagnostics were actually uploaded and non-empty — a regression here must fail this job too
         if: always()
