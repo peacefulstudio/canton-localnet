@@ -79,7 +79,7 @@ inputs:
       against that release's checksums.txt and its build provenance
       attestation; it is valid only when the
       action's own `uses:` is pinned to a literal release tag, not its
-      commit SHA (e.g. `uses: peacefulstudio/canton-localnet@v0.10.2-1`) and
+      commit SHA (e.g. `uses: peacefulstudio/canton-localnet@v0.10.3-1`) and
       fails closed — never silently — on a non-tag ref, a missing asset, a
       download error, a checksum mismatch or a failed attestation check.
     default: 'source'
@@ -103,7 +103,7 @@ runs:
   steps:
     - name: Setup Go
       if: inputs.cli == 'source'
-      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
       with:
         go-version-file: ${{ github.action_path }}/cli/go.mod
         # cache: false, deliberately. cache-dependency-path can't safely
@@ -155,7 +155,7 @@ runs:
       if: failure()
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
-        name: canton-localnet-diagnostics-${{ github.job }}
+        name: canton-localnet-diagnostics-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}
         path: ${{ runner.temp }}/canton-localnet/diagnostics
         if-no-files-found: warn
         retention-days: 7

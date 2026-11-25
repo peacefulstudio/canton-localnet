@@ -26,7 +26,7 @@ func executeUp(t *testing.T, factory runnerFactory, args ...string) (*bytes.Buff
 
 func cantonRestartedOnce() *scriptedContainers {
 	return &scriptedContainers{
-		inspectOutput: "/postgres no 0 2026-11-11T11:50:00Z\n/canton always 1 2026-11-11T11:50:00Z\n/splice always 0 2026-11-11T11:50:00Z\n",
+		inspectOutput: "/postgres no 0 2026-11-11T11:50:00Z 2099-01-01T00:00:00Z\n/canton always 1 2026-11-11T11:50:00Z 2099-01-01T00:00:00Z\n/splice always 0 2026-11-11T11:50:00Z 2099-01-01T00:00:00Z\n",
 		eventsOutput:  "die canton 137\n",
 	}
 }
@@ -130,7 +130,7 @@ func TestUpFailsWhenSpliceWasOomKilled(t *testing.T) {
 }
 
 func TestUpReturnsTheComposeErrorWhenNoNodeContainerRestarted(t *testing.T) {
-	swapRestartGuardRunner(t, (&scriptedContainers{inspectOutput: "/canton always 0 2026-11-11T11:50:00Z\n"}).run)
+	swapRestartGuardRunner(t, (&scriptedContainers{inspectOutput: "/canton always 0 2026-11-11T11:50:00Z 2099-01-01T00:00:00Z\n"}).run)
 	runner, factory := newFakeRunnerFactory()
 	runner.scripted = []scriptedRun{{err: errors.New("pull access denied")}}
 
@@ -143,7 +143,7 @@ func TestUpReturnsTheComposeErrorWhenNoNodeContainerRestarted(t *testing.T) {
 
 func TestUpNamesTheDependencyFailureWhenAHungComposeIsStoppedWithoutARestart(t *testing.T) {
 	fastClassifyRetries(t)
-	swapRestartGuardRunner(t, (&scriptedContainers{inspectOutput: "/canton always 0 2026-11-11T11:50:00Z\n"}).run)
+	swapRestartGuardRunner(t, (&scriptedContainers{inspectOutput: "/canton always 0 2026-11-11T11:50:00Z 2099-01-01T00:00:00Z\n"}).run)
 	runner, factory := newFakeRunnerFactory()
 	runner.scripted = []scriptedRun{{stderrLines: []string{"dependency failed to start: container canton is unhealthy"}, hangUntilCancelled: true}}
 
@@ -184,5 +184,29 @@ func TestUpClassifiesWithADockerContextThatSurvivesTheExpiredTimeout(t *testing.
 
 	if classifierSawExpiredContext {
 		t.Fatal("want the classification to run on a live context")
+	}
+}
+
+func TestUpSucceedsWhenComposeFinishesJustAsTheTimeoutExpires(t *testing.T) {
+	runner, factory := newFakeRunnerFactory()
+	runner.scripted = []scriptedRun{{succeedAtDeadline: true}}
+
+	_, err := executeUp(t, factory, "--timeout", "20ms")
+
+	if err != nil {
+		t.Fatalf("want nil, got %v", err)
+	}
+}
+
+func TestUpReturnsTheComposeErrorAloneWhenTheOnlyRestartHappenedBeforeUpStarted(t *testing.T) {
+	containers := &scriptedContainers{inspectOutput: "/canton always 1 2026-11-11T11:50:00Z 2026-11-12T08:00:00Z\n"}
+	swapRestartGuardRunner(t, containers.run)
+	runner, factory := newFakeRunnerFactory()
+	runner.scripted = []scriptedRun{{err: errors.New("docker compose up -d: exit status 1")}}
+
+	_, err := executeUp(t, factory)
+
+	if err == nil || err.Error() != "docker compose up -d: exit status 1" {
+		t.Fatalf("want the compose error alone, got %v", err)
 	}
 }

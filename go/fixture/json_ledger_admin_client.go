@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // TokenProvider abstracts access-token retrieval for the admin client.
@@ -26,6 +27,13 @@ type JsonLedgerAdminClient struct {
 	baseURL    string
 	tokens     TokenProvider
 	httpClient *http.Client
+	now        func() time.Time
+}
+
+func withAdminClock(now func() time.Time) JsonLedgerAdminClientOption {
+	return func(j *JsonLedgerAdminClient) {
+		j.now = now
+	}
 }
 
 // JsonLedgerAdminClientOption mutates a JsonLedgerAdminClient at construction.
@@ -55,6 +63,7 @@ func NewJsonLedgerAdminClient(baseURL string, tokens TokenProvider, opts ...Json
 		baseURL:    normalizeBaseURL(baseURL),
 		tokens:     tokens,
 		httpClient: newDefaultHTTPClient(),
+		now:        time.Now,
 	}
 	for _, opt := range opts {
 		opt(client)
@@ -84,6 +93,8 @@ const AppSynchronizerAlias = "app-synchronizer"
 
 // GlobalSynchronizerAlias is the stable alias of the global synchronizer.
 const GlobalSynchronizerAlias = "global"
+
+const participantSynchronizersPath = "/v2/state/connected-synchronizers"
 
 // ConnectedSynchronizer is one entry from GET /v2/state/connected-synchronizers.
 type ConnectedSynchronizer struct {
@@ -146,10 +157,14 @@ func (c *JsonLedgerAdminClient) GetAppSynchronizerId(ctx context.Context, party 
 // LocalNet profile connects to it, single-sync or multi-sync, so it is the
 // default target for party allocation. Errors if absent.
 func (c *JsonLedgerAdminClient) GetGlobalSynchronizerId(ctx context.Context) (string, error) {
-	syncs, err := c.listConnectedSynchronizers(ctx, "/v2/state/connected-synchronizers")
+	syncs, err := c.listConnectedSynchronizers(ctx, participantSynchronizersPath)
 	if err != nil {
 		return "", err
 	}
+	return globalSynchronizerID(syncs)
+}
+
+func globalSynchronizerID(syncs []ConnectedSynchronizer) (string, error) {
 	aliases := make([]string, 0, len(syncs))
 	for _, s := range syncs {
 		if s.Alias == GlobalSynchronizerAlias {
@@ -178,7 +193,9 @@ type topologyStateFilter struct {
 type vettingListResponse struct {
 	VettedPackages []struct {
 		Packages []struct {
-			PackageID string `json:"packageId"`
+			PackageID           string  `json:"packageId"`
+			ValidFromInclusive  *string `json:"validFromInclusive"`
+			ValidUntilExclusive *string `json:"validUntilExclusive"`
 		} `json:"packages"`
 		ParticipantID string `json:"participantId"`
 	} `json:"vettedPackages"`
@@ -209,7 +226,11 @@ func (c *JsonLedgerAdminClient) isPackageVetted(ctx context.Context, packageID, 
 		if err := c.doJSON(ctx, http.MethodPost, "/v2/package-vetting/list", payload, &page); err != nil {
 			return false, err
 		}
-		if page.vets(participantID, packageID) {
+		vetted, err := page.vets(participantID, packageID, c.now())
+		if err != nil {
+			return false, err
+		}
+		if vetted {
 			return true, nil
 		}
 		if page.NextPageToken == "" {
@@ -219,18 +240,54 @@ func (c *JsonLedgerAdminClient) isPackageVetted(ctx context.Context, packageID, 
 	}
 }
 
-func (r vettingListResponse) vets(participantID, packageID string) bool {
+func (r vettingListResponse) vets(participantID, packageID string, now time.Time) (bool, error) {
 	for _, entry := range r.VettedPackages {
 		if entry.ParticipantID != participantID {
 			continue
 		}
 		for _, p := range entry.Packages {
-			if p.PackageID == packageID {
-				return true
+			if p.PackageID != packageID {
+				continue
+			}
+			inWindow, err := withinVettingWindow(now, p.ValidFromInclusive, p.ValidUntilExclusive)
+			if err != nil {
+				return false, err
+			}
+			if inWindow {
+				return true, nil
 			}
 		}
 	}
-	return false
+	return false, nil
+}
+
+func withinVettingWindow(now time.Time, validFromInclusive, validUntilExclusive *string) (bool, error) {
+	from, err := parseVettingBound("validFromInclusive", validFromInclusive)
+	if err != nil {
+		return false, err
+	}
+	until, err := parseVettingBound("validUntilExclusive", validUntilExclusive)
+	if err != nil {
+		return false, err
+	}
+	if from != nil && now.Before(*from) {
+		return false, nil
+	}
+	if until != nil && !now.Before(*until) {
+		return false, nil
+	}
+	return true, nil
+}
+
+func parseVettingBound(field string, raw *string) (*time.Time, error) {
+	if raw == nil || *raw == "" {
+		return nil, nil
+	}
+	bound, err := time.Parse(time.RFC3339Nano, *raw)
+	if err != nil {
+		return nil, fmt.Errorf("admin: vetting entry has an unparseable %s %q: %w", field, *raw, err)
+	}
+	return &bound, nil
 }
 
 func (c *JsonLedgerAdminClient) doJSON(ctx context.Context, method, path string, body []byte, out any) error {

@@ -66,11 +66,6 @@ const (
 	defaultValidatorAdminPortSuffix = "903"
 )
 
-func (s Slot) JSONLedgerPort() string     { return s.PortPrefix + defaultJSONLedgerPortSuffix }
-func (s Slot) LedgerGrpcPort() string     { return s.PortPrefix + defaultLedgerGrpcPortSuffix }
-func (s Slot) AdminGrpcPort() string      { return s.PortPrefix + defaultAdminGrpcPortSuffix }
-func (s Slot) ValidatorAdminPort() string { return s.PortPrefix + defaultValidatorAdminPortSuffix }
-
 // WebUIPort is the host-exposed nginx port for the slot's web UIs
 // (<PortPrefix>000). On sv-validator-1 the same listener also serves the
 // scan.localhost vhost, which carries the token-standard registry.

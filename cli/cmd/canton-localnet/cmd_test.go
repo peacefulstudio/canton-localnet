@@ -28,6 +28,7 @@ type capturedRun struct {
 type scriptedRun struct {
 	stderrLines        []string
 	hangUntilCancelled bool
+	succeedAtDeadline  bool
 	err                error
 }
 
@@ -65,6 +66,10 @@ func (f *fakeRunner) RunObserved(ctx context.Context, plan compose.Plan, observe
 		if script.hangUntilCancelled {
 			<-ctx.Done()
 			return ctx.Err()
+		}
+		if script.succeedAtDeadline {
+			<-ctx.Done()
+			return nil
 		}
 		return script.err
 	}

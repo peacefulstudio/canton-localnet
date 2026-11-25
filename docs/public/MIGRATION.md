@@ -1,5 +1,26 @@
 # Migration guide
 
+## v0.10.2-1 → v0.10.3-1: Splice 0.10.3, bare Postgres host port, new diagnostics artifact names
+
+Splice 0.10.3 keeps protocol version 37 and the Daml SDK (3.5.2). Three changes can break a setup that
+used to work.
+
+- **`POSTGRES_HOST_PORT` is a bare host port.** `POSTGRES_HOST_PORT=5433 make up` publishes
+  `127.0.0.1:5433` on the `postgres` container's port 5432. The `HOST:CONTAINER` form that worked before,
+  `POSTGRES_HOST_PORT=5433:5432`, now fails in compose with `invalid IP address`: change it to
+  `POSTGRES_HOST_PORT=5433`, and set `HOST_BIND_IP` for a bind address. `canton-localnet env --pqs` rejects
+  any value that is not a port between 1 and 65535.
+- **The action's diagnostics artifacts have new names.** They are
+  `canton-localnet-diagnostics-<job>-<job-index>-<run-attempt>` and
+  `canton-localnet-teardown-diagnostics-<job>-<job-index>-<run-attempt>`, where `<job-index>` is
+  `strategy.job-index` (`0` outside a matrix). A step that downloads an artifact by the old name must append
+  `-<job-index>-<run-attempt>`, or download by the `canton-localnet-*diagnostics-*` pattern.
+- **The Terraform modules need Terraform 1.14 or later.** `terraform/hetzner` and `terraform/github-oidc`
+  required 1.11 before.
+
+Docker server 28.0.0 is now the documented minimum. `make up` and `canton-localnet up` warn on an older
+server and still start the stack; `make up STRICT=true` fails instead.
+
 ## v0.10.0-1 → v0.10.1-1: fixture API changes
 
 The stack itself needs no volume wipe: Splice 0.10.1 keeps protocol version 37

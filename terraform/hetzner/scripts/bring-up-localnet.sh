@@ -16,7 +16,8 @@ across server rebuilds, wiping those volumes when the LocalNet version that
 wrote them differs from the one about to run.
 
 The state key names what invalidates on-disk state: SPLICE_VERSION (which pins
-the Canton image), POSTGRES_VERSION (the Postgres major) and
+the Canton image), the Postgres major (POSTGRES_VERSION up to its first '.',
+'-' or '@', so a patch bump or digest refresh keeps the volumes) and
 CANTON_PROTOCOL_VERSION. Each is read from the environment, else from
 compose/.env.defaults or compose/modules/localnet/compose.env.
 
@@ -87,12 +88,14 @@ cd "$checkout"
 
 splice_version="$(setting SPLICE_VERSION compose/.env.defaults)"
 postgres_version="$(setting POSTGRES_VERSION compose/modules/localnet/compose.env)"
+postgres_major="${postgres_version%%[.@-]*}"
+[ -n "$postgres_major" ] || broken "cannot derive the Postgres major from POSTGRES_VERSION '$postgres_version'"
 protocol_version="${CANTON_PROTOCOL_VERSION:-default}"
-current_key="splice=${splice_version} postgres=${postgres_version} protocol=${protocol_version}"
+current_key="splice=${splice_version} postgres=${postgres_major} protocol=${protocol_version}"
 
 previous_key="<none>"
 if [ -f "$key_file" ]; then
-  previous_key="$(cat "$key_file")"
+  previous_key="$(sed -E 's/(^| )postgres=([^ .@-]+)[^ ]*/\1postgres=\2/' "$key_file")"
 fi
 
 log "state key previous=${previous_key}"

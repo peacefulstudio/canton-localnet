@@ -256,8 +256,8 @@ public sealed class UserBuilder
 
         _logger.LogDebug("DELETE {Uri}", new Uri(_httpClient.BaseAddress!, path));
 
-        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        var body = await ReadBodyOfCommittedRequestAsync(response).ConfigureAwait(false);
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        var body = await ReadBodyOfCommittedRequestAsync(response, $"DELETE {path} (userId={userId})").ConfigureAwait(false);
         if (response.IsSuccessStatusCode)
         {
             _logger.LogInformation("Deleted ledger user {UserId}", userId);
@@ -293,8 +293,8 @@ public sealed class UserBuilder
         _logger.LogDebug("PATCH {Uri} ({Rights} rights)",
             new Uri(_httpClient.BaseAddress!, path), rights.Count);
 
-        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        var body = await ReadBodyOfCommittedRequestAsync(response).ConfigureAwait(false);
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        var body = await ReadBodyOfCommittedRequestAsync(response, $"PATCH {path} (userId={userId})").ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             throw new JsonLedgerApiException(
@@ -333,13 +333,13 @@ public sealed class UserBuilder
 
         _logger.LogDebug("GET {Uri}", new Uri(_httpClient.BaseAddress!, path));
 
-        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             return candidates;
         }
 
-        var body = await ReadBodyOfCommittedRequestAsync(response).ConfigureAwait(false);
+        var body = await ReadBodyOfCommittedRequestAsync(response, $"GET {path} (userId={userId})").ConfigureAwait(false);
         var held = ReadRights(body, "rights");
         if (held is null)
         {
@@ -490,8 +490,8 @@ public sealed class UserBuilder
         return true;
     }
 
-    private static Task<string> ReadBodyOfCommittedRequestAsync(HttpResponseMessage response)
-        => BoundedBody.ReadAsync(response.Content, CancellationToken.None);
+    private Task<string> ReadBodyOfCommittedRequestAsync(HttpResponseMessage response, string request)
+        => BoundedBody.ReadAsync(response, request, _httpClient.Timeout, CancellationToken.None);
 
     private async Task<string> PostCreateUserAsync(
         string token,
@@ -516,23 +516,19 @@ public sealed class UserBuilder
         _logger.LogDebug("POST {Uri} (userId: {UserId}, primaryParty: {PrimaryParty}, {Rights} rights)",
             new Uri(_httpClient.BaseAddress!, UsersPath), userId, primaryParty ?? "<none>", rights.Count);
 
-        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            var body = await BoundedBody.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
+            var body = await BoundedBody.ReadAsync(response, $"POST {UsersPath} (userId={userId})", _httpClient.Timeout, cancellationToken).ConfigureAwait(false);
             throw new JsonLedgerApiException(
                 $"POST {UsersPath} (userId={userId}) returned {(int)response.StatusCode} {response.ReasonPhrase}: {BoundedBody.ForMessage(body)}",
                 response.StatusCode,
                 body);
         }
 
-        var payload = await response.Content
-            .ReadFromJsonAsync<CreateUserResponse>(cancellationToken: cancellationToken)
-            .ConfigureAwait(false)
-            ?? throw new JsonLedgerApiException(
-                $"POST {UsersPath} returned an empty body.",
-                response.StatusCode,
-                string.Empty);
+        var payload = await BoundedBody
+            .ReadJsonAsync<CreateUserResponse>(response, $"POST {UsersPath} (userId={userId})", _httpClient.Timeout, cancellationToken)
+            .ConfigureAwait(false);
 
         if (payload.User is null || string.IsNullOrWhiteSpace(payload.User.Id))
         {
@@ -563,8 +559,8 @@ public sealed class UserBuilder
         _logger.LogDebug("POST {Uri} ({Rights} rights)",
             new Uri(_httpClient.BaseAddress!, path), rights.Count);
 
-        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        var body = await ReadBodyOfCommittedRequestAsync(response).ConfigureAwait(false);
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        var body = await ReadBodyOfCommittedRequestAsync(response, $"POST {path} (userId={userId})").ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             throw new JsonLedgerApiException(

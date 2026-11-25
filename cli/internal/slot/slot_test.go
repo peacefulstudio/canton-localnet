@@ -45,23 +45,27 @@ func TestParseRejectsUnknown(t *testing.T) {
 	}
 }
 
-func TestSlotPorts(t *testing.T) {
+func TestResolveDefaultsSlotAPortsToItsPrefixAndTheComposeSuffixes(t *testing.T) {
 	t.Parallel()
 	a, err := Parse("a")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.JSONLedgerPort() != "11975" {
-		t.Errorf("JSON port for a: got %q, want 11975", a.JSONLedgerPort())
+	ep, err := Resolve(a, "", emptyEnv)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if a.LedgerGrpcPort() != "11901" {
-		t.Errorf("ledger gRPC port for a: got %q, want 11901", a.LedgerGrpcPort())
+	if ep.JSONLedgerAPIURL != "http://localhost:11975" {
+		t.Errorf("JSON Ledger API URL for a: got %q, want http://localhost:11975", ep.JSONLedgerAPIURL)
 	}
-	if a.AdminGrpcPort() != "11902" {
-		t.Errorf("admin gRPC port for a: got %q, want 11902", a.AdminGrpcPort())
+	if ep.LedgerGrpcURL != "localhost:11901" {
+		t.Errorf("ledger gRPC URL for a: got %q, want localhost:11901", ep.LedgerGrpcURL)
 	}
-	if a.ValidatorAdminPort() != "11903" {
-		t.Errorf("validator admin port for a: got %q, want 11903", a.ValidatorAdminPort())
+	if ep.AdminGrpcURL != "localhost:11902" {
+		t.Errorf("admin gRPC URL for a: got %q, want localhost:11902", ep.AdminGrpcURL)
+	}
+	if ep.ValidatorAdminURL != "localhost:11903" {
+		t.Errorf("validator admin URL for a: got %q, want localhost:11903", ep.ValidatorAdminURL)
 	}
 }
 

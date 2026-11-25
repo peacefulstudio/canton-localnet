@@ -144,7 +144,24 @@ steps 4–7 here.
    branch `promote-prep/v<version>-workflows`, as the promote's printed
    commands do, and land it before the promote runs for real: the files it
    carries are the ones the promote lists, taken from the tag with
-   `git show v<version>:<path>`, never edited by hand.
+   `git show v<version>:<path>`, never edited by hand. The printed commands
+   also carry every allowlisted `.github/scripts/` helper that differs
+   between the tag and this repository's `dev`, added, changed or deleted,
+   and set each one's mode with `chmod`, so a new workflow step that calls a
+   new or changed helper finds it on the prep PR. A helper that changes while
+   no workflow does needs no prep PR: the promote App writes it.
+
+   The prep PR can still go red, and that is expected when the new workflows
+   assert code the release changes outside `.github/`. Release 0.10.1-2 is
+   the example: its workflows assert a package with `net10.0` and `net11.0`
+   targets, while this repository's `dev` still held the single-target
+   0.10.1-1 code. The prep PR cannot go green until the promote brings that
+   code, and the promote cannot run until the prep PR lands. A red lane on
+   the prep PR is acceptable only when it exercises code this repository does
+   not have yet; any other red lane is a real failure to fix first. Nothing
+   publishes in between, because `auto-tag-release.yaml` tags only a commit
+   whose every required lane passed, and the `Release v<version>` PR that
+   follows turns those lanes green.
 5. Review the `Release v<version>` PR, and squash-merge it into `dev`.
    Companion PRs that must ship in the same release merge first, or carry the
    `hold-release` label, which holds the tag back while the PR is open.
@@ -194,8 +211,13 @@ A failed `release` run leaves a draft release, which the auto-tag leaves
 alone. Fix the cause, then re-run from the tag:
 
 ```bash
-gh workflow run release.yml -R peacefulstudio/canton-localnet --ref dev -f version=<version>
+gh workflow run release.yml -R peacefulstudio/canton-localnet --ref v<version> -f version=<version>
 ```
+
+Dispatch it on the tag, as the auto-tag does, never on a branch: the build
+provenance attestation records the run's ref, and the action's `cli: release`
+accepts only a binary attested from `refs/tags/v<version>`. A fix to
+`release.yml` itself therefore ships in a new version, not a re-run.
 
 Every job builds from the existing tag `v<version>`, the draft is reused,
 and a release that is already published is refused. A nuget.org version
@@ -229,7 +251,10 @@ The CLI binary embeds the version via `-ldflags "-X main.version=<version>"`;
   job carries `name: public-gate`, so the check-run context is
   `public-gate`) on every PR, including the promote PR from step 6 —
   the twin's own backstop against anything the promotion step's
-  leak-scan missed. As of this writing the twin's `dev` branch
+  leak-scan missed. On a pull request the gate runs the base branch's
+  copy of `leak-check.sh` and `no-ai-workflows-audit.sh` against the PR's
+  tree, so a PR that edits either script is still judged by the version
+  already on `dev`. As of this writing the twin's `dev` branch
   protection does not yet mark it required
   (`required_status_checks.contexts` is empty); until an owner runs
   the call below, the check runs and reports but does not block a

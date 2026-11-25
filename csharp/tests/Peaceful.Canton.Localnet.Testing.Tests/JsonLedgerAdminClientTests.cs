@@ -4,6 +4,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace Peaceful.Canton.Localnet.Testing.Tests;
@@ -88,6 +89,49 @@ public class JsonLedgerAdminClientTests
         var client = new JsonLedgerAdminClient(http, StaticTokenProvider("tok"));
 
         await Assert.ThrowsAsync<JsonLedgerApiException>(() => client.GetParticipantIdAsync());
+    }
+
+    public static TheoryData<string, string> MalformedSuccessBodies() => new()
+    {
+        { "participant-id", "" },
+        { "participant-id", "<html>proxy</html>" },
+        { "participant-id", "{\"participantId\":" },
+        { "connected-synchronizers", "" },
+        { "connected-synchronizers", "<html>proxy</html>" },
+        { "connected-synchronizers", "{\"connectedSynchronizers\":" },
+        { "package-vetting", "" },
+        { "package-vetting", "<html>proxy</html>" },
+        { "package-vetting", "{\"vettedPackages\":" },
+    };
+
+    [Theory]
+    [MemberData(nameof(MalformedSuccessBodies))]
+    public async Task JsonLedgerAdminClient_wraps_an_empty_or_malformed_2xx_body_in_JsonLedgerApiException(string call, string body)
+    {
+        var handler = new RecordingHandler((request, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                request.RequestUri!.AbsolutePath.EndsWith("participant-id", StringComparison.Ordinal) && call == "package-vetting"
+                    ? """{"participantId":"participant::1220aa"}"""
+                    : body,
+                Encoding.UTF8,
+                "application/json"),
+        }));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var client = new JsonLedgerAdminClient(http, StaticTokenProvider("tok"));
+        Func<Task> act = call switch
+        {
+            "participant-id" => () => client.GetParticipantIdAsync(),
+            "connected-synchronizers" => () => client.GetConnectedSynchronizersAsync(),
+            _ => () => client.IsPackageVettedAsync("b1008daac9810baa8ca7ff313c13bd48d65f18040b2d33faabe5b5d39acaac9e", "global::122a"),
+        };
+
+        var exception = await Assert.ThrowsAsync<JsonLedgerApiException>(act);
+
+        Assert.Equal(HttpStatusCode.OK, exception.StatusCode);
+        Assert.Equal(body, exception.ResponseBody);
+        Assert.Contains("not valid JSON", exception.Message);
+        Assert.IsType<JsonException>(exception.InnerException, exactMatch: false);
     }
 
     [Fact]
@@ -277,6 +321,88 @@ public class JsonLedgerAdminClientTests
         Assert.Equal(
             new[] { SynchronizerId },
             root.GetProperty("topologyStateFilter").GetProperty("synchronizerIds").EnumerateArray().Select(e => e.GetString()).ToArray());
+    }
+
+    [Fact]
+    public void Constructor_keeps_the_published_three_parameter_signature()
+    {
+        var published = typeof(JsonLedgerAdminClient).GetConstructor(
+            new[] { typeof(HttpClient), typeof(OAuth2TokenProvider), typeof(ILogger<JsonLedgerAdminClient>) });
+
+        Assert.NotNull(published);
+    }
+
+    [Theory]
+    [InlineData(null, null, true)]
+    [InlineData("2026-11-24T11:59:59Z", null, true)]
+    [InlineData("2026-11-24T12:00:00Z", null, true)]
+    [InlineData("2026-11-24T12:00:01Z", null, false)]
+    [InlineData(null, "2026-11-24T12:00:01Z", true)]
+    [InlineData(null, "2026-11-24T12:00:00Z", false)]
+    [InlineData(null, "2026-11-24T11:59:59Z", false)]
+    [InlineData("2026-11-24T11:00:00Z", "2026-11-24T13:00:00Z", true)]
+    [InlineData("2026-11-24T13:00:00Z", "2026-11-24T14:00:00Z", false)]
+    [InlineData("2026-11-24T10:00:00.123456Z", "2026-11-24T11:00:00.654321Z", false)]
+    [InlineData("", "", true)]
+    [InlineData("", "2026-11-24T12:00:00Z", false)]
+    public async Task IsPackageVettedAsync_counts_an_entry_only_inside_its_validity_window(string? validFromInclusive, string? validUntilExclusive, bool expected)
+    {
+        var validFrom = validFromInclusive is null ? "null" : $"\"{validFromInclusive}\"";
+        var validUntil = validUntilExclusive is null ? "null" : $"\"{validUntilExclusive}\"";
+        var entry = $$"""{"packages":[{"packageId":"{{PackageId}}","validFromInclusive":{{validFrom}},"validUntilExclusive":{{validUntil}},"packageName":"canton-localnet-noop","packageVersion":"0.0.1"}],"participantId":"{{ParticipantId}}","synchronizerId":"{{SynchronizerId}}","topologySerial":3}""";
+        var handler = VettingHandler((_, _) => Json($$"""{"vettedPackages":[{{entry}}],"nextPageToken":""}"""));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 11, 24, 12, 0, 0, TimeSpan.Zero));
+        var client = new JsonLedgerAdminClient(http, StaticTokenProvider("tok"), null, clock);
+
+        Assert.Equal(expected, await client.IsPackageVettedAsync(PackageId, SynchronizerId));
+    }
+
+    [Theory]
+    [InlineData("validFromInclusive", "yesterday")]
+    [InlineData("validUntilExclusive", "2026-13-45T99:00:00Z")]
+    public async Task IsPackageVettedAsync_fails_loudly_on_an_unparseable_bound_of_a_matching_entry(string field, string value)
+    {
+        var from = field == "validFromInclusive" ? $"\"{value}\"" : "null";
+        var until = field == "validUntilExclusive" ? $"\"{value}\"" : "null";
+        var entry = $$"""{"packages":[{"packageId":"{{PackageId}}","validFromInclusive":{{from}},"validUntilExclusive":{{until}}}],"participantId":"{{ParticipantId}}","synchronizerId":"{{SynchronizerId}}"}""";
+        var handler = VettingHandler((_, _) => Json($$"""{"vettedPackages":[{{entry}}],"nextPageToken":""}"""));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var client = new JsonLedgerAdminClient(http, StaticTokenProvider("tok"), null, new FakeTimeProvider(new DateTimeOffset(2026, 11, 24, 12, 0, 0, TimeSpan.Zero)));
+
+        var ex = await Assert.ThrowsAsync<JsonLedgerApiException>(() => client.IsPackageVettedAsync(PackageId, SynchronizerId));
+
+        Assert.Contains(field, ex.Message);
+    }
+
+    [Fact]
+    public async Task IsPackageVettedAsync_ignores_an_unparseable_bound_on_an_entry_that_does_not_match()
+    {
+        var entry = $$"""{"packages":[{"packageId":"d0048119d779f3dc1c02dd2549c6281cdd72998bc3c9bc514fe07ff5d5365bbd","validFromInclusive":"yesterday","validUntilExclusive":null}],"participantId":"{{ParticipantId}}","synchronizerId":"{{SynchronizerId}}"}""";
+        var handler = VettingHandler((_, _) => Json($$"""{"vettedPackages":[{{entry}}],"nextPageToken":""}"""));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var client = new JsonLedgerAdminClient(http, StaticTokenProvider("tok"), null, new FakeTimeProvider(new DateTimeOffset(2026, 11, 24, 12, 0, 0, TimeSpan.Zero)));
+
+        Assert.False(await client.IsPackageVettedAsync(PackageId, SynchronizerId));
+    }
+
+    [Fact]
+    public async Task IsPackageVettedAsync_keeps_paging_after_an_expired_entry_and_finds_a_live_one()
+    {
+        var expired = """{"packages":[{"packageId":"PKG","validFromInclusive":null,"validUntilExclusive":"2026-11-24T11:00:00Z"}],"participantId":"PART","synchronizerId":"SYNC"}"""
+            .Replace("PKG", PackageId).Replace("PART", ParticipantId).Replace("SYNC", SynchronizerId);
+        var live = """{"packages":[{"packageId":"PKG","validFromInclusive":"2026-11-24T11:30:00Z","validUntilExclusive":null}],"participantId":"PART","synchronizerId":"SYNC"}"""
+            .Replace("PKG", PackageId).Replace("PART", ParticipantId).Replace("SYNC", SynchronizerId);
+        var calls = 0;
+        var handler = VettingHandler((_, _) => ++calls == 1
+            ? Json($$"""{"vettedPackages":[{{expired}}],"nextPageToken":"page-2"}""")
+            : Json($$"""{"vettedPackages":[{{live}}],"nextPageToken":""}"""));
+        using var http = new HttpClient(handler) { BaseAddress = JsonApiBase };
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 11, 24, 12, 0, 0, TimeSpan.Zero));
+        var client = new JsonLedgerAdminClient(http, StaticTokenProvider("tok"), null, clock);
+
+        Assert.True(await client.IsPackageVettedAsync(PackageId, SynchronizerId));
+        Assert.Equal(2, calls);
     }
 
     [Fact]

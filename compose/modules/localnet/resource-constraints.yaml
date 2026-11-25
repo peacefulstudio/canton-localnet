@@ -40,15 +40,15 @@ services:
   canton:
     mem_limit: 5g
     environment:
-      _JAVA_OPTIONS: "-XX:-UseCompressedOops -Xms1g -Xmx4g"
+      _JAVA_OPTIONS: "-XX:-UseCompressedOops -Xms1g -Xmx4g -XX:-UseBASE64Intrinsics"
   splice:
     mem_limit: 4g
     environment:
-      _JAVA_OPTIONS: "-XX:-UseCompressedOops -Xms1g -Xmx3g"
+      _JAVA_OPTIONS: "-XX:-UseCompressedOops -Xms1g -Xmx3g -XX:-UseBASE64Intrinsics"
   console:
     mem_limit: 2g
     environment:
-      _JAVA_OPTIONS: "-XX:+UseContainerSupport -XX:-UseCompressedOops"
+      _JAVA_OPTIONS: "-XX:+UseContainerSupport -XX:-UseCompressedOops -XX:-UseBASE64Intrinsics"
   # compose `extends:` only pulls in same-file service definitions, not
   # overlay-file settings — so multi-sync-startup (which extends console in
   # compose.yaml) does not inherit this file's console: block and needs its
@@ -56,7 +56,7 @@ services:
   multi-sync-startup:
     mem_limit: 2g
     environment:
-      _JAVA_OPTIONS: "-XX:+UseContainerSupport -XX:-UseCompressedOops"
+      _JAVA_OPTIONS: "-XX:+UseContainerSupport -XX:-UseCompressedOops -XX:-UseBASE64Intrinsics"
   scan-web-ui:
     mem_limit: 256mb
   sv-web-ui:

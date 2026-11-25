@@ -33,15 +33,21 @@ while the configuration names another (for example after changing `partyHint:`).
 error names the recorded and configured hints, the slot and the remediation,
 `canton-localnet down --volumes` (or `make clean`).
 
-Once the stack is ready, `wait-ready` fails when a node container has restarted during
-boot. `restart: always` brings a crashed `canton` or `splice` back silently, and the stack
+Once the stack is ready, `wait-ready` fails when a node container has restarted.
+`restart: always` brings a crashed `canton` or `splice` back silently, and the stack
 then comes up degraded, so any container of the `localnet` compose project (or of
 `COMPOSE_PROJECT_NAME`) that Docker restarts without bound and whose `RestartCount` is above
 0 stops `wait-ready` with an error naming it, its exit code, whether it was OOM-killed and
 the last `Caused by` line of its log. Containers without a restart policy and the
-bounded `on-failure` PQS pipelines never trip it. Recreate the stack with
-`canton-localnet down --volumes` and bring it up again; the composite action's failure
-diagnostics record each container's restart count, OOM-kill flag and exit code.
+bounded `on-failure` PQS pipelines never trip it. `RestartCount` covers the container's
+whole life, so on a stack that has been up for a while pass `--since` with the time the
+boot you are waiting on started (for example when you ran `up`): a container that last
+restarted before it only warns, and the error says `during boot` instead of `since it was
+created`. Recreate the containers with `canton-localnet down` and `canton-localnet up`,
+which clears the count and keeps the volumes; the composite action's failure
+diagnostics record each container's restart count, OOM-kill flag and exit code. The
+restart check runs after the wait under its own 60 s budget, and fails if docker does not
+answer within it.
 
 One restart is tolerated. On a starved host (a 2 vCPU runner), splice's first call to
 `canton` can pass its 60 s deadline, splice logs `Initialization failed, so exiting`, exits,
@@ -130,7 +136,58 @@ returns `false` when the discovery variables are unset, and `Assert.Skip`
 (xUnit v3) turns that into a skipped test rather than a failure.
 `FromEnvironment()` resolves the default slot (`a-validator-1`) from the
 environment; `await using` disposes the token provider and the backing
-clients at scope exit.
+clients at scope exit, and deletes the users the fixture created (see
+[Users the fixture created](#users-the-fixture-created)).
+
+`LocalnetFixture` is not an xUnit class fixture on its own: its constructor is
+private and it does not implement `IAsyncLifetime`, so
+`IClassFixture<LocalnetFixture>` does not build. Create it per test, as above.
+To share one across the tests of a class, wrap it in a class fixture of your own:
+
+```csharp
+using Peaceful.Canton.Localnet.Testing;
+using Xunit;
+
+public sealed class LocalnetClassFixture : IAsyncLifetime
+{
+    public LocalnetFixture? Localnet { get; private set; }
+
+    public ValueTask InitializeAsync()
+    {
+        if (EndpointDiscovery.IsLocalnetAvailable())
+        {
+            Localnet = LocalnetFixture.FromEnvironment();
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Localnet is not null)
+        {
+            await Localnet.DisposeAsync();
+        }
+    }
+}
+
+public class SharedLedgerTests(LocalnetClassFixture stack) : IClassFixture<LocalnetClassFixture>
+{
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task Allocates_a_party()
+    {
+        Assert.SkipUnless(stack.Localnet is not null, "LocalNet not reachable; bring it up with `canton-localnet up`.");
+
+        var party = await stack.Localnet!.AllocatePartyAsync("globex");
+
+        Assert.NotEmpty(party.PartyId);
+    }
+}
+```
+
+The users created through the shared fixture are deleted when xUnit disposes it,
+after the last test of the class.
 
 For scenarios that span more than one validator, `Validator(slot)` returns a
 per-slot view exposing the same surface scoped to that slot — allocate a
@@ -277,17 +334,21 @@ func TestLedgerRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if err := f.Setup(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := f.Teardown(context.Background()); err != nil {
+			t.Errorf("teardown: %v", err)
+		}
+	})
+
 	u, _ := url.Parse(f.Endpoints().JSONLedgerAPIURL)
 	if conn, err := net.DialTimeout("tcp", u.Host, 2*time.Second); err != nil {
 		t.Skipf("LocalNet %s unreachable; bring it up with `canton-localnet up`", u.Host)
 	} else {
 		_ = conn.Close()
 	}
-
-	if err := f.Setup(ctx); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = f.Teardown(context.Background()) })
 
 	if err := f.UploadDar(ctx, "testdata/my-workflow.dar"); err != nil {
 		t.Fatal(err)

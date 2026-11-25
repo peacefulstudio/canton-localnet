@@ -55,6 +55,18 @@ func newAllocationStub(
 	if len(connectedSynchronizers) > 0 {
 		discovery = connectedSynchronizers[0]
 	}
+	return newScriptedDiscoveryAllocationStub(t, allocation, lookup, func(_ int, w http.ResponseWriter) {
+		_, _ = io.WriteString(w, discovery)
+	})
+}
+
+func newScriptedDiscoveryAllocationStub(
+	t *testing.T,
+	allocation func(attempt int, w http.ResponseWriter),
+	lookup func(w http.ResponseWriter),
+	discovery func(attempt int, w http.ResponseWriter),
+) *allocationStub {
+	t.Helper()
 	stub := &allocationStub{}
 	stub.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		stub.mu.Lock()
@@ -63,7 +75,7 @@ func newAllocationStub(
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/v2/state/connected-synchronizers":
 			stub.discoveryCalls++
-			_, _ = io.WriteString(w, discovery)
+			discovery(stub.discoveryCalls, w)
 		case r.Method == http.MethodGet && r.URL.Path == "/v2/parties":
 			stub.lookupQueries = append(stub.lookupQueries, r.URL.RawQuery)
 			lookup(w)
@@ -157,6 +169,26 @@ func (tr *timingOutPostTransport) postCount() int {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	return tr.posts
+}
+
+type timingOutGetTransport struct {
+	mu       sync.Mutex
+	gets     int
+	timeouts int
+	inner    http.RoundTripper
+}
+
+func (tr *timingOutGetTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	if r.Method == http.MethodGet {
+		tr.mu.Lock()
+		tr.gets++
+		timingOut := tr.gets <= tr.timeouts
+		tr.mu.Unlock()
+		if timingOut {
+			return nil, timeoutError{}
+		}
+	}
+	return tr.inner.RoundTrip(r)
 }
 
 func allocateStatusError(t *testing.T, err error) *httpStatusError {
@@ -268,6 +300,99 @@ func TestPartyAllocator_FailsWhenNoGlobalSynchronizerIsConnected(t *testing.T) {
 	}
 	if stub.postCount() != 0 {
 		t.Errorf("posts = %d, want 0", stub.postCount())
+	}
+	if stub.discoveryCalls != 1 {
+		t.Errorf("discovery calls = %d, want 1: a listing without the global synchronizer is not retried", stub.discoveryCalls)
+	}
+}
+
+func TestPartyAllocator_RetriesATransientSynchronizerDiscoveryAnswerThenAllocatesOnTheGlobalSynchronizer(t *testing.T) {
+	for name, first := range map[string]struct {
+		status int
+		body   string
+	}{
+		"503":                           {http.StatusServiceUnavailable, ""},
+		"504":                           {http.StatusGatewayTimeout, ""},
+		"409 request already in flight": {http.StatusConflict, requestAlreadyInFlight},
+		"no connected synchronizer":     {http.StatusOK, `{"connectedSynchronizers":[]}`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			stub := newScriptedDiscoveryAllocationStub(t,
+				func(_ int, w http.ResponseWriter) { respondAllocated(w, "globex-abcdef::namespace") },
+				noLookup,
+				func(attempt int, w http.ResponseWriter) {
+					if attempt == 1 {
+						respondFailure(w, first.status, first.body)
+						return
+					}
+					_, _ = io.WriteString(w, defaultConnectedSyncsRaw)
+				})
+			p := newStubAllocator(t, stub, noSleepRetry(6, nil))
+
+			got, err := p.Allocate(context.Background(), "globex")
+
+			if err != nil || got != "globex-abcdef::namespace" {
+				t.Fatalf("Allocate = (%q, %v), want (globex-abcdef::namespace, nil)", got, err)
+			}
+			if stub.discoveryCalls != 2 {
+				t.Errorf("discovery calls = %d, want 2", stub.discoveryCalls)
+			}
+			if stub.posts[0].SynchronizerID != "global::122a" {
+				t.Errorf("synchronizerId = %q, want global::122a", stub.posts[0].SynchronizerID)
+			}
+		})
+	}
+}
+
+func TestPartyAllocator_RetriesASynchronizerDiscoveryTimeoutThenAllocates(t *testing.T) {
+	stub := newAllocationStub(t, func(_ int, w http.ResponseWriter) { respondAllocated(w, "globex-abcdef::namespace") }, noLookup)
+	transport := &timingOutGetTransport{timeouts: 1, inner: http.DefaultTransport}
+	p := newStubAllocator(t, stub, noSleepRetry(6, nil), WithPartyAllocatorHTTPClient(&http.Client{Transport: transport}))
+
+	got, err := p.Allocate(context.Background(), "globex")
+
+	if err != nil || got != "globex-abcdef::namespace" {
+		t.Fatalf("Allocate = (%q, %v), want (globex-abcdef::namespace, nil)", got, err)
+	}
+	if stub.discoveryCalls != 1 {
+		t.Errorf("discovery calls reaching the server = %d, want 1 after one timed-out attempt", stub.discoveryCalls)
+	}
+}
+
+func TestPartyAllocator_GivesUpAfterTheAttemptBoundOnAPersistent503FromSynchronizerDiscovery(t *testing.T) {
+	stub := newScriptedDiscoveryAllocationStub(t,
+		func(_ int, w http.ResponseWriter) { respondAllocated(w, "x::y") },
+		noLookup,
+		func(_ int, w http.ResponseWriter) {
+			respondFailure(w, http.StatusServiceUnavailable, `{"cause":"warming up"}`)
+		})
+	p := newStubAllocator(t, stub, noSleepRetry(4, nil))
+
+	_, err := p.Allocate(context.Background(), "globex")
+
+	var statusErr *httpStatusError
+	if !errors.As(err, &statusErr) || statusErr.statusCode != http.StatusServiceUnavailable {
+		t.Fatalf("err = %v, want the discovery 503", err)
+	}
+	if stub.discoveryCalls != 4 {
+		t.Errorf("discovery calls = %d, want 4", stub.discoveryCalls)
+	}
+	if stub.postCount() != 0 {
+		t.Errorf("posts = %d, want 0", stub.postCount())
+	}
+}
+
+func TestPartyAllocator_FailsAfterTheAttemptBoundWhenDiscoveryNeverReportsASynchronizer(t *testing.T) {
+	stub := newAllocationStub(t, func(_ int, w http.ResponseWriter) { respondAllocated(w, "x::y") }, noLookup, noSynchronizersRaw)
+	p := newStubAllocator(t, stub, noSleepRetry(3, nil))
+
+	_, err := p.Allocate(context.Background(), "globex")
+
+	if err == nil || !strings.Contains(err.Error(), `"global"`) {
+		t.Fatalf("err = %v, want a missing global synchronizer error", err)
+	}
+	if stub.discoveryCalls != 3 {
+		t.Errorf("discovery calls = %d, want 3", stub.discoveryCalls)
 	}
 }
 
@@ -595,6 +720,45 @@ func TestPartyAllocator_SurfacesTheAlreadyExistsErrorWhenTheLookupFindsNoParty(t
 	}
 }
 
+func TestPartyAllocator_SkipsLookupEntriesWithoutAPartyWhenARetryFindsItAlreadyAllocated(t *testing.T) {
+	for name, tc := range map[string]struct {
+		lookup string
+		want   string
+	}{
+		"a later entry matches": {
+			lookup: `{"partyDetails":[{"isLocal":true},{"party":null,"isLocal":true},{"party":"globex-abcdef::122034ab5c6d","isLocal":true}],"nextPageToken":""}`,
+			want:   "globex-abcdef::122034ab5c6d",
+		},
+		"no entry has a party": {
+			lookup: `{"partyDetails":[{"isLocal":true},{"party":null,"isLocal":true}],"nextPageToken":""}`,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			stub := newAllocationStub(t, func(attempt int, w http.ResponseWriter) {
+				if attempt == 1 {
+					respondFailure(w, http.StatusServiceUnavailable, "")
+					return
+				}
+				respondFailure(w, http.StatusBadRequest, partyAlreadyExistsBody)
+			}, func(w http.ResponseWriter) { _, _ = io.WriteString(w, tc.lookup) })
+			p := newStubAllocator(t, stub, noSleepRetry(6, nil))
+
+			got, err := p.Allocate(context.Background(), "globex")
+
+			if tc.want != "" {
+				if err != nil || got != tc.want {
+					t.Fatalf("Allocate = (%q, %v), want (%q, nil)", got, err, tc.want)
+				}
+				return
+			}
+			statusErr := allocateStatusError(t, err)
+			if statusErr.statusCode != http.StatusBadRequest || !strings.Contains(string(statusErr.body), "Party already exists") {
+				t.Errorf("err = %v, want the 400 already-exists error", err)
+			}
+		})
+	}
+}
+
 func TestPartyAllocator_HintFollowsPrefixSuffixFormat(t *testing.T) {
 	p, err := NewPartyAllocator("http://x", staticTokenProvider{token: "tok"}, WithPartyAllocatorSuffix("ZZZ"))
 	if err != nil {
@@ -669,12 +833,36 @@ func TestPartyAllocator_RejectsEmptyPartyInResponse(t *testing.T) {
 	}
 }
 
-func TestPartyAllocator_RejectsInvalidJSON(t *testing.T) {
-	stub := newAllocationStub(t, func(_ int, w http.ResponseWriter) { _, _ = io.WriteString(w, `not json`) }, noLookup)
-	p := newStubAllocator(t, stub, noSleepRetry(6, nil))
+func TestPartyAllocator_WrapsAnEmptyOrMalformed2xxBodyAsADecodeError(t *testing.T) {
+	for _, body := range []string{"", "<html>proxy</html>", `{"partyDetails":`} {
+		t.Run("allocate/"+body, func(t *testing.T) {
+			stub := newAllocationStub(t, func(_ int, w http.ResponseWriter) { _, _ = io.WriteString(w, body) }, noLookup)
+			p := newStubAllocator(t, stub, noSleepRetry(6, nil))
 
-	if _, err := p.Allocate(context.Background(), "initech"); err == nil {
-		t.Fatal("expected decode error")
+			_, err := p.Allocate(context.Background(), "initech")
+
+			var syntaxErr *json.SyntaxError
+			if !errors.As(err, &syntaxErr) || !strings.Contains(err.Error(), "party: decode response") {
+				t.Fatalf("error = %v, want a party decode error wrapping *json.SyntaxError", err)
+			}
+		})
+		t.Run("lookup/"+body, func(t *testing.T) {
+			stub := newAllocationStub(t, func(attempt int, w http.ResponseWriter) {
+				if attempt == 1 {
+					respondFailure(w, http.StatusServiceUnavailable, "")
+					return
+				}
+				respondFailure(w, http.StatusBadRequest, partyAlreadyExistsBody)
+			}, func(w http.ResponseWriter) { _, _ = io.WriteString(w, body) })
+			p := newStubAllocator(t, stub, noSleepRetry(6, nil))
+
+			_, err := p.Allocate(context.Background(), "initech")
+
+			var syntaxErr *json.SyntaxError
+			if !errors.As(err, &syntaxErr) || !strings.Contains(err.Error(), "party: decode known parties response") {
+				t.Fatalf("error = %v, want a known-parties decode error wrapping *json.SyntaxError", err)
+			}
+		})
 	}
 }
 

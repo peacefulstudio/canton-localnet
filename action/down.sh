@@ -25,7 +25,7 @@
 # $GITHUB_OUTPUT so the teardown composite uploads them.
 #
 # Required env: STRICT, RUNNER_TEMP, GITHUB_OUTPUT. Optional:
-# GITHUB_STEP_SUMMARY, GITHUB_JOB.
+# GITHUB_STEP_SUMMARY, GITHUB_JOB, JOB_INDEX, GITHUB_RUN_ATTEMPT.
 #
 # `down --volumes` itself runs under a timeout: a hung docker daemon must
 # not be able to run teardown's composite step past its own job timeout
@@ -45,7 +45,7 @@ diagnostics_dir="$RUNNER_TEMP/canton-localnet/diagnostics"
 write_teardown_summary() {
   local result="$1" unhealthy_table="${2:-}" logs_pointer="" section
   if [ "$STRICT" = "true" ]; then
-    logs_pointer="Logs of these containers are in the \`canton-localnet-teardown-diagnostics-${GITHUB_JOB:-job}\` artifact."
+    logs_pointer="Logs of these containers are in the \`canton-localnet-teardown-diagnostics-${GITHUB_JOB:-job}-${JOB_INDEX:-0}-${GITHUB_RUN_ATTEMPT:-1}\` artifact."
   fi
   section="$(printf '\n%s\n' "$(canton_localnet_render_teardown "$result" "$unhealthy_table" "$logs_pointer")")"
   mkdir -p "$(dirname "$(canton_localnet_report_file)")"

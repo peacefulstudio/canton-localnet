@@ -57,7 +57,9 @@ public sealed class PartyAllocator
     /// <param name="retryOptions">
     /// Retry policy for a transient <c>503</c> or <c>504</c>, a <c>409</c>
     /// <c>REQUEST_ALREADY_IN_FLIGHT</c> or a request timeout from
-    /// <c>POST /v2/parties</c>; defaults to
+    /// <c>POST /v2/parties</c> or from the
+    /// <c>GET /v2/state/connected-synchronizers</c> that resolves the global
+    /// synchronizer, which is also retried while it lists no synchronizer; defaults to
     /// <see cref="DarUploaderRetryOptions.Default"/>, the policy
     /// <see cref="DarUploader"/> uses.
     /// </param>
@@ -179,13 +181,25 @@ public sealed class PartyAllocator
         }
 
         var resolvedSynchronizerId = string.IsNullOrWhiteSpace(synchronizerId)
-            ? await _adminClient.GetGlobalSynchronizerIdAsync(cancellationToken: cancellationToken).ConfigureAwait(false)
+            ? await ResolveGlobalSynchronizerIdAsync(cancellationToken).ConfigureAwait(false)
             : synchronizerId;
 
         var details = await PostWithRetryAsync(partyIdHint, resolvedSynchronizerId, cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation("Allocated party {PartyId} (hint={Hint})", details.Party, partyIdHint);
         return new AllocatedParty(details.Party, partyIdHint, details.IsLocal);
+    }
+
+    private async Task<string> ResolveGlobalSynchronizerIdAsync(CancellationToken cancellationToken)
+    {
+        var synchronizers = await LedgerReadRetry.RunAsync(
+            "GET v2/state/connected-synchronizers",
+            token => _adminClient.GetConnectedSynchronizersAsync(party: null, cancellationToken: token),
+            synchronizers => synchronizers.Count == 0,
+            _retryOptions,
+            _logger,
+            cancellationToken).ConfigureAwait(false);
+        return JsonLedgerAdminClient.SelectGlobalSynchronizerId(synchronizers);
     }
 
     private async Task<AllocatedPartyDetails> PostWithRetryAsync(
@@ -200,10 +214,10 @@ public sealed class PartyAllocator
                 new Uri(_httpClient.BaseAddress!, AllocatePath), partyIdHint);
 
             var token = await _tokenProvider.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
-            HttpResponseMessage? response = null;
+            AllocationReply reply;
             try
             {
-                response = await SendAllocationAsync(partyIdHint, synchronizerId, token, cancellationToken).ConfigureAwait(false);
+                reply = await SendAllocationAsync(partyIdHint, synchronizerId, token, cancellationToken).ConfigureAwait(false);
             }
             catch (TaskCanceledException timeout) when (!cancellationToken.IsCancellationRequested)
             {
@@ -218,69 +232,60 @@ public sealed class PartyAllocator
                 continue;
             }
 
-            using (response)
+            if ((int)reply.StatusCode is >= 200 and < 300)
             {
-                if (response.IsSuccessStatusCode)
-                {
-                    return await ReadAllocatedPartyAsync(response, cancellationToken).ConfigureAwait(false);
-                }
-
-                var body = await BoundedBody.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
-                if (TransientHttpStatus.IsTransient(response.StatusCode, body))
-                {
-                    if (attempt >= _retryOptions.MaxAttempts)
-                    {
-                        throw new JsonLedgerApiException(
-                            $"POST {AllocatePath} (hint={partyIdHint}) returned {(int)response.StatusCode} {response.ReasonPhrase} on all {_retryOptions.MaxAttempts} attempts: {BoundedBody.ForMessage(body)}",
-                            response.StatusCode,
-                            body);
-                    }
-                    await BackOffAsync(partyIdHint, $"returned {(int)response.StatusCode} {response.ReasonPhrase}", attempt, cancellationToken).ConfigureAwait(false);
-                    earlierAttemptInconclusive = true;
-                    continue;
-                }
-
-                if (earlierAttemptInconclusive && IsPartyAlreadyExists(response.StatusCode, body))
-                {
-                    var existing = await FindPartyByHintAsync(partyIdHint, cancellationToken).ConfigureAwait(false);
-                    if (existing is not null)
-                    {
-                        _logger.LogInformation(
-                            "Party {PartyId} (hint={Hint}) already exists after an earlier attempt did not complete — treating as success.",
-                            existing.Party, partyIdHint);
-                        return existing;
-                    }
-                }
-
-                throw new JsonLedgerApiException(
-                    $"POST {AllocatePath} (hint={partyIdHint}) returned {(int)response.StatusCode} {response.ReasonPhrase}: {BoundedBody.ForMessage(body)}",
-                    response.StatusCode,
-                    body);
+                return ParseAllocatedParty(reply);
             }
+
+            if (TransientHttpStatus.IsTransient(reply.StatusCode, reply.Body))
+            {
+                if (attempt >= _retryOptions.MaxAttempts)
+                {
+                    throw new JsonLedgerApiException(
+                        $"POST {AllocatePath} (hint={partyIdHint}) returned {(int)reply.StatusCode} {reply.ReasonPhrase} on all {_retryOptions.MaxAttempts} attempts: {BoundedBody.ForMessage(reply.Body)}",
+                        reply.StatusCode,
+                        reply.Body);
+                }
+                await BackOffAsync(partyIdHint, $"returned {(int)reply.StatusCode} {reply.ReasonPhrase}", attempt, cancellationToken).ConfigureAwait(false);
+                earlierAttemptInconclusive = true;
+                continue;
+            }
+
+            if (earlierAttemptInconclusive && IsPartyAlreadyExists(reply.StatusCode, reply.Body))
+            {
+                var existing = await FindPartyByHintAsync(partyIdHint, cancellationToken).ConfigureAwait(false);
+                if (existing is not null)
+                {
+                    _logger.LogInformation(
+                        "Party {PartyId} (hint={Hint}) already exists after an earlier attempt did not complete — treating as success.",
+                        existing.Party, partyIdHint);
+                    return existing;
+                }
+            }
+
+            throw new JsonLedgerApiException(
+                $"POST {AllocatePath} (hint={partyIdHint}) returned {(int)reply.StatusCode} {reply.ReasonPhrase}: {BoundedBody.ForMessage(reply.Body)}",
+                reply.StatusCode,
+                reply.Body);
         }
     }
 
-    private Task<HttpResponseMessage> SendAllocationAsync(
+    private async Task<AllocationReply> SendAllocationAsync(
         string partyIdHint,
         string synchronizerId,
         string token,
         CancellationToken cancellationToken)
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, AllocatePath)
+        using var request = new HttpRequestMessage(HttpMethod.Post, AllocatePath)
         {
             Content = JsonContent.Create(new AllocatePartyRequest(partyIdHint, string.Empty, synchronizerId)),
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        return SendAndDisposeAsync(request, cancellationToken);
-    }
 
-    private async Task<HttpResponseMessage> SendAndDisposeAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-    {
-        using (request)
-        {
-            return await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        }
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        var body = await BoundedBody.ReadAsync(response, $"POST {AllocatePath} (hint={partyIdHint})", _httpClient.Timeout, cancellationToken).ConfigureAwait(false);
+        return new AllocationReply(response.StatusCode, response.ReasonPhrase, body);
     }
 
     private async Task BackOffAsync(string partyIdHint, string outcome, int attempt, CancellationToken cancellationToken)
@@ -295,28 +300,22 @@ public sealed class PartyAllocator
     private static bool IsPartyAlreadyExists(HttpStatusCode status, string body) =>
         status == HttpStatusCode.BadRequest && body.Contains(PartyAlreadyExistsMarker, StringComparison.Ordinal);
 
-    private static async Task<AllocatedPartyDetails> ReadAllocatedPartyAsync(
-        HttpResponseMessage response,
-        CancellationToken cancellationToken)
+    private static AllocatedPartyDetails ParseAllocatedParty(AllocationReply reply)
     {
-        var payload = await response.Content
-            .ReadFromJsonAsync<AllocatePartyResponse>(cancellationToken: cancellationToken)
-            .ConfigureAwait(false)
-            ?? throw new JsonLedgerApiException(
-                $"POST {AllocatePath} returned an empty body.",
-                response.StatusCode,
-                string.Empty);
+        var payload = BoundedBody.ParseJson<AllocatePartyResponse>(reply.Body, reply.StatusCode, reply.ReasonPhrase, $"POST {AllocatePath}");
 
         if (payload.PartyDetails is null || string.IsNullOrWhiteSpace(payload.PartyDetails.Party))
         {
             throw new JsonLedgerApiException(
                 $"POST {AllocatePath} returned a response with no partyDetails.party field.",
-                response.StatusCode,
+                reply.StatusCode,
                 string.Empty);
         }
 
         return payload.PartyDetails;
     }
+
+    private sealed record AllocationReply(HttpStatusCode StatusCode, string? ReasonPhrase, string Body);
 
     private async Task<AllocatedPartyDetails?> FindPartyByHintAsync(
         string partyIdHint,
@@ -329,21 +328,21 @@ public sealed class PartyAllocator
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            var body = await BoundedBody.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
+            var body = await BoundedBody.ReadAsync(response, $"GET {requestUri}", _httpClient.Timeout, cancellationToken).ConfigureAwait(false);
             throw new JsonLedgerApiException(
                 $"GET {requestUri} returned {(int)response.StatusCode} {response.ReasonPhrase}: {BoundedBody.ForMessage(body)}",
                 response.StatusCode,
                 body);
         }
 
-        var payload = await response.Content
-            .ReadFromJsonAsync<ListKnownPartiesResponse>(cancellationToken: cancellationToken)
+        var payload = await BoundedBody
+            .ReadJsonAsync<ListKnownPartiesResponse>(response, $"GET {requestUri}", _httpClient.Timeout, cancellationToken)
             .ConfigureAwait(false);
-        return payload?.PartyDetails?.FirstOrDefault(
-            details => details.Party.StartsWith(partyIdPrefix, StringComparison.Ordinal));
+        return payload.PartyDetails?.FirstOrDefault(
+            details => details?.Party is { } party && party.StartsWith(partyIdPrefix, StringComparison.Ordinal));
     }
 
     private static string GenerateInstanceSuffix()
@@ -362,7 +361,7 @@ public sealed class PartyAllocator
         [property: JsonPropertyName("partyDetails")] AllocatedPartyDetails? PartyDetails);
 
     private sealed record ListKnownPartiesResponse(
-        [property: JsonPropertyName("partyDetails")] List<AllocatedPartyDetails>? PartyDetails);
+        [property: JsonPropertyName("partyDetails")] List<AllocatedPartyDetails?>? PartyDetails);
 
     private sealed record AllocatedPartyDetails(
         [property: JsonPropertyName("party")] string Party,

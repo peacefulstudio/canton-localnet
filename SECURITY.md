@@ -2,18 +2,21 @@
 
 ## Supported versions
 
-`canton-localnet` follows [Semantic Versioning][semver]. Once releases ship,
-security fixes are issued for the latest minor release on the `prod`
-branch; older minor releases do not receive backports unless coordinated
-case-by-case with the maintainers. For an unreleased project, the table
-below shows `unreleased` instead — security reports are still welcome and
-will be addressed against `dev`.
+`canton-localnet` publishes releases tagged `v<splice>-<N>`, where `<splice>` is
+the Splice version the LocalNet runs and `<N>` counts the releases on that
+Splice version. See the [Releases page][releases] for the list.
 
-[semver]: https://semver.org/spec/v2.0.0.html
+Only the latest published release receives security fixes. An older release
+does not get a backport, unless the maintainers coordinate one with you
+case-by-case. `dev` is the only branch: a fix lands there first and ships in
+the next release, so please report against the latest release or `dev`.
 
-| Version    | Supported          |
-|------------|--------------------|
-| unreleased | :white_check_mark: |
+[releases]: https://github.com/peacefulstudio/canton-localnet/releases
+
+| Version                  | Supported          |
+|--------------------------|--------------------|
+| Latest published release | :white_check_mark: |
+| Any older release        | :x:                |
 
 ## Reporting a vulnerability
 

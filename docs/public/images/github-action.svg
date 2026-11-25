@@ -1,0 +1,162 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="1040" viewBox="0 0 880 1040" role="img" aria-labelledby="title desc">
+<title id="title">Canton LocalNet in a GitHub Actions job</title>
+<desc id="desc">One GitHub Actions job on a Linux runner with Docker. The boot step resolves the canton-localnet CLI, cleans up any leftover localnet compose project, runs docker compose up with one retry, waits until every slot is ready, and writes every endpoint and credential to GITHUB_ENV with secrets masked. Your test steps read the CANTON_LOCALNET slot variables, get a token from the slot's Keycloak realm with a client_credentials grant, and call the slot's JSON or gRPC Ledger API. The teardown step runs even when tests fail, runs down with volumes, and on failure uploads a diagnostics artifact and exits non-zero. In Docker run the Super Validator, Scan and the token-standard registry behind nginx, Keycloak, validator slot a, and optionally slots b to d, PQS and observability, all on 127.0.0.1 only.</desc>
+<style>
+svg{--bg:rgb(246 248 250);--edge:rgb(208 215 222);--panel:rgb(255 255 255);--card:rgb(246 248 250);--text:rgb(31 35 40);--muted:rgb(89 99 110);--boot:rgb(15 118 110);--boot-fill:rgb(240 253 250);--test:rgb(29 78 216);--test-fill:rgb(239 246 255);--test-tint:rgb(219 234 254);--down:rgb(133 77 14);--down-line:rgb(202 138 4);--down-fill:rgb(254 252 232);--warn:rgb(180 35 24)}
+@media (prefers-color-scheme:dark){svg{--bg:rgb(22 27 34);--edge:rgb(61 68 77);--panel:rgb(13 17 23);--card:rgb(21 27 35);--text:rgb(230 237 243);--muted:rgb(145 152 161);--boot:rgb(94 234 212);--boot-fill:rgb(15 42 40);--test:rgb(147 197 253);--test-fill:rgb(17 29 51);--test-tint:rgb(26 44 77);--down:rgb(253 224 71);--down-line:rgb(234 179 8);--down-fill:rgb(42 36 16);--warn:rgb(255 143 128)}}
+text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:var(--text)}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}
+.h1{font-size:22px;font-weight:700}
+.h2{font-size:16px;font-weight:700}
+.b{font-weight:700}
+.m{fill:var(--muted)}
+.s{font-size:12px}
+.bg{fill:var(--bg);stroke:var(--edge)}
+.frame{fill:none;stroke:var(--edge);stroke-width:1.5}
+.panel{fill:var(--panel);stroke:var(--edge);stroke-width:1.5}
+.card{fill:var(--card);stroke:var(--edge);stroke-width:1.5}
+.opt{fill:none;stroke:var(--muted);stroke-width:1.5;stroke-dasharray:5 4}
+.boot{fill:var(--boot-fill);stroke:var(--boot);stroke-width:2}
+.test{fill:var(--test-fill);stroke:var(--test);stroke-width:2}
+.tint{fill:var(--test-tint);stroke:none}
+.down{fill:var(--down-fill);stroke:var(--down-line);stroke-width:2}
+.tb{fill:var(--boot)}
+.tt{fill:var(--test)}
+.td{fill:var(--down)}
+.tw{fill:var(--warn)}
+.dot-b{fill:var(--boot)}
+.dot-t{fill:var(--test)}
+.n{font-size:12px;font-weight:700;fill:var(--panel);text-anchor:middle}
+.ab{fill:none;stroke:var(--boot);stroke-width:2}
+.at{fill:none;stroke:var(--test);stroke-width:2}
+.ad{fill:none;stroke:var(--down-line);stroke-width:2}
+.hb{fill:var(--boot)}
+.ht{fill:var(--test)}
+.hd{fill:var(--down-line)}
+</style>
+<defs>
+<marker id="mb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="hb" d="M0 0L10 5L0 10z"/></marker>
+<marker id="mt" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ht" d="M0 0L10 5L0 10z"/></marker>
+<marker id="md" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="hd" d="M0 0L10 5L0 10z"/></marker>
+</defs>
+
+<rect class="bg" x="0.5" y="0.5" width="879" height="1039" rx="16"/>
+<text class="h1" x="32" y="42">Canton LocalNet in your GitHub Actions job</text>
+<text class="m" x="32" y="66">Boot a real Canton network on your own runner, test against it, tear it down.</text>
+
+<rect class="frame" x="16" y="86" width="848" height="938" rx="12"/>
+<text class="b m" x="32" y="108">Linux x86_64 runner with Docker</text>
+
+<rect class="panel" x="28" y="120" width="488" height="892" rx="10"/>
+<text class="b" x="44" y="142">GitHub Actions job: steps run top to bottom</text>
+
+<rect class="panel" x="572" y="120" width="280" height="892" rx="10"/>
+<text class="b" x="588" y="142">Docker: compose project <tspan class="mono">localnet</tspan></text>
+<text class="s m" x="588" y="160">every port on 127.0.0.1 only</text>
+
+<rect class="boot" x="40" y="156" width="464" height="308" rx="8"/>
+<text class="h2 tb" x="56" y="182">1. Boot LocalNet</text>
+<text class="mono tb" x="56" y="204">uses: peacefulstudio/canton-localnet@&lt;tag&gt;</text>
+
+<circle class="dot-b" cx="66" cy="228" r="9"/><text class="n" x="66" y="232">1</text>
+<text class="b" x="84" y="232">Resolve CLI</text>
+<text x="180" y="232"><tspan class="mono">cli: source</tspan> builds it with go build</text>
+<text x="180" y="250"><tspan class="mono">cli: release</tspan> downloads it, checks checksum</text>
+
+<circle class="dot-b" cx="66" cy="272" r="9"/><text class="n" x="66" y="276">2</text>
+<text class="b" x="84" y="276">Clean up</text>
+<text x="180" y="276">remove a leftover <tspan class="mono">localnet</tspan> project</text>
+
+<circle class="dot-b" cx="66" cy="298" r="9"/><text class="n" x="66" y="302">3</text>
+<text class="mono b" x="84" y="302">up</text>
+<text x="180" y="302">docker compose up, one retry</text>
+
+<circle class="dot-b" cx="66" cy="324" r="9"/><text class="n" x="66" y="328">4</text>
+<text class="mono b" x="84" y="328">wait-ready</text>
+<text x="180" y="328">every slot healthy, plus the PQS</text>
+<text x="180" y="346">watermark with <tspan class="mono">pqs: true</tspan></text>
+
+<circle class="dot-b" cx="66" cy="368" r="9"/><text class="n" x="66" y="372">5</text>
+<text class="b" x="84" y="372">Export</text>
+<text class="mono" x="180" y="372">canton-localnet env --format github</text>
+<text x="180" y="390">writes <tspan class="mono">$GITHUB_ENV</tspan>, secrets masked,</text>
+<text x="180" y="408">and the job summary</text>
+
+<text class="s tw" x="56" y="434"><tspan class="b">Boot fails?</tspan> The step log names the stalled containers</text>
+<text class="s tw" x="56" y="451">and a diagnostics artifact is uploaded.</text>
+
+<path class="ab" d="M100 464V496" marker-end="url(#mb)"/>
+<text x="114" y="486"><tspan class="mono tb">$GITHUB_ENV</tspan> every endpoint and credential</text>
+
+<rect class="test" x="40" y="500" width="464" height="312" rx="8"/>
+<text class="h2 tt" x="56" y="526">2. Your test steps</text>
+<text class="m" x="56" y="546">Any language: Rust, TypeScript, Java, Go, .NET</text>
+<text class="mono tt" x="56" y="566">run: your-test-command</text>
+
+<rect class="tint" x="56" y="578" width="432" height="128" rx="6"/>
+<text class="mono b" x="68" y="598">CANTON_LOCALNET_&lt;SLOT&gt;_*</text>
+<text class="s m" x="68" y="616">&lt;SLOT&gt; is A_VALIDATOR_1 to D_VALIDATOR_1</text>
+<text class="mono" x="68" y="640">JSON_API_URL</text>
+<text class="mono" x="68" y="658">GRPC_URL</text>
+<text class="mono" x="68" y="676">ADMIN_GRPC_URL</text>
+<text class="mono" x="68" y="694">VALIDATOR_API_URL</text>
+<text class="mono" x="272" y="640">TOKEN_URL</text>
+<text class="mono" x="272" y="658">CLIENT_ID</text>
+<text class="mono" x="272" y="676">CLIENT_SECRET <tspan class="m">(masked)</tspan></text>
+
+<circle class="dot-t" cx="66" cy="726" r="9"/><text class="n" x="66" y="730">1</text>
+<text x="84" y="730">Get a token: <tspan class="mono">client_credentials</tspan> on <tspan class="mono">TOKEN_URL</tspan></text>
+<circle class="dot-t" cx="66" cy="756" r="9"/><text class="n" x="66" y="760">2</text>
+<text x="84" y="760">Call the JSON or gRPC Ledger API with it</text>
+<text class="s m" x="56" y="786">Optional: <tspan class="mono">canton-localnet tap --slot a</tspan></text>
+<text class="s m" x="56" y="802">funds a party with Amulet</text>
+
+<path class="ad" d="M100 812V844" marker-end="url(#md)"/>
+<text x="114" y="834">then, pass or fail</text>
+
+<rect class="down" x="40" y="848" width="464" height="152" rx="8"/>
+<text class="h2 td" x="56" y="874">3. Tear down</text>
+<text class="mono td" x="56" y="896">uses: peacefulstudio/canton-localnet/teardown@&lt;tag&gt;</text>
+<text x="56" y="916"><tspan class="mono td">if: always()</tspan> runs even when a test step fails</text>
+<text x="56" y="940"><tspan class="mono b">down --volumes</tspan> removes containers and volumes</text>
+<text x="56" y="962">On failure: uploads a diagnostics artifact, exits non-zero</text>
+<text x="56" y="984">Adds a Teardown section to the job summary</text>
+
+<rect class="card" x="584" y="176" width="256" height="58" rx="6"/>
+<text class="b" x="598" y="198">Super Validator</text>
+<text x="598" y="220"><tspan class="mono">sv-validator-1</tspan><tspan class="m">, always on</tspan></text>
+
+<rect class="card" x="584" y="278" width="256" height="76" rx="6"/>
+<text class="b" x="598" y="300">Scan + token-standard registry</text>
+<text class="m" x="598" y="320">behind nginx at</text>
+<text class="mono" x="598" y="340">scan.localhost:10000</text>
+
+<rect class="opt" x="584" y="398" width="256" height="58" rx="6"/>
+<text class="b" x="598" y="420">PQS <tspan class="m" font-weight="400">(optional)</tspan></text>
+<text x="598" y="442"><tspan class="mono">pqs: true</tspan><tspan class="m"> for slots a, b, c</tspan></text>
+
+<rect class="opt" x="584" y="500" width="256" height="76" rx="6"/>
+<text class="b" x="598" y="522">Observability <tspan class="m" font-weight="400">(optional)</tspan></text>
+<text class="mono" x="598" y="542">observability: true</text>
+<text class="s m" x="598" y="562">Grafana, Prometheus, Loki, Tempo</text>
+
+<rect class="card" x="584" y="620" width="256" height="60" rx="6"/>
+<text class="b" x="598" y="642">Keycloak <tspan class="mono" font-weight="400">:8082</tspan></text>
+<text class="m" x="598" y="664">one realm per validator slot</text>
+
+<rect class="card" x="584" y="724" width="256" height="90" rx="6"/>
+<text class="b" x="598" y="746">Validator slot a</text>
+<text class="mono" x="598" y="766">JSON API :11975, gRPC :11901</text>
+<text class="mono" x="598" y="784">admin :11902, validator :11903</text>
+<text class="s m" x="598" y="804">Keycloak realm AValidator1</text>
+
+<rect class="opt" x="584" y="858" width="256" height="76" rx="6"/>
+<text class="b" x="598" y="880">Slots b, c, d <tspan class="m" font-weight="400">(optional)</tspan></text>
+<text x="598" y="900"><tspan class="m">listed in </tspan><tspan class="mono">validators:</tspan></text>
+<text class="s m" x="598" y="920">same ports, prefix 12, 13, 14</text>
+
+<path class="ab" d="M504 298H538V256H570" marker-end="url(#mb)"/>
+<path class="at" d="M504 726H544V650H582" marker-start="url(#mt)" marker-end="url(#mt)"/>
+<path class="at" d="M504 756H556V769H582" marker-end="url(#mt)"/>
+<path class="ad" d="M504 940H570" marker-end="url(#md)"/>
+</svg>

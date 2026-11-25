@@ -249,21 +249,30 @@ func TestDoRequest_HonorsContextCancel(t *testing.T) {
 }
 
 func TestDoRequest_RejectsResponseBodyOverTheCap(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write(make([]byte, 16777217))
-	}))
-	t.Cleanup(server.Close)
+	for _, status := range []int{http.StatusOK, http.StatusInternalServerError, http.StatusServiceUnavailable} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(status)
+				_, _ = w.Write(make([]byte, 16777217))
+			}))
+			t.Cleanup(server.Close)
 
-	_, err := doRequest(context.Background(), http.DefaultClient, staticTokenProvider{token: "tok"}, server.URL, httpRequest{
-		method:    http.MethodGet,
-		path:      "/v2/big",
-		errPrefix: "thing",
-	})
-	if err == nil {
-		t.Fatal("expected error for oversized response, got nil")
-	}
-	if !strings.Contains(err.Error(), "thing: read GET /v2/big response: response exceeds 16777216 bytes") {
-		t.Errorf("error = %v, want it to name the request and the 16777216-byte cap", err)
+			_, err := doRequest(context.Background(), http.DefaultClient, staticTokenProvider{token: "tok"}, server.URL, httpRequest{
+				method:    http.MethodGet,
+				path:      "/v2/big",
+				errPrefix: "thing",
+			})
+			if err == nil {
+				t.Fatal("expected error for oversized response, got nil")
+			}
+			if !strings.Contains(err.Error(), "thing: read GET /v2/big response: response exceeds 16777216 bytes") {
+				t.Errorf("error = %v, want it to name the request and the 16777216-byte cap", err)
+			}
+			var statusErr *httpStatusError
+			if errors.As(err, &statusErr) {
+				t.Errorf("error = %v, want a read error rather than a status error", err)
+			}
+		})
 	}
 }
 

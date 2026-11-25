@@ -7,10 +7,13 @@ using Microsoft.Extensions.Logging;
 namespace Peaceful.Canton.Localnet.Testing;
 
 /// <summary>
-/// xUnit fixture that composes <see cref="EndpointDiscovery"/>,
+/// Test fixture that composes <see cref="EndpointDiscovery"/>,
 /// <see cref="OAuth2TokenProvider"/>, and <see cref="JsonLedgerAdminClient"/>
-/// into a single user-facing surface. Resolve the fixture from your test class
-/// constructor (xUnit v3 <c>IAsyncLifetime</c>) and call methods on
+/// into a single user-facing surface. It is an <see cref="IAsyncDisposable"/>
+/// with a private constructor, built by <see cref="FromEnvironment"/>, so it is
+/// not an xUnit class fixture on its own: create it per test with
+/// <c>await using var fixture = LocalnetFixture.FromEnvironment();</c>, or wrap
+/// it in your own <c>IAsyncLifetime</c> class fixture. Call methods on
 /// <see cref="AdminClient"/>.
 /// </summary>
 public sealed class LocalnetFixture : IAsyncDisposable

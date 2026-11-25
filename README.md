@@ -27,8 +27,8 @@ multi-synchronizer scenarios, and demos. Running in CI? Jump to the
 
 ## Quick Start
 
-Boot a complete Canton LocalNet (Splice 0.10.2) on your machine. You need
-Docker >= 27 and Docker Compose >= 2.27:
+Boot a complete Canton LocalNet (Splice 0.10.3) on your machine. You need
+Docker >= 28 and Docker Compose >= 2.27:
 
 ```bash
 git clone https://github.com/peacefulstudio/canton-localnet.git
@@ -62,6 +62,8 @@ environment (secrets masked), and a paired teardown action cleans up and
 uploads diagnostics when something fails. It is language-neutral: your tests
 only read environment variables.
 
+![Diagram of one GitHub Actions job on a Linux runner with Docker. The boot step resolves the canton-localnet CLI, cleans up any leftover localnet compose project, runs docker compose up with one retry, waits until every slot is ready and exports every endpoint and credential to GITHUB_ENV with secrets masked. Your test steps read the CANTON_LOCALNET slot variables, get a token from the slot's Keycloak realm and call the JSON or gRPC Ledger API. The teardown step always runs, removes the stack with its volumes and uploads diagnostics on failure. Docker runs the Super Validator, Scan and the token-standard registry, Keycloak and validator slot a, plus optional slots b to d, PQS and observability, on 127.0.0.1 only.](docs/public/images/github-action.svg)
+
 ```yaml
 jobs:
   integration:
@@ -69,14 +71,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Boot LocalNet
-        uses: peacefulstudio/canton-localnet@v0.10.2-1
+        uses: peacefulstudio/canton-localnet@v0.10.3-1
         with:
           validators: a
       - name: Run your tests
         run: your-test-command # reads CANTON_LOCALNET_A_VALIDATOR_1_* from the environment
       - name: Tear down
         if: always()
-        uses: peacefulstudio/canton-localnet/teardown@v0.10.2-1
+        uses: peacefulstudio/canton-localnet/teardown@v0.10.3-1
 ```
 
 The [GitHub Action page](docs/public/github-action.md) shows how to

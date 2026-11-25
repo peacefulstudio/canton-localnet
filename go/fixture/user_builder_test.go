@@ -21,6 +21,29 @@ type recordedCall struct {
 	body   []byte
 }
 
+func TestUserBuilder_CreateWrapsAnEmptyOrMalformed2xxBodyAsADecodeError(t *testing.T) {
+	for _, body := range []string{"", "<html>proxy</html>", `{"user":`} {
+		t.Run(body, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, body)
+			}))
+			t.Cleanup(server.Close)
+			b, err := NewUserBuilder(server.URL, staticTokenProvider{token: "tok-user"})
+			if err != nil {
+				t.Fatalf("NewUserBuilder: %v", err)
+			}
+
+			_, err = b.Create(context.Background(), UserOptions{UserID: "frank", PrimaryParty: "frank::ns"})
+
+			var syntaxErr *json.SyntaxError
+			if !errors.As(err, &syntaxErr) || !strings.Contains(err.Error(), "user: decode POST /v2/users response") {
+				t.Fatalf("error = %v, want a user decode error wrapping *json.SyntaxError", err)
+			}
+		})
+	}
+}
+
 func TestUserBuilder_CreateUserRequestShape(t *testing.T) {
 	var (
 		mu    sync.Mutex

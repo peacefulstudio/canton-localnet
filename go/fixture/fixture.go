@@ -38,7 +38,11 @@ type Config struct {
 //	f, err := fixture.New(fixture.Config{Role: fixture.RoleAValidator1})
 //	if err != nil { t.Fatal(err) }
 //	if err := f.Setup(ctx); err != nil { t.Fatal(err) }
-//	t.Cleanup(func() { _ = f.Teardown(context.Background()) })
+//	t.Cleanup(func() {
+//		if err := f.Teardown(context.Background()); err != nil {
+//			t.Errorf("teardown: %v", err)
+//		}
+//	})
 //
 // Setup is idempotent. Teardown deletes the ledger users created through
 // CreateUser, invalidates the cached token and resets the fixture so a
@@ -165,6 +169,7 @@ func (f *Fixture) Teardown(ctx context.Context) error {
 	f.users = nil
 	f.validatorsMu.Lock()
 	for _, v := range f.validators {
+		v.tornDown.Store(true)
 		if v.tokens != nil && v.tokens != f.tokens {
 			v.tokens.Invalidate()
 		}

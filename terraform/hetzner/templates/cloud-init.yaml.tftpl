@@ -82,7 +82,7 @@ write_files:
       . /etc/os-release
       install -m 0755 -d /etc/apt/keyrings
       DOCKER_KEY_FILE="$(mktemp)"
-      curl -fsSL --max-time 60 https://download.docker.com/linux/ubuntu/gpg -o "$DOCKER_KEY_FILE"
+      curl -fsSL --max-time 60 --retry 5 --retry-delay 5 --retry-connrefused https://download.docker.com/linux/ubuntu/gpg -o "$DOCKER_KEY_FILE"
       ACTUAL_DOCKER_KEY_FINGERPRINT="$(gpg --show-keys --with-colons "$DOCKER_KEY_FILE" | awk -F: -v field=10 '$1 == "fpr" { print $field; exit }')"
       if [ "$ACTUAL_DOCKER_KEY_FINGERPRINT" != "$EXPECTED_DOCKER_KEY_FINGERPRINT" ]; then
         echo "FATAL: refusing to trust the Docker apt key: fingerprint '$ACTUAL_DOCKER_KEY_FINGERPRINT' is not $EXPECTED_DOCKER_KEY_FINGERPRINT" >&2
@@ -116,7 +116,7 @@ write_files:
 
       export C_VALIDATOR_1_PROFILE=off
       export D_VALIDATOR_1_PROFILE=off
-      /opt/canton-localnet/bring-up-localnet.sh "$SRC" "$MOUNT/localnet-state-key" make up PQS=true
+      /opt/canton-localnet/bring-up-localnet.sh "$SRC" "$MOUNT/localnet-state-key" make up PQS=true UP_TIMEOUT=15m
 
       make -C "$SRC" wait-ready
 

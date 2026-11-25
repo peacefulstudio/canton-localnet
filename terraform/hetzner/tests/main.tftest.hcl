@@ -286,8 +286,8 @@ run "cloud_init_renders_mount_and_compose" {
   }
 
   assert {
-    condition     = strcontains(hcloud_server.localnet[0].user_data, "/opt/canton-localnet/bring-up-localnet.sh \"$SRC\" \"$MOUNT/localnet-state-key\" make up PQS=true")
-    error_message = "provisioning must bring LocalNet up through bring-up-localnet.sh, keyed on a state key stored on the persistent volume"
+    condition     = strcontains(hcloud_server.localnet[0].user_data, "/opt/canton-localnet/bring-up-localnet.sh \"$SRC\" \"$MOUNT/localnet-state-key\" make up PQS=true UP_TIMEOUT=15m\n")
+    error_message = "provisioning must bring LocalNet up through bring-up-localnet.sh, keyed on a state key stored on the persistent volume, with make up bounded by UP_TIMEOUT=15m so a hung start is killed"
   }
 
   assert {
@@ -296,7 +296,7 @@ run "cloud_init_renders_mount_and_compose" {
   }
 
   assert {
-    condition     = strcontains(hcloud_server.localnet[0].user_data, "make up PQS=true\n\n      make -C \"$SRC\" wait-ready\n\n      mkdir -p \"$(dirname \"$DONE_FLAG\")\"")
+    condition     = strcontains(hcloud_server.localnet[0].user_data, "make up PQS=true UP_TIMEOUT=15m\n\n      make -C \"$SRC\" wait-ready\n\n      mkdir -p \"$(dirname \"$DONE_FLAG\")\"")
     error_message = "the readiness wait must sit between the bring-up and the provisioned flag, so a stack that never answers leaves the box unflagged"
   }
 
@@ -454,6 +454,11 @@ run "cloud_init_installs_pinned_docker_from_a_verified_key" {
   assert {
     condition     = strcontains(hcloud_server.localnet[0].user_data, "gpg --show-keys --with-colons")
     error_message = "cloud-init must read the downloaded key's fingerprint before trusting it"
+  }
+
+  assert {
+    condition     = strcontains(hcloud_server.localnet[0].user_data, "curl -fsSL --max-time 60 --retry 5 --retry-delay 5 --retry-connrefused https://download.docker.com/linux/ubuntu/gpg")
+    error_message = "the Docker key download must retry, so one transient failure does not abort provisioning"
   }
 
   assert {

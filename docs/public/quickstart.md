@@ -3,7 +3,7 @@
 
 # Local quickstart
 
-Boot a complete Canton LocalNet (Splice 0.10.2) on your machine:
+Boot a complete Canton LocalNet (Splice 0.10.3) on your machine:
 
 ```bash
 make up           # docker compose up -d, OAuth2 mode by default
@@ -41,8 +41,11 @@ a firewall that admits nobody you do not trust.
 Demo credentials are public. The stack ships fixed credentials that are committed to this repository: the Keycloak admin console login (`admin` / `admin`), the Postgres superuser (`DB_USER` / `DB_PASSWORD`, default `cnadmin` and a published password), the OAuth2 client secrets of the imported Keycloak realms (also the built-in defaults of the .NET fixture), and the wallet users' passwords. Anyone who can reach a port can use them, so run the stack on a loopback-only or firewalled host and never against real assets.
 
 On Docker server versions below 28.0.0, a port published to `127.0.0.1` can
-still be reachable from other hosts on the same network segment — see
-`make check-docker-version` (`STRICT=true` turns that into a hard failure).
+still be reachable from other hosts on the same network segment (see the
+[Docker port publishing docs](https://docs.docker.com/engine/network/port-publishing/)).
+`make up` and `canton-localnet up` print a warning on such a server and still
+start the stack. `make check-docker-version` runs the same check on its own, and
+`STRICT=true` (`make up STRICT=true` included) turns the warning into a hard failure.
 
 Optional layers via Make flags (shortcuts — the canonical config layer is
 `canton-localnet.yaml`, see the [config schema](canton-localnet-yaml-schema.md)):
@@ -77,7 +80,7 @@ the SSH key (default `~/.ssh/canton-localnet` when that file exists), `--user`
 the remote user and `--ssh-port` the remote port. The port set is defined in
 [`cli/internal/tunnel`](../../cli/internal/tunnel/tunnel.go).
 
-Prerequisites: Docker ≥ 27, Docker Compose ≥ 2.27. The compose stack is
+Prerequisites: Docker ≥ 28, Docker Compose ≥ 2.27. The compose stack is
 vendored into `compose/modules/` from `hyperledger-labs/splice` at the SHA
 pinned in `compose/splice.sha`. Re-vendor with `make vendor`.
 

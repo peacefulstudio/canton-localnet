@@ -23,6 +23,7 @@ public sealed class JsonLedgerAdminClient
     private readonly HttpClient _httpClient;
     private readonly OAuth2TokenProvider _tokenProvider;
     private readonly ILogger<JsonLedgerAdminClient> _logger;
+    private readonly TimeProvider _timeProvider;
 
     /// <summary>
     /// Creates a client bound to a JSON Ledger API <see cref="HttpClient"/>.
@@ -41,10 +42,36 @@ public sealed class JsonLedgerAdminClient
         HttpClient httpClient,
         OAuth2TokenProvider tokenProvider,
         ILogger<JsonLedgerAdminClient>? logger = null)
+        : this(httpClient, tokenProvider, logger, TimeProvider.System)
+    {
+    }
+
+    /// <summary>
+    /// Creates a client bound to a JSON Ledger API <see cref="HttpClient"/> with
+    /// an explicit clock, which decides whether a package vetting is inside its
+    /// validity window. Use it in tests to drive that window.
+    /// </summary>
+    /// <param name="httpClient">
+    /// Client whose <see cref="HttpClient.BaseAddress"/> is the JSON Ledger API
+    /// root (e.g. <c>http://localhost:11975/</c>). Required; an unset base
+    /// address throws.
+    /// </param>
+    /// <param name="tokenProvider">Supplies the bearer token for each request.</param>
+    /// <param name="logger">Logger, or <c>null</c> for a no-op logger.</param>
+    /// <param name="timeProvider">Clock for the vetting validity window.</param>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="httpClient"/> has no <see cref="HttpClient.BaseAddress"/>.
+    /// </exception>
+    public JsonLedgerAdminClient(
+        HttpClient httpClient,
+        OAuth2TokenProvider tokenProvider,
+        ILogger<JsonLedgerAdminClient>? logger,
+        TimeProvider timeProvider)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _tokenProvider = tokenProvider ?? throw new ArgumentNullException(nameof(tokenProvider));
         _logger = logger ?? NullLogger<JsonLedgerAdminClient>.Instance;
+        _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
 
         if (_httpClient.BaseAddress is null)
         {
@@ -70,23 +97,19 @@ public sealed class JsonLedgerAdminClient
 
         _logger.LogDebug("GET {Uri}", new Uri(_httpClient.BaseAddress!, request.RequestUri!));
 
-        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            var body = await BoundedBody.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
+            var body = await BoundedBody.ReadAsync(response, "GET v2/parties/participant-id", _httpClient.Timeout, cancellationToken).ConfigureAwait(false);
             throw new JsonLedgerApiException(
                 $"GET v2/parties/participant-id returned {(int)response.StatusCode} {response.ReasonPhrase}: {BoundedBody.ForMessage(body)}",
                 response.StatusCode,
                 body);
         }
 
-        var payload = await response.Content
-            .ReadFromJsonAsync<ParticipantIdResponse>(cancellationToken: cancellationToken)
-            .ConfigureAwait(false)
-            ?? throw new JsonLedgerApiException(
-                "GET v2/parties/participant-id returned an empty body.",
-                response.StatusCode,
-                string.Empty);
+        var payload = await BoundedBody
+            .ReadJsonAsync<ParticipantIdResponse>(response, "GET v2/parties/participant-id", _httpClient.Timeout, cancellationToken)
+            .ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(payload.ParticipantId))
         {
@@ -126,23 +149,19 @@ public sealed class JsonLedgerAdminClient
 
         _logger.LogDebug("GET {Uri}", new Uri(_httpClient.BaseAddress!, request.RequestUri!));
 
-        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            var body = await BoundedBody.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
+            var body = await BoundedBody.ReadAsync(response, $"GET {requestUri}", _httpClient.Timeout, cancellationToken).ConfigureAwait(false);
             throw new JsonLedgerApiException(
                 $"GET {requestUri} returned {(int)response.StatusCode} {response.ReasonPhrase}: {BoundedBody.ForMessage(body)}",
                 response.StatusCode,
                 body);
         }
 
-        var payload = await response.Content
-            .ReadFromJsonAsync<ConnectedSynchronizersResponse>(cancellationToken: cancellationToken)
-            .ConfigureAwait(false)
-            ?? throw new JsonLedgerApiException(
-                $"GET {requestUri} returned an empty body.",
-                response.StatusCode,
-                string.Empty);
+        var payload = await BoundedBody
+            .ReadJsonAsync<ConnectedSynchronizersResponse>(response, $"GET {requestUri}", _httpClient.Timeout, cancellationToken)
+            .ConfigureAwait(false);
 
         if (payload.ConnectedSynchronizers is null)
         {
@@ -203,6 +222,11 @@ public sealed class JsonLedgerAdminClient
         CancellationToken cancellationToken = default)
     {
         var synchronizers = await GetConnectedSynchronizersAsync(party, cancellationToken).ConfigureAwait(false);
+        return SelectGlobalSynchronizerId(synchronizers);
+    }
+
+    internal static string SelectGlobalSynchronizerId(IReadOnlyList<ConnectedSynchronizer> synchronizers)
+    {
         var global = synchronizers.FirstOrDefault(s => string.Equals(s.Alias, GlobalSynchronizerAlias, StringComparison.Ordinal));
         if (global is null)
         {
@@ -221,14 +245,20 @@ public sealed class JsonLedgerAdminClient
     /// via <c>POST /v2/package-vetting/list</c> filtered to the participant
     /// (<see cref="GetParticipantIdAsync"/>) and, when given, to
     /// <paramref name="synchronizerId"/>. Follows <c>nextPageToken</c> until a
-    /// match or the last page. Used by <see cref="DarUploader"/> to tell an
+    /// match or the last page. A package counts as vetted only while the clock is
+    /// inside its validity window: at or after <c>validFromInclusive</c> and
+    /// strictly before <c>validUntilExclusive</c>; a missing, <c>null</c> or empty
+    /// bound is open on that side. Used by <see cref="DarUploader"/> to tell an
     /// identical re-upload from a different package that shares the name and
     /// version of a vetted one.
     /// </summary>
     /// <param name="packageId">Package id to look for.</param>
     /// <param name="synchronizerId">Synchronizer whose topology state to read, or <c>null</c> for any.</param>
     /// <param name="cancellationToken">Cancels the requests.</param>
-    /// <exception cref="JsonLedgerApiException">The participant returned a non-success status.</exception>
+    /// <exception cref="JsonLedgerApiException">
+    /// The participant returned a non-success status, or a matching entry carries
+    /// a validity bound that is not an RFC 3339 timestamp.
+    /// </exception>
     internal async Task<bool> IsPackageVettedAsync(
         string packageId,
         string? synchronizerId,
@@ -244,9 +274,10 @@ public sealed class JsonLedgerAdminClient
         do
         {
             var page = await PostVettingListAsync(packageId, participantId, synchronizerId, pageToken, cancellationToken).ConfigureAwait(false);
+            var now = _timeProvider.GetUtcNow();
             var vetted = page.VettedPackages?.Any(entry =>
                 string.Equals(entry.ParticipantId, participantId, StringComparison.Ordinal)
-                && entry.Packages?.Any(p => string.Equals(p.PackageId, packageId, StringComparison.Ordinal)) == true) == true;
+                && entry.Packages?.Any(p => string.Equals(p.PackageId, packageId, StringComparison.Ordinal) && IsInsideValidityWindow(p, now)) == true) == true;
             if (vetted)
             {
                 return true;
@@ -256,6 +287,31 @@ public sealed class JsonLedgerAdminClient
         while (pageToken.Length > 0);
 
         return false;
+    }
+
+    private static bool IsInsideValidityWindow(VettedPackageDto package, DateTimeOffset now)
+    {
+        var validFrom = ParseBound(package.ValidFromInclusive, "validFromInclusive");
+        var validUntil = ParseBound(package.ValidUntilExclusive, "validUntilExclusive");
+        return (validFrom is null || now >= validFrom) && (validUntil is null || now < validUntil);
+    }
+
+    private static DateTimeOffset? ParseBound(string? value, string field)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return null;
+        }
+
+        if (!DateTimeOffset.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out var parsed))
+        {
+            throw new JsonLedgerApiException(
+                $"POST v2/package-vetting/list returned {field} '{value}', which is not an RFC 3339 timestamp.",
+                System.Net.HttpStatusCode.OK,
+                value);
+        }
+
+        return parsed;
     }
 
     private async Task<VettingListResponse> PostVettingListAsync(
@@ -279,20 +335,19 @@ public sealed class JsonLedgerAdminClient
 
         _logger.LogDebug("POST {Uri}", new Uri(_httpClient.BaseAddress!, requestUri));
 
-        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            var errorBody = await BoundedBody.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
+            var errorBody = await BoundedBody.ReadAsync(response, $"POST {requestUri}", _httpClient.Timeout, cancellationToken).ConfigureAwait(false);
             throw new JsonLedgerApiException(
                 $"POST {requestUri} returned {(int)response.StatusCode} {response.ReasonPhrase}: {BoundedBody.ForMessage(errorBody)}",
                 response.StatusCode,
                 errorBody);
         }
 
-        var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-
-        return System.Text.Json.JsonSerializer.Deserialize<VettingListResponse>(body)
-            ?? throw new JsonLedgerApiException($"POST {requestUri} returned an empty body.", response.StatusCode, body);
+        return await BoundedBody
+            .ReadJsonAsync<VettingListResponse>(response, $"POST {requestUri}", _httpClient.Timeout, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private sealed record ParticipantIdResponse(
@@ -322,7 +377,9 @@ public sealed class JsonLedgerAdminClient
         [property: JsonPropertyName("packages")] IReadOnlyList<VettedPackageDto>? Packages);
 
     private sealed record VettedPackageDto(
-        [property: JsonPropertyName("packageId")] string? PackageId);
+        [property: JsonPropertyName("packageId")] string? PackageId,
+        [property: JsonPropertyName("validFromInclusive")] string? ValidFromInclusive,
+        [property: JsonPropertyName("validUntilExclusive")] string? ValidUntilExclusive);
 
     private sealed record ConnectedSynchronizerDto(
         [property: JsonPropertyName("synchronizerAlias")] string SynchronizerAlias,
@@ -352,6 +409,17 @@ public class JsonLedgerApiException : Exception
     /// <param name="responseBody">Raw response body, or empty when none was read.</param>
     public JsonLedgerApiException(string message, System.Net.HttpStatusCode statusCode, string responseBody)
         : base(message)
+    {
+        StatusCode = statusCode;
+        ResponseBody = responseBody;
+    }
+
+    internal JsonLedgerApiException(
+        string message,
+        System.Net.HttpStatusCode statusCode,
+        string responseBody,
+        Exception innerException)
+        : base(message, innerException)
     {
         StatusCode = statusCode;
         ResponseBody = responseBody;
